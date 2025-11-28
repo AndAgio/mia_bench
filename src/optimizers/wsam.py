@@ -1,5 +1,6 @@
 import torch
 import torch.distributed as dist
+from typing import Callable
 
 from .utils import disable_running_stats, enable_running_stats
 
@@ -8,7 +9,7 @@ class WSAM(torch.optim.Optimizer):
     # Sharpness-Aware Minimization Revisited: Weighted Sharpness as a Regularization Term.
     def __init__(
         self,
-        model,
+        params,
         base_optimizer,
         rho=0.05,
         gamma=0.9,
@@ -21,12 +22,12 @@ class WSAM(torch.optim.Optimizer):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
         # print('Adaptive set to {}'.format(adaptive))
 
-        self.model = model
+        # self.model = model
         self.decouple = decouple
         self.max_norm = max_norm
         alpha = gamma / (1 - gamma)
         defaults = dict(rho=rho, alpha=alpha, sam_eps=sam_eps, adaptive=adaptive, **kwargs)
-        super(WSAM, self).__init__(self.model.parameters(), defaults)
+        super(WSAM, self).__init__(params, defaults)
 
         self.base_optimizer = base_optimizer(self.param_groups, **kwargs)
         self.param_groups = self.base_optimizer.param_groups
@@ -47,7 +48,7 @@ class WSAM(torch.optim.Optimizer):
                 if torch.distributed.is_initialized():
                     dist.all_reduce(p.grad, op=dist.ReduceOp.AVG)
         if self.max_norm is not None:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            torch.nn.utils.clip_grad_norm_(self.param_groups, self.max_norm)
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is None:
@@ -67,7 +68,7 @@ class WSAM(torch.optim.Optimizer):
                 p.add_(self.state[p]["e_w"], alpha=-1.0)  # get back to "w" from "w + e(w)"
 
         if self.max_norm is not None:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            torch.nn.utils.clip_grad_norm_(self.param_groups, self.max_norm)
 
         for group in self.param_groups:
             for p in group["params"]:
@@ -92,20 +93,23 @@ class WSAM(torch.optim.Optimizer):
             self.zero_grad()
 
     @torch.no_grad()
-    def step(self, closure=None):
-        assert closure is not None, "Weighted Sharpness Aware Minimization requires closure, but it was not provided"
+    def step(self, closure: Callable, inputs: torch.Tensor, targets: torch.Tensor):
+        '''
+        Expects closure to be:
+        def closure(inputs, targets, mean=True, backward=True):
+            loss = self.criterion(self.model(inputs), targets)
+            if mean:
+                loss = loss.mean()
+            if backward:
+                loss.backward()
+            return loss
+        '''
         closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
-
-        enable_running_stats(self.model)
-        # outputs, loss = closure()
-        closure()
+        loss, outputs = closure(inputs, targets, mean=True, backward=True, run_stats=True)
+        self.to_return = loss, outputs
         self.first_step(zero_grad=True)
-
-        disable_running_stats(self.model)
-        closure()
+        closure(inputs, targets, mean=True, backward=True, run_stats=False)
         self.second_step()
-
-        # return outputs, loss
 
     def _grad_norm(self):
         shared_device = self.param_groups[0]["params"][
@@ -123,3 +127,6 @@ class WSAM(torch.optim.Optimizer):
             p=2,
         )
         return norm
+    
+    def get_first_closure_outputs(self):
+        return self.to_return

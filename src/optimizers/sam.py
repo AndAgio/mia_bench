@@ -1,4 +1,5 @@
 import torch
+from typing import Callable
 
 
 class SAM(torch.optim.Optimizer):
@@ -39,12 +40,22 @@ class SAM(torch.optim.Optimizer):
         if zero_grad: self.zero_grad()
 
     @torch.no_grad()
-    def step(self, closure=None):
-        assert closure is not None, "Sharpness Aware Minimization requires closure, but it was not provided"
+    def step(self, closure: Callable, inputs: torch.Tensor, targets: torch.Tensor):
+        '''
+        Expects closure to be:
+        def closure(inputs, targets, mean=True, backward=True):
+            loss = self.criterion(self.model(inputs), targets)
+            if mean:
+                loss = loss.mean()
+            if backward:
+                loss.backward()
+            return loss
+        '''
         closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
-
+        loss, outputs = closure(inputs, targets, mean=True, backward=True, run_stats=True)
+        self.to_return = loss, outputs
         self.first_step(zero_grad=True)
-        closure()
+        closure(inputs, targets, mean=True, backward=True, run_stats=False)
         self.second_step()
 
     def _grad_norm(self):
@@ -62,3 +73,6 @@ class SAM(torch.optim.Optimizer):
     def load_state_dict(self, state_dict):
         super().load_state_dict(state_dict)
         self.base_optimizer.param_groups = self.param_groups
+
+    def get_first_closure_outputs(self):
+        return self.to_return

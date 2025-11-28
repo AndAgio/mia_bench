@@ -175,14 +175,14 @@ class TrainManager():
                                 lr=lr,
                                 rho=0.05,
                                 beta=1,
-                                gamma=1,
+                                gamma=0.5,
                                 adaptive=adaptive,
                                 momentum=0.9,
                                 nesterov=False,
                                 weight_decay=0.0005)
         elif optimizer.split('_')[-1] == 'wsam':
             adaptive = True if optimizer.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
-            self.optimizer = WSAM(model=self.model,
+            self.optimizer = WSAM(params=self.model.parameters(),
                                 base_optimizer=SGD,
                                 lr=lr,
                                 rho=0.05,
@@ -419,32 +419,33 @@ class TrainManager():
 
         # Compute loss and predictions
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
-
-            # TODO: Get everything to use closure.
-            # assignee: AndAgio
-            
+            # Working with closure
+            def closure(inputs, targets, mean=True, backward=True, run_stats=True):
+                if run_stats:
+                    enable_running_stats(self.model)
+                else:
+                    disable_running_stats(self.model)
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, targets)
+                if mean:
+                    loss = loss.mean()
+                if backward:
+                    loss.backward()
+                return loss, outputs
+            self.optimizer.step(closure, inputs, targets)
+            self.optimizer.zero_grad()
+            loss, outputs = self.optimizer.get_first_closure_outputs()
+            # An alternative to running with closure is to run manually both steps of the sam-like optimizers, like the following.
             # # first forward-backward step
             # enable_running_stats(self.model)
             # outputs = self.model(inputs)
             # loss = self.criterion(outputs, targets).mean()
             # loss.backward()
             # self.optimizer.first_step(zero_grad=True)
-
             # # second forward-backward step
             # disable_running_stats(self.model)
             # self.criterion(self.model(inputs), targets).mean().backward()
             # self.optimizer.second_step(zero_grad=True)
-
-            # Working with closure
-            outputs = self.model(inputs)
-            loss = self.criterion(outputs, targets).mean()
-            loss.backward()
-            def closure():
-                loss = self.criterion(self.model(inputs), targets).mean()
-                loss.backward()
-                return loss
-            self.optimizer.step(closure)
-            self.optimizer.zero_grad()
         else:
             # Forward propagation, compute loss, get predictions
             self.optimizer.zero_grad()
@@ -529,11 +530,11 @@ class TrainManager():
 
     def print_message(self, epoch_index, total_epochs, index_batch, total_batches, metrics, mode='train'):
         if self.global_rank == 'cpu':
-            message = '| CPU | EPOCH: {}/{} |'.format(epoch_index, total_epochs)
+            message = 'CPU | EPOCH: {}/{} |'.format(epoch_index, total_epochs)
         elif self.global_rank == 'mps':
-            message = '| MPS | EPOCH: {}/{} |'.format(epoch_index, total_epochs)
+            message = 'MPS | EPOCH: {}/{} |'.format(epoch_index, total_epochs)
         else:
-            message = '| GPU-{} | EPOCH: {}/{} |'.format(self.global_rank, epoch_index, total_epochs)
+            message = 'GPU-{} | EPOCH: {}/{} |'.format(self.global_rank, epoch_index, total_epochs)
         bar_length = 10
         progress = float(index_batch) / float(total_batches)
         if progress >= 1.:

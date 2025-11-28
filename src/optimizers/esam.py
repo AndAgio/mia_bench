@@ -1,5 +1,7 @@
 import torch
 import random
+import math
+from typing import Callable
 
 
 class ESAM(torch.optim.Optimizer):
@@ -57,63 +59,35 @@ class ESAM(torch.optim.Optimizer):
 
         if zero_grad: self.zero_grad()
 
-    def step(self):
-        # TODO: Modify step to make it similar to the original step using closure.
-        # assignee: AndAgio
-        inputs,targets,loss_fct,model,defined_backward = self.paras
-        assert defined_backward is not None, "Efficient Sharpness Aware Minimization requires defined_backward, but it was not provided"
+    def step(self, closure: Callable, inputs: torch.Tensor, targets: torch.Tensor):
+        '''
+        Expects closure to be:
+        def closure(inputs, targets, mean=True, backward=True):
+            loss = self.criterion(self.model(inputs), targets)
+            if mean:
+                loss = loss.mean()
+            if backward:
+                loss.backward()
+            return loss
+        '''
+        closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
 
-        model.require_backward_grad_sync = False
-        model.require_forward_param_sync = True
-
-
-        logits = model(inputs)
-        loss = loss_fct(logits,targets)
-
+        loss, outputs = closure(inputs, targets, mean=False, backward=False, run_stats=True)
         l_before = loss.clone().detach()
-        predictions = logits
-        return_loss = loss.clone().detach()
-        loss = loss.mean()
-        defined_backward(loss)
-
-        #first step to w + e(w)
-        self.first_step(True)
-
-
+        self.to_return = loss.mean(), outputs
+        loss.mean().backward()
+        self.first_step(zero_grad=True)
         with torch.no_grad():
-            l_after = loss_fct(model(inputs),targets)
+            l_after, _ = closure(inputs, targets, mean=False, backward=False, run_stats=True)
             instance_sharpness = l_after-l_before
-
-            #codes for sorting 
-            prob = self.gamma
-            if prob >= 0.99:
-                indices = range(len(targets))
-            else:
-                position = int(len(targets) * prob)
-                cutoff,_ = torch.topk(instance_sharpness,position)
-                cutoff = cutoff[-1]
-
-                # cutoff = 0
-                #select top k% 
-
-                indices = [instance_sharpness > cutoff] 
-
-
-        # second forward-backward step
-        # self.first_half()
-
-        model.require_backward_grad_sync = True
-        model.require_forward_param_sync = False
-
-
-
-        loss = loss_fct(model(inputs[indices]), targets[indices])
-        loss = loss.mean()
-        defined_backward(loss)
-        self.second_step(True)
-
-        self.returnthings = (predictions,return_loss)
-
+            #codes for sorting
+            position = math.ceil(len(targets) * self.gamma)
+            cutoff, _ = torch.topk(instance_sharpness, position)
+            cutoff = cutoff[-1]
+            #select top k% 
+            indices = tuple([instance_sharpness > cutoff])
+        closure(inputs[indices], targets[indices], mean=True, backward=True, run_stats=False)
+        self.second_step()
 
     def _grad_norm(self):
         shared_device = self.param_groups[0]["params"][0].device  # put everything on the same device, in case of model parallelism
@@ -129,3 +103,6 @@ class ESAM(torch.optim.Optimizer):
                     p=2
                 )
         return norm
+    
+    def get_first_closure_outputs(self):
+        return self.to_return
