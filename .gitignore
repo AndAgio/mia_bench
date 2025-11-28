@@ -1,3 +1,20 @@
+.vscode
+data
+!src/data
+secrets.yml
+ckpts/
+resume_ckpts/
+datas/
+logs/
+
+*.log
+*.pth
+*.pth.tar
+*.pt
+
+.DS_Store
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

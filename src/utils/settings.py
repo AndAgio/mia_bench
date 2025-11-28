@@ -1,0 +1,65 @@
+import argparse
+import pathlib
+from .variables import DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
+    
+
+def gather_settings():
+    # Training settings
+    parser = argparse.ArgumentParser(description='MIA Benchmarking code')
+    
+    # Dataset parameters
+    parser.add_argument("--dataset", type=str, default="cifar100",
+                        choices=["cifar10", "cifar100", "svhn", "fmnist", "imagenet", "tiny_imagenet"])
+    
+    # Model parameters
+    parser.add_argument("--victim_model", default="resnet50",
+                        choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
+                                'wideresnet_16_8', 'wideresnet_28_2', 'wideresnet_28_10', 'wideresnet_50_2', 'wideresnet_101_2',
+                                "inception_v3", 
+                                "vgg11", "vgg13", "vgg16", "vgg19", 
+                                "mobile_small", "mobile_large", 
+                                "vit"])
+    # parser.add_argument("--visualize_model", action="store_true", default=False,
+    #                     help="whether to visualize the plot of the NN or not (for debugging)",)
+
+    # Training parameters 
+    parser.add_argument('--optimizer', type=str, required=False, default='sgd',
+                        help='optimizer')
+    parser.add_argument("--device", default='0',
+                        help="Set to 0 or 1 to enable CUDA training, cpu otherwise")
+    parser.add_argument('--epochs', type=int, default=100,
+                        help='Max number of epochs to train')
+    parser.add_argument('--batch_size', type=int, required=False, default=256,
+                        help='input batch size for training')
+    parser.add_argument('--loss', type=str, required=False, default='crossentropy',
+                        help='loss to be used for training', choices=['crossentropy'])
+    parser.add_argument('--lr', type=float, required=False, default=0.001,
+                        help='learning rate')
+    parser.add_argument('--lr_sched', type=str, required=False, default='cosine',
+                        help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+    parser.add_argument('--weight_decay', type=float, required=False, default=1e-5,
+                        help='weight decay')
+    parser.add_argument('--seed', type=int, default=12345,
+                        help='random seed (default:12345)')
+    parser.add_argument("--distributed", action="store_true", default=False,
+                        help="use distributed training options",)
+    
+    # Folders parameters
+    parser.add_argument('--datasets_folder', type=pathlib.Path, default=DEFAULT_DATASETS_FOLDER)
+    parser.add_argument('--log_folder', type=pathlib.Path, default=DEFAULT_LOG_FOLDER)
+    parser.add_argument('--models_folder', type=pathlib.Path, default=DEFAULT_MODELS_FOLDER)
+    parser.add_argument('--resume_ckpts_folder', type=pathlib.Path, default=DEFAULT_RESUME_CKPTS_FOLDER)
+    parser.add_argument('--metrics_folder', type=pathlib.Path, default=DEFAULT_METRICS_FOLDER)
+    parser.add_argument('--out_folder', type=pathlib.Path, default=DEFAULT_OUT_FOLDER)
+    parser.add_argument('--plots_folder', type=pathlib.Path, default=DEFAULT_PLOTS_FOLDER)
+    # parser.add_argument('--models_visualization_folder', type=pathlib.Path, default='models_graphviz')
+
+    # parser.add_argument('--resume_ckpts_folder', type=str, default='resume_ckpts')
+    parser.add_argument("--resume", action="store_true", default=False,
+                        help="resume training from last checkpoint found",)
+    
+    parser.add_argument("--data_augmentation", action="store_true", default=True,
+                        help="augment data by flipping and cropping",)
+    
+    settings = parser.parse_args()
+    return settings

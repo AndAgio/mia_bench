@@ -1,0 +1,13 @@
+networkx
+numpy
+torch
+keras
+tqdm
+torchvision
+kaggle
+pandas
+scipy
+wget
+scikit-learn
+graphviz
+pysdd
