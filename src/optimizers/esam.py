@@ -59,6 +59,7 @@ class ESAM(torch.optim.Optimizer):
 
     def step(self):
         # TODO: Modify step to make it similar to the original step using closure.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/3
         # assignee: AndAgio
         inputs,targets,loss_fct,model,defined_backward = self.paras
         assert defined_backward is not None, "Efficient Sharpness Aware Minimization requires defined_backward, but it was not provided"

@@ -421,6 +421,7 @@ class TrainManager():
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
 
             # TODO: Get everything to use closure.
+            # Issue URL: https://github.com/AndAgio/mia_bench/issues/5
             # assignee: AndAgio
             
             # # first forward-backward step
@@ -505,6 +506,7 @@ class TrainManager():
 
     def load_last_resume_ckpt(self):
         # TODO: Find optimal way to implement resume.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/4
         # assignee: AndAgio
         raise NotImplementedError('Still to be implemented!')
         checkpoint_folder = os.path.join(self.settings.resume_ckpts_folder, self.experiment_name, 'seed_{}'.format(self.settings.seed))
