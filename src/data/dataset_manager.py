@@ -8,7 +8,8 @@ class DatasetManager():
     def __init__(self, train_dataset: Dataset, test_dataset: Dataset, seed: int = 12345):
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
-        self._rng = np.random.default_rng(seed=seed)
+        self.seed = seed
+        self._rng = np.random.default_rng(seed=self.seed)
 
     def get_victim_train(self):
         return self.train_dataset
@@ -103,7 +104,3 @@ class DatasetManager():
                                         'te_ids': test_indexes,
                                         'ids': all_indexes}
         return shadow_datasets_indices
-    
-    def sample_online_shadow_datasets(self, auditing_dataset: dict, n_shadow_datasets: int, n_samples_per_dataset: int, test_perc: float = 0.5):
-
-

@@ -1,26 +1,10 @@
 import os
 import sys
 import logging
-
-
-# def get_logger(arguments, experiment_name=None, mode='smart'):
-#     if mode == 'smart':
-#         logger_name = 'seed_{}'.format(arguments.seed)
-#         if experiment_name is None:
-#             experiment_name = '{}_with_{}_over_{}'.format(arguments.model, arguments.base_model, arguments.dataset)
-#         log_folder = os.path.join(arguments.log_folder, experiment_name)
-#         my_logger = SmartLogger(logger_name, verbose=False, log_dir=log_folder)
-
-#         def handle_exception(exc_type, exc_value, exc_traceback):
-#             my_logger.exception("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
-
-#         sys.excepthook = handle_exception
-
-#         return my_logger
-#     elif mode == 'dumb':
-#         return DumbLogger()
-#     else:
-#         raise ValueError('Mode "{}" not supported!'.format(mode))
+from typing import Union
+from src.utils.variables import DEFAULT_LOG_FOLDER
+from src.utils.configs import LogConfigs
+        
 
 def get_logger(name: str, log_folder: str, mode: str = 'smart'):
     if mode == 'smart':
@@ -34,14 +18,20 @@ def get_logger(name: str, log_folder: str, mode: str = 'smart'):
 
         return my_logger
     elif mode == 'dumb':
-        return DumbLogger()
+        return DumbLogger(name)
     else:
         raise ValueError('Mode "{}" not supported!'.format(mode))
 
 
+def get_logger_from_configs(configs: LogConfigs):
+    return get_logger(name=configs.name,
+                    log_folder=configs.log_folder,
+                    mode=configs.log_mode)
+
+
 class DumbLogger:
-    def __init__(self):
-        pass
+    def __init__(self, name: str):
+        self.name = name
 
     @staticmethod
     def print_it(msg, *args, **kwargs):
@@ -59,6 +49,14 @@ class DumbLogger:
     def set_logger_newline():
         print()
 
+    def get_name(self):
+        return self.name
+    
+    def get_folder(self):
+        return None
+    
+    def get_mode(self):
+        return 'dumb'
 
 class SmartLogger(logging.getLoggerClass()):
     def __init__(self, name, verbose, log_dir='logs'):
@@ -101,6 +99,17 @@ class SmartLogger(logging.getLoggerClass()):
         if log_dir:
             self.log_dir = log_dir
             self.add_file_handler()
+
+        self.name = name
+    
+    def get_name(self):
+        return self.name
+    
+    def get_folder(self):
+        return self.log_dir
+    
+    def get_mode(self):
+        return 'smart'
 
     def add_file_handler(self):
         """Add a file handler for this logger with the specified `name` (and store the log file
@@ -209,3 +218,11 @@ class SmartLogger(logging.getLoggerClass()):
 
     def critical(self, msg, *args, **kwargs):
         self._custom_log(super().critical, msg, *args, **kwargs)
+
+
+class Loggable():
+    def __init__(self, logger: Union[DumbLogger, SmartLogger] = None):
+        if logger is None:
+            self.logger = get_logger(name='log', log_folder=DEFAULT_LOG_FOLDER, mode='dumb')
+        else:
+            self.logger = logger

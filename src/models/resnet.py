@@ -89,7 +89,6 @@ class ResNet(nn.Module):
         else:
             print(type(blk))
             raise ValueError('Could not understand type of block...')
-        print('self.name: {}'.format(self.name))
         
         self.in_planes = 64
 

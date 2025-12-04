@@ -12,7 +12,7 @@ def gather_settings():
                         choices=["cifar10", "cifar100", "svhn", "fmnist", "imagenet", "tiny_imagenet"])
     
     # Model parameters
-    parser.add_argument("--victim_model", default="resnet50",
+    parser.add_argument("--victim_model", default="resnet18",
                         choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
                                 'wideresnet_16_8', 'wideresnet_28_2', 'wideresnet_28_10', 'wideresnet_50_2', 'wideresnet_101_2',
                                 "inception_v3", 
@@ -23,24 +23,26 @@ def gather_settings():
     #                     help="whether to visualize the plot of the NN or not (for debugging)",)
 
     # Training parameters 
-    parser.add_argument('--optimizer', type=str, required=False, default='sgd',
+    parser.add_argument('--victim_optimizer', type=str, required=False, default='sgd',
                         help='optimizer')
+    parser.add_argument('--victim_epochs', type=int, default=100,
+                        help='Max number of epochs to train')
+    parser.add_argument('--victim_batch_size', type=int, required=False, default=256,
+                        help='input batch size for training')
+    parser.add_argument('--victim_loss', type=str, required=False, default='crossentropy',
+                        help='loss to be used for training', choices=['crossentropy'])
+    parser.add_argument('--victim_lr', type=float, required=False, default=0.001,
+                        help='learning rate')
+    parser.add_argument('--victim_lr_sched', type=str, required=False, default='cosine',
+                        help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+    parser.add_argument('--victim_weight_decay', type=float, required=False, default=1e-5,
+                        help='weight decay')
+    parser.add_argument('--victim_seed', type=int, default=12345,
+                        help='random seed (default:12345)')
+    
+    # Hardware related settings
     parser.add_argument("--device", default='0',
                         help="Set to 0 or 1 to enable CUDA training, cpu otherwise")
-    parser.add_argument('--epochs', type=int, default=100,
-                        help='Max number of epochs to train')
-    parser.add_argument('--batch_size', type=int, required=False, default=256,
-                        help='input batch size for training')
-    parser.add_argument('--loss', type=str, required=False, default='crossentropy',
-                        help='loss to be used for training', choices=['crossentropy'])
-    parser.add_argument('--lr', type=float, required=False, default=0.001,
-                        help='learning rate')
-    parser.add_argument('--lr_sched', type=str, required=False, default='cosine',
-                        help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
-    parser.add_argument('--weight_decay', type=float, required=False, default=1e-5,
-                        help='weight decay')
-    parser.add_argument('--seed', type=int, default=12345,
-                        help='random seed (default:12345)')
     parser.add_argument("--distributed", action="store_true", default=False,
                         help="use distributed training options",)
     
@@ -60,6 +62,49 @@ def gather_settings():
     
     parser.add_argument("--data_augmentation", action="store_true", default=True,
                         help="augment data by flipping and cropping",)
+    
+
+    # MIA parameters
+    parser.add_argument("--attack_mode", default="rmia",
+                        choices=["rmia", "lira", "nn", "quantile"])
+    parser.add_argument('--n_auditing_samples', type=int, default=1000,
+                        help='Number of samples to use for auditing on the attacker side')
+    parser.add_argument('--audit_in_perc', type=float, default=0.5,
+                        help='Percentage of auditing samples that are coming from tßhe training set')
+    parser.add_argument('--n_shadows', type=int, default=10,
+                        help='Number of shadow models and datasets to be used for MIAs requiring shadow models')
+    parser.add_argument('--n_samples_per_shadow_dataset', type=int, default=5000,
+                        help='Number of samples to use for each shadow datasets on the attacker side')
+    parser.add_argument('--shadow_test_perc', type=float, default=0.5,
+                        help='Percentage of shadow dataset samples that are coming from the testing set')
+    
+
+    # Attacker training parameters
+    parser.add_argument("--att_model", default="resnet18",
+                        choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
+                                'wideresnet_16_8', 'wideresnet_28_2', 'wideresnet_28_10', 'wideresnet_50_2', 'wideresnet_101_2',
+                                "inception_v3", 
+                                "vgg11", "vgg13", "vgg16", "vgg19", 
+                                "mobile_small", "mobile_large", 
+                                "vit"])
+    parser.add_argument('--att_optimizer', type=str, required=False, default='sgd',
+                        help='optimizer')
+    parser.add_argument('--att_epochs', type=int, default=100,
+                        help='Max number of epochs to train')
+    parser.add_argument('--att_batch_size', type=int, required=False, default=256,
+                        help='input batch size for training')
+    parser.add_argument('--att_loss', type=str, required=False, default='crossentropy',
+                        help='loss to be used for training', choices=['crossentropy'])
+    parser.add_argument('--att_lr', type=float, required=False, default=0.001,
+                        help='learning rate')
+    parser.add_argument('--att_lr_sched', type=str, required=False, default='cosine',
+                        help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+    parser.add_argument('--att_weight_decay', type=float, required=False, default=1e-5,
+                        help='weight decay')
+    parser.add_argument('--att_seed', type=int, default=12345,
+                        help='random seed (default:12345)')
+    
+
     
     settings = parser.parse_args()
     return settings

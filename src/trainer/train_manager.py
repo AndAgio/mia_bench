@@ -4,10 +4,11 @@ import sys
 import math
 import time
 import copy
+from typing import Tuple, Union, Callable
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 import numpy as np
@@ -16,19 +17,18 @@ from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
 from src.optimizers.schedulers import GradualWarmupScheduler, CosineAnnealingWarmupRestarts
-from src.utils.log import get_logger
+from src.utils.configs import TrainConfigs, ModelConfigs
 from src.utils import convert_to_hms
-from .utils import TrainCheckpoint, TrainStats, TrainConfigs, EpochStats
+from .utils import TrainCheckpoint, TrainStats, EpochStats
 
-from src.utils.variables import DEFAULT_LOG_FOLDER
+from src.utils.log import Loggable, SmartLogger, DumbLogger
 
 
-class TrainManager():
-    def __init__(self, train_configs: TrainConfigs, name: str,
-                log_folder: pathlib.Path = DEFAULT_LOG_FOLDER, logging_mode: str = 'smart',):
+class TrainManager(Loggable):
+    def __init__(self, train_configs: TrainConfigs, name: str, logger: Union[SmartLogger, DumbLogger] = None):
+        super().__init__(logger=logger)
         self.train_configs = train_configs
         self.name = name
-        self.logger = get_logger(name=name, log_folder=log_folder, mode=logging_mode)
 
         self.setup_folders(train_configs=self.train_configs)
         self.set_devices_and_seed(train_configs=self.train_configs)
@@ -43,11 +43,13 @@ class TrainManager():
     
 
     def setup_folders(self, train_configs: TrainConfigs):
-        models_folder = os.path.join(train_configs.ckpts_folder, self.name, str(train_configs.seed))
+        models_folder = os.path.join(train_configs.ckpts_folder, self.name)
+        self.logger.print_it(f'Setting up checkpoints folder to {models_folder}')
         os.makedirs(models_folder, exist_ok=True)
         self.models_folder = models_folder
         self.ckpts_folder = train_configs.ckpts_folder
-        resume_folder = os.path.join(train_configs.resume_ckpts_folder, self.name, str(train_configs.seed))
+        resume_folder = os.path.join(train_configs.resume_ckpts_folder, self.name)
+        self.logger.print_it(f'Setting up resume folder to {resume_folder}')
         os.makedirs(resume_folder, exist_ok=True)
         self.resume_folder = resume_folder
 
@@ -114,10 +116,21 @@ class TrainManager():
         self.model = self.model.to(self.device)
 
 
-    def setup_model_from_name(self, model_name: str, dataset_info: dict):
+    def setup_model_from_configs(self, model_configs: ModelConfigs):
+        self.setup_model_from_name_and_info(model_name=model_configs.model_name,
+                                            im_channels=model_configs.im_channels,
+                                            num_classes=model_configs.num_classes,
+                                            im_size=model_configs.im_size)
+
+
+    def setup_model_from_name_and_info(self, model_name: str, im_channels: int, num_classes: int, im_size: Tuple[int, ...]):
         self.logger.print_it('Setting up model "{}"...'.format(model_name))
         # Setup model
-        model = get_model(model_name=model_name, dataset_info=dataset_info)
+        model = get_model(model_name=model_name,
+                        im_channels=im_channels,
+                        num_classes=num_classes,
+                        im_size=im_size,
+                        logger=self.logger)
         # Move model to device
         if self.distributed:
             self.model = DDP(self.model, device_ids=[self.local_rank])
@@ -269,8 +282,7 @@ class TrainManager():
                                 lr=lr)
         self.logger.print_it('Training setup done!')
 
-
-    def setup_dataloaders(self, dataset: MultiDatasets, batch_size: int = 128):
+    def setup_dataloaders_from_multidatasets(self, dataset: MultiDatasets, batch_size: int = 128):
         try:
             train_dataset = dataset.get('train')
             self.run_train = True
@@ -296,10 +308,43 @@ class TrainManager():
             if self.run_test:
                 self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+    def setup_dataloaders_from_torch_dataset(self, dataset: Dataset, batch_size: int = 128, split: bool = False):
+        self.run_train = True
+        if split:
+            train_dataset, test_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
+            if self.distributed:
+                self.train_loader = DataLoader(train_dataset, batch_size=batch_size,
+                                                    pin_memory=True, shuffle=False,
+                                                    sampler=DistributedSampler(train_dataset))
+                self.test_loader = DataLoader(test_dataset, batch_size=batch_size,
+                                                    pin_memory=True, shuffle=False,
+                                                    sampler=DistributedSampler(test_dataset))
+            else:
+                self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+                self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+            self.run_test = True
+        else:
+            self.run_test = False
+            if self.distributed:
+                self.train_loader = DataLoader(dataset, batch_size=batch_size,
+                                                    pin_memory=True, shuffle=False,
+                                                    sampler=DistributedSampler(dataset))
+            else:
+                self.train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    def setup_dataloaders(self, dataset: Union[MultiDatasets, Dataset], batch_size: int = 128):
+        if isinstance(dataset, MultiDatasets):
+            self.setup_dataloaders_from_multidatasets(dataset=dataset,
+                                                        batch_size=batch_size)
+        elif isinstance(dataset, Dataset):
+            self.setup_dataloaders_from_torch_dataset(dataset=dataset,
+                                                        batch_size=batch_size,
+                                                        split=False)
+
 
     def initialize_train(self, 
                         dataset: MultiDatasets,
-                        model: str | nn.Module,
+                        model: Union[ModelConfigs,nn.Module],
                         configs: TrainConfigs,
                         ):
         self.logger.print_it('Initializing training...')
@@ -312,8 +357,8 @@ class TrainManager():
                                 batch_size=self.train_configs.batch_size)
         if isinstance(model, nn.Module):
             self.set_model(model)
-        elif isinstance(model, str):
-            self.setup_model_from_name(model_name=model, dataset_info=dataset.get_info())
+        elif isinstance(model, ModelConfigs):
+            self.setup_model_from_configs(model_configs=model)
         else:
             raise ValueError('Not recognizing model given!')
         self.setup_training(loss=self.train_configs.loss,
@@ -355,7 +400,7 @@ class TrainManager():
             self.save_model('epoch_{}.pt'.format(self.running_stats.epoch))
 
             # Save checkpoint when best model
-            if self.running_stats.is_new_best(test_acc, mode='test' if self.run_test else 'train'):
+            if self.running_stats.is_new_best(test_acc if self.run_test else train_acc, mode='test' if self.run_test else 'train'):
                     self.logger.print_it('New Best model on {} at epoch {}: \t Top1-acc = {:.2f}'.format('test' if self.run_test else 'train',
                                                                                                         self.running_stats.epoch, 
                                                                                                         test_acc*100 if self.run_test else train_acc*100 ))
@@ -363,7 +408,8 @@ class TrainManager():
             
             # Update history of accuracies
             self.running_stats.update_train_accs(train_acc)
-            self.running_stats.update_test_accs(test_acc)
+            if self.run_test:
+                self.running_stats.update_test_accs(test_acc)
 
             
             # Save model when last epoch
@@ -380,7 +426,7 @@ class TrainManager():
             self.running_stats.increase_epoch()
 
         h, m, s = convert_to_hms(self.running_stats.elapsed_time)
-        self.logger.print_it('Training for "{}" with seed {} completed in: {}:{:02d}:{:02d}'.format(self.name, self.seed, h, m, s))
+        self.logger.print_it('Training for "{}" with seed {} completed in: {}:{:02d}:{:02d}'.format(self.model.name, self.seed, h, m, s))
 
         # message = 'EXPERIMENT: {}\nTraining of "{}" for "{}" completed in: {}:{:02d}:{:02d}\nLAST ACC = {}\nBEST ACC = {}'.format(self.experiment_name, self.settings.model, self.settings.dataset, h, m, s, test_acc, self.best_acc)
         # send_update_via_telegram(message)

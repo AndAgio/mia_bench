@@ -1,23 +1,28 @@
+from typing import Union
 import math
 import numpy as np
 from torch.utils.data import Subset, ConcatDataset, Dataset
 from src.data.multi import MultiDatasets
+from src.utils.configs import AuditingDataConfigs
+from src.utils.log import Loggable, SmartLogger, DumbLogger
 
 
-class AuditingDatasetManager():
-    def __init__(self, original_datasets: MultiDatasets, n_auditing_samples: int, in_perc: float = 0.5, seed: int = 12345):
+class AuditingDatasetManager(Loggable):
+    def __init__(self, original_datasets: MultiDatasets, configs: AuditingDataConfigs, logger: Union[SmartLogger, DumbLogger] = None): 
+        super().__init__(logger=logger)
         assert original_datasets is not None
         assert original_datasets.n_splits() >= 2
         self.original_datasets = original_datasets
         assert 'train' in original_datasets.get_ids() and 'test' in original_datasets.get_ids()
-        assert n_auditing_samples > 0
-        assert 0 < in_perc < 1
-        n_samples_to_pick_from_train = math.floor(n_auditing_samples * in_perc)
-        n_samples_to_pick_from_test = n_auditing_samples - n_samples_to_pick_from_train
+        assert configs.n_auditing_samples > 0
+        assert 0 < configs.in_perc < 1
+        n_samples_to_pick_from_train = math.floor(configs.n_auditing_samples * configs.in_perc)
+        n_samples_to_pick_from_test = configs.n_auditing_samples - n_samples_to_pick_from_train
         assert n_samples_to_pick_from_train < len(self.original_datasets.get('train'))
         assert n_samples_to_pick_from_test < len(self.original_datasets.get('test'))
-        self.n_auditing_samples = n_auditing_samples
-        self._rng = np.random.default_rng(seed=seed)
+        self.n_auditing_samples = configs.n_auditing_samples
+        self.seed = configs.seed
+        self._rng = np.random.default_rng(seed=self.seed)
         self.in_auditing_dataset = None
         self.in_ids = None
         self.out_auditing_dataset = None
@@ -28,6 +33,7 @@ class AuditingDatasetManager():
         self._sample(n_samples_to_pick_from_train, n_samples_to_pick_from_test)
 
     def _sample(self, n_samples_to_pick_from_train: int, n_samples_to_pick_from_test: int):
+        self.logger.print_it(f'Sampling auditing dataset with {n_samples_to_pick_from_train} samples picked from train and {n_samples_to_pick_from_test} samples picked from test...')
         member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('train'))), 
                                         n_samples_to_pick_from_train,
                                         replace=False).tolist()
@@ -48,6 +54,9 @@ class AuditingDatasetManager():
                                             FixedLabelDataset(self.out_auditing_dataset,
                                                             fixed_label=0),])
     
+    def get_original_dataset(self):
+        return self.original_datasets
+
     def get_audit(self):
         assert self.audit_dataset is not None
         return self.audit_dataset
@@ -73,6 +82,7 @@ class AuditingDatasetManager():
         return self.all_ids
     
     def get(self, labels: str = 'mia'):
+        self.logger.print_it(f'Getting auditing dataset with {labels} labels...')
         if labels == 'mia':
             return ConcatDataset([FixedLabelDataset(self.in_auditing_dataset,
                                                     fixed_label=1),

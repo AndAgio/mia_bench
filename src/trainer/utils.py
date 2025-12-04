@@ -1,26 +1,4 @@
-import pathlib
-from dataclasses import dataclass
 from typing import Any
-from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER
-from pydantic import validate_arguments
-
-
-@validate_arguments
-@dataclass
-class TrainConfigs():
-    # Mandatory arguments
-    optimizer: str
-    lr: float
-    epochs: int
-    batch_size: int
-    # Optional arguments with default values
-    loss: str = 'crossentropy'
-    lr_sched: str = 'const'
-    device: str = 'cpu'
-    seed: int = 1
-    distributed: bool = False
-    ckpts_folder: pathlib.Path = DEFAULT_MODELS_FOLDER
-    resume_ckpts_folder: pathlib.Path = DEFAULT_RESUME_CKPTS_FOLDER
 
 
 class EpochStats():
