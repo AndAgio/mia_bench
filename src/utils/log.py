@@ -110,6 +110,9 @@ class SmartLogger(logging.getLoggerClass()):
     
     def get_mode(self):
         return 'smart'
+    
+    def get_verbosity(self):
+        return self.verbose
 
     def add_file_handler(self):
         """Add a file handler for this logger with the specified `name` (and store the log file
@@ -134,6 +137,9 @@ class SmartLogger(logging.getLoggerClass()):
         self.file_handler.setFormatter(formatter)
         self.addHandler(self.file_handler)
 
+    def get_log_dir(self):
+        return self.log_dir
+    
     def get_log_file(self):
         return "{}/{}.log".format(self.log_dir, self.name)
 
@@ -226,3 +232,12 @@ class Loggable():
             self.logger = get_logger(name='log', log_folder=DEFAULT_LOG_FOLDER, mode='dumb')
         else:
             self.logger = logger
+
+    def reset_logger(self):
+        if self.logger.get_mode() == 'dumb':
+            self.logger = get_logger(name='log', log_folder=DEFAULT_LOG_FOLDER, mode='dumb')
+        elif self.logger.get_mode() == 'smart':
+            self.logger = SmartLogger(name=self.logger.get_name(),
+                                    verbose=self.logger.get_verbosity(),
+                                    log_dir=self.logger.get_log_dir())
+    
