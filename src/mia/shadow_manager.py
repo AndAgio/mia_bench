@@ -71,3 +71,26 @@ class ShadowManager(Loggable):
         return self.shadow_data.get(index=id,
                                     labels=labels)
     
+    def get_all_model_indeces(self):
+        return self.shadow_models.get_all_ids()
+    
+    def get_all_dataset_indices(self):
+        return self.shadow_data.get_all_ids()
+    
+    def get_all_in_dataset_for_sample_id(self, id: int, split: str = 'all', labels: str = 'original'):
+        return self.shadow_data.get_shadow_datasets_containing_sample_id(id=id,
+                                                                        split=split,
+                                                                        labels=labels)
+    
+    def find_all_in_dataset_indices_for_sample_id(self, id: int, split: str = 'all'):
+        return self.shadow_data.find_shadow_datasets_containing_sample_id(id=id,
+                                                                        split=split)
+    
+    def sample_random_population_indices(self, num_data: int = None):
+        return self.shadow_data.sample_random_indices(num_data=num_data)
+    
+    def get_random_population(self, indices: dict = None, num_data: int = None, labels: str = 'original'):
+        return self.shadow_data.get_random_population(indices=indices,
+                                                    num_data=num_data,
+                                                    labels=labels)
+    

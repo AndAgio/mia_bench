@@ -77,6 +77,11 @@ def gather_settings():
                         help='Number of samples to use for each shadow datasets on the attacker side')
     parser.add_argument('--shadow_test_perc', type=float, default=0.5,
                         help='Percentage of shadow dataset samples that are coming from the testing set')
+    parser.add_argument('--random_population_size', type=int, default=1000,
+                        help='Number of samples in Z to select randomly for LR computation')
+    parser.add_argument('--rmia_alphas', nargs="+", type=float, default=0.5,
+                        help='Set of alphas to be used in the RMIA attack')
+    
     
 
     # Attacker training parameters

@@ -1,3 +1,4 @@
+import os
 from src.utils.settings import gather_settings
 from src.utils.configs import TrainConfigs, LogConfigs, ModelConfigs, DatasetConfigs, AuditingDataConfigs, ShadowDataConfigs
 from src.utils.log import get_logger_from_configs
@@ -6,7 +7,8 @@ from src.mia.rmia import RMIA
 
 
 def main():
-
+    # TODO: Make main adaptable to multiple MIAs.
+    # assignees: AndAgio.
     settings = gather_settings()
 
     exp_code = f'{settings.attack_mode}_{settings.dataset}_victim_{settings.victim_model}_{settings.victim_optimizer}_{settings.victim_lr}_{settings.victim_lr_sched}_{settings.victim_seed}_attacker_{settings.att_model}_{settings.att_optimizer}_{settings.att_lr}_{settings.att_lr_sched}_{settings.att_seed}'
@@ -76,7 +78,25 @@ def main():
                     model_configs=attacker_model_configs,
                     logger=get_logger_from_configs(attacker_log_configs))
     attacker.optimize(train_config=attacker_train_configs)
+    scores = attacker.measure_effectiveness(alpha=settings.rmia_alphas,
+                                            random_pop_size=settings.random_population_size,
+                                            device=attacker_train_configs.device)
     # attacker.measure_effectiveness()
+    # auc_score, tpr, fpr, roc = attacker.get_stats(scores=scores)
+    for alpha, scores_dict in scores.items():
+        print(f'Alpha = {alpha} -> AUC = {scores_dict['auc']}')
+
+    # TODO: Find better way to store and deal with experiment results.
+    # assignees: AndAgio.
+    exp_results_folder = settings.out_folder/f'{exp_code}'
+    os.makedirs(exp_results_folder, exist_ok=True)
+    with open(os.path.join(exp_results_folder, 'results.txt'), 'w') as file:
+        for alpha, scores_dict in scores.items():
+            file.write(f'Alpha = {alpha} -> AUC: {scores_dict['auc']}\n')
+            file.write(f'Alpha = {alpha} -> TPR: {scores_dict['tpr']}\n')
+            file.write(f'Alpha = {alpha} -> FPR: {scores_dict['fpr']}\n')
+            file.write(f'Alpha = {alpha} -> ROC: {scores_dict['roc']}\n')
+            file.write('\n')
 
 
 if __name__ == '__main__':
