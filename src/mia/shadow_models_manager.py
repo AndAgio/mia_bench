@@ -6,9 +6,6 @@ from src.utils.configs import ModelConfigs
 from typing import Union
 
 class ShadowModelsManager(Loggable):
-    # TODO: Implement shadow models manager to train each shadow model.
-    # Issue URL: https://github.com/AndAgio/mia_bench/issues/2
-    # assignee: AndAgio
     def __init__(self, n_models: int, model_configs: ModelConfigs, logger: Union[SmartLogger, DumbLogger] = None):
         super().__init__(logger=logger)
         assert 0 < n_models < 101, f"Invalid number of models should be between 1 and 100: {n_models}"
