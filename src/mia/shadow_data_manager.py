@@ -117,6 +117,47 @@ class ShadowDatasetsManager(Loggable):
         self.logger.set_logger_newline()
         return shadow_datasets_indices
     
+    def sample_random_indices(self, num_data: int = 1000):
+        train_data = self.original_datasets.get('train')
+        test_data = self.original_datasets.get('test')
+        indices_to_avoid = copy.deepcopy(self.auditing_indices)
+        available_indices_train = [i for i in range(len(train_data)) if i not in indices_to_avoid]
+        n_samples_from_victim_train = math.floor(num_data * (1 - self.test_perc))
+        n_samples_from_victim_test = num_data - n_samples_from_victim_train
+        self.logger.print_it(f'Sampling random sample dataset. This may take a while...')
+        train_indexes = self._rng.choice(available_indices_train,
+                                        n_samples_from_victim_train,
+                                        replace=False).tolist()
+        test_indexes = self._rng.choice(np.arange(len(train_data),len(test_data)+len(train_data)),
+                                        n_samples_from_victim_test,
+                                        replace=False).tolist()
+        all_indexes = train_indexes + test_indexes
+        indices = {'train_ids': train_indexes,
+                    'test_ids': test_indexes,
+                    'all_ids': all_indexes}
+        return indices
+    
+    def get_random_population(self, indices: dict = None, num_data: int = None, labels: str = 'original'):
+        original_train_data = self.original_datasets.get('train')
+        original_test_data = self.original_datasets.get('test')
+        if indices is None:
+            assert 0 < num_data <= 1000, f'Number of data to sample random population should be between 1 and 1000, received {num_data} instead!'
+            indices = self.sample_random_indices(num_data=num_data)
+        if labels == 'mia':
+            train_data = Subset(original_train_data, indices['train_ids'])
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
+            return ConcatDataset([FixedLabelDataset(train_data,
+                                                    fixed_label=1),
+                                    FixedLabelDataset(test_data,
+                                                    fixed_label=0),])
+        elif labels == 'original':
+            train_data = Subset(original_train_data, indices['train_ids'])
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
+            return ConcatDataset([train_data,test_data])
+        else:
+            raise ValueError('Labels mode should be either mia or original!')
+
+    
     def get(self, index: int, labels: str = 'mia'):
         assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
         original_train_data = self.original_datasets.get('train')
