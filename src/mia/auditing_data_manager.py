@@ -37,7 +37,7 @@ class AuditingDatasetManager(Loggable):
         member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('train'))), 
                                         n_samples_to_pick_from_train,
                                         replace=False).tolist()
-        non_member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('test'))+len(self.original_datasets.get('train'))),
+        non_member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('train')), len(self.original_datasets.get('test'))+len(self.original_datasets.get('train'))),
                                             n_samples_to_pick_from_test,
                                             replace=False).tolist()
         all_indexes = member_indexes + non_member_indexes
