@@ -8,6 +8,7 @@ from src.mia.rmia import RMIA
 
 def main():
     # TODO: Make main adaptable to multiple MIAs.
+    # Issue URL: https://github.com/AndAgio/mia_bench/issues/7
     # assignees: AndAgio.
     settings = gather_settings()
 
@@ -87,6 +88,7 @@ def main():
         print(f'Alpha = {alpha} -> AUC = {scores_dict['auc']}')
 
     # TODO: Find better way to store and deal with experiment results.
+    # Issue URL: https://github.com/AndAgio/mia_bench/issues/6
     # assignees: AndAgio.
     exp_results_folder = settings.out_folder/f'{exp_code}'
     os.makedirs(exp_results_folder, exist_ok=True)
