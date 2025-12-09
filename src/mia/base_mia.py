@@ -1,10 +1,12 @@
 from typing import Callable, Union
+import pathlib
 import torch
 import numpy as np
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 from src.data.multi import MultiDatasets
 from .auditing_data_manager import AuditingDatasetManager
+from .results_manager import ResultManager
 from src.utils.configs import AuditingDataConfigs
 from src.utils.log import Loggable, SmartLogger, DumbLogger
 
@@ -19,6 +21,7 @@ class BaseMIA(Loggable):
         self.audit_manager = AuditingDatasetManager(original_datasets=victim_dataset,
                                                     configs=audit_configs,
                                                     logger=logger)
+        self.results_manager = ResultManager()
 
     def optimize(self):
         raise NotImplementedError('MIA should implement the method to optimize it!')
@@ -26,15 +29,32 @@ class BaseMIA(Loggable):
     def measure_effectiveness(self):
         raise NotImplementedError('MIA should implement the method to measure its effectiveness!')
     
-    def compute_stats(self, scores: np.array):
+    def compute_stats(self, scores: np.array, params: dict = {}):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         tpr, fpr, roc = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)
-        return {'auc': auc_score,
-                'tpr': tpr,
-                'fpr': fpr,
-                'roc': roc}
+        results = {'auc': auc_score,
+                'tpr': tpr.tolist(),
+                'fpr': fpr.tolist(),
+                'roc': roc.tolist()}
+        self.results_manager.add_results(params=params,
+                                        results=results)
+        return results
+    
+    def get_best_result(self, metric_name: str = 'auc', mode: str = 'max', aggregate: str = 'mean'):
+        assert metric_name in ['auc', 'tpr', 'fpr', 'roc']
+        assert mode in ['min', 'max']
+        best_params, best_result = self.results_manager.get_best(metric_name=metric_name,
+                                                            mode=mode,
+                                                            aggregate=aggregate)
+        return best_params, best_result
+    
+    def summarize_results(self):
+        return self.results_manager.to_rows()
+    
+    def save_results_to_json(self, file: Union[str, pathlib.Path]):
+        self.results_manager.save_json(file)
 
     def get_stats(self, scores: np.array, plot: bool = False):
         audit_data = self.audit_manager.get(labels='mia')
@@ -64,16 +84,30 @@ class BaseMIA(Loggable):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         tpr, _, _ = roc_curve(audit_labels, scores)
-        return tpr
+        return tpr.tolist()
     
     def compute_fpr(self, scores: np.array):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         _, fpr, _ = roc_curve(audit_labels, scores)
-        return fpr
+        return fpr.tolist()
     
     def compute_roc(self, scores: np.array):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         _, _, roc = roc_curve(audit_labels, scores)
-        return roc
+        return roc.tolist()
+    
+    @staticmethod
+    def get_device(dev_str: str = 'cpu'):
+        # Set appropriate devices
+        if torch.cuda.is_available() and dev_str != 'cpu':
+            dev_str = 'cuda:{}'.format(dev_str)
+            device = torch.device(dev_str)
+        elif torch.backends.mps.is_available() and dev_str != 'cpu':
+            dev_str = 'mps'
+            device = torch.device(dev_str)
+        else:
+            device = torch.device('cpu')
+        return device
+
