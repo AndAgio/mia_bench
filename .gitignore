@@ -6,6 +6,7 @@ ckpts/
 resume_ckpts/
 datas/
 logs/
+outs/
 
 *.log
 *.pth
@@ -17,6 +18,9 @@ logs/
 *.png
 *.pdf
 *.txt
+
+
+temp.py
 
 
 
