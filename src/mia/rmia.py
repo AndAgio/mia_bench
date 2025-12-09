@@ -42,28 +42,29 @@ class RMIA(BaseMIA):
         self.logger.print_it('RMIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
 
-    def measure_effectiveness(self, random_pop_size: int = 1000, alpha: Union[float, list[float]] = None, device: Union[torch.device, str] = 'cpu'):
-        if alpha is None and self.mode == 'offline':
+    def measure_effectiveness(self, random_pop_size: int = 1000, alpha: Union[float, list[float]] = None, gamma: float = 1, device: Union[torch.device, str] = 'cpu'):
+        if self.mode == 'online':
+            self.logger.print_it('Found RMIA in ONLINE mode, setting alpha to 0 for ease')
+            alphas = [0]
+        elif alpha is None and self.mode == 'offline':
             self.logger.print_it('Found alpha to be None for OFFLINE RMIA, which is not possible! Testing over all alphas...')
             alphas = np.arange(0, 1.05, 0.1)
-        elif alpha is None and self.mode == 'online':
-            self.logger.print_it('Found alpha to be None for ONLINE RMIA, setting it to 0 for ease')
-            alphas = [0]
         elif isinstance(alpha, list):
             assert all([0 < al <= 1 for al in alpha]), f'All given alphas should be between 0 and 1!'
             alphas = alpha
         elif isinstance(alpha, float):
             assert 0 < alpha <= 1, f'The given alpha should be between 0 and 1! Found alpha={alpha} instead!'
             alphas = [alpha]
-        scores = {alpha: self.compute_with_alpha(alpha=alpha,
-                                                random_pop_size=random_pop_size,
+        scores = {alpha: self.compute_with_alpha(random_pop_size=random_pop_size,
+                                                alpha=alpha,
+                                                gamma=gamma,
                                                 device=device) for alpha in alphas}
         metrics = {alpha: self.compute_stats(scores[alpha]) for alpha in alphas}
-        self.logger.print_it('RMIA attacker: Obtained scores are: {}'.format(metrics))
+        # self.logger.print_it('RMIA attacker: Obtained scores are: {}'.format(metrics))
         return metrics
-        
 
-    def compute_with_alpha(self, random_pop_size: int, alpha: float, device: Union[torch.device, str] = 'cpu'):
+
+    def compute_with_alpha(self, random_pop_size: int, alpha: float, gamma: float = 1, device: Union[torch.device, str] = 'cpu'):
         # assert self.mode == 'offline', f'compute_with_given_alpha should be called only for OFFLINE mode!'
         # Compute P(x|theta) for all samples in the auditing dataset
         if self.mode == 'offline':
@@ -75,31 +76,26 @@ class RMIA(BaseMIA):
         start = time.time()
         audit_dataset = self.audit_manager.get(labels='original')
         audit_dataset_indices = self.audit_manager.get_all_ids()
+        self.reset_logger()
 
         left_lr = self.compute_p_x_theta_over_p_x(dataset=audit_dataset, dataset_indices=audit_dataset_indices, alpha=alpha, device=device)
-        print('left_lr.shape: {}'.format(left_lr.shape))
 
         random_data_indices = self.shadow_manager.sample_random_population_indices(num_data=random_pop_size)
         random_data = self.shadow_manager.get_random_population(indices=random_data_indices,
                                                                 labels='original')
+        self.reset_logger()
 
-        right_lr = self.compute_p_x_theta_over_p_x(dataset=random_data, dataset_indices=random_data_indices['all_ids'], alpha=alpha, device=device)
-        print('right_lr.shape: {}'.format(left_lr.shape))
+        right_lr = self.compute_p_z_theta_over_p_z(dataset=random_data, device=device)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('RMIA attacker: LR computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))
 
         lr_ratios = np.divide(left_lr[:, np.newaxis], right_lr)
-        print('lr_ratios: {}'.format(lr_ratios))
-        print('lr_ratios.shape: {}'.format(lr_ratios.shape))
         gamma=1
         positives_indices = lr_ratios > gamma
-        print(positives_indices)
         positives = np.sum(positives_indices, axis=1)
         total = right_lr.shape[0]
         scores = positives/total
-        print(scores.shape)
-        print(scores)
         return scores        
 
 
@@ -108,53 +104,74 @@ class RMIA(BaseMIA):
             assert 0 <= alpha <= 1, f'RMIA for OFFLINE mode should have a valid alpha! alpha={alpha} was given!'
             # Load indices for all shadow models and set them as offline models
             all_models_indices = self.shadow_manager.get_all_model_indeces()
-            trained_offline_shadow_models_for_sample = [all_models_indices for _ in range(len(dataset))]
+            trained_out_shadow_models_for_sample = [all_models_indices for _ in range(len(dataset))]
             # Indices for online shadow models are empty
-            trained_online_shadow_models_for_sample = [[] for _ in range(len(dataset))]
+            trained_in_shadow_models_for_sample = [[] for _ in range(len(dataset))]
         if self.mode == 'online':
             all_models_indices = self.shadow_manager.get_all_model_indeces()
-            trained_online_shadow_models_for_sample = []
-            trained_offline_shadow_models_for_sample = []
+            trained_in_shadow_models_for_sample = []
+            trained_out_shadow_models_for_sample = []
             for index in dataset_indices:
-                online_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=index,
+                in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=index,
                                                                                                     split='all')
-                offline_models_indices = [index for index in all_models_indices if index not in online_models_indices]
-                trained_online_shadow_models_for_sample.append(online_models_indices)
-                trained_offline_shadow_models_for_sample.append(offline_models_indices)
+                out_models_indices = [index for index in all_models_indices if index not in in_models_indices]
+                trained_in_shadow_models_for_sample.append(in_models_indices)
+                trained_out_shadow_models_for_sample.append(out_models_indices)
+                # self.logger.print_it(f'For sample with index {index}, I found {len(in_models_indices)} online shadow models and {len(out_models_indices)} offline shadow models...')
 
-        p_x_thetas_online = self.compute_p_x_theta(audit_dataset=dataset,
-                                                models_for_sample=trained_online_shadow_models_for_sample,
-                                                device=device)
-        print('p_x_thetas_online.shape: {}'.format(p_x_thetas_online.shape))
-        p_x_thetas_offline = self.compute_p_x_theta(audit_dataset=dataset,
-                                                    models_for_sample=trained_offline_shadow_models_for_sample,
+        if self.mode == 'online':
+            self.logger.print_it(f'Computing p(x) with in models...')
+            p_x_thetas_in = self.compute_p_x_theta(audit_dataset=dataset,
+                                                    models_for_sample=trained_in_shadow_models_for_sample,
                                                     device=device)
-        print('p_x_thetas_offline.shape: {}'.format(p_x_thetas_offline.shape))
-        # p_x_theta_offline = np.mean(p_x_thetas_offline, axis=1)
-        p_x_offline = np.mean(p_x_thetas_offline, axis=1)
+        self.logger.print_it(f'Computing p(x) with out models...')
+        p_x_thetas_out = self.compute_p_x_theta(audit_dataset=dataset,
+                                                    models_for_sample=trained_out_shadow_models_for_sample,
+                                                    device=device)
+        # p_x_theta_out = np.mean(p_x_thetas_out, axis=1)
+        p_x_out = np.mean(p_x_thetas_out, axis=1)
         if self.mode == 'offline':
-            p_x = 0.5*((1+alpha)*p_x_offline + (1-alpha))
+            p_x = 0.5*((1+alpha)*p_x_out + (1-alpha))
         elif self.mode == 'online':
-            # p_x_theta_online = np.mean(p_x_thetas_online, axis=1)
-            p_x_online = np.mean(p_x_thetas_online, axis=1)
-            p_x = 0.5 * p_x_online +  0.5 * p_x_offline
-        print('p_x.shape: {}'.format(p_x.shape))
+            # p_x_theta_in = np.mean(p_x_thetas_in, axis=1)
+            p_x_in = np.mean(p_x_thetas_in, axis=1)
+            p_x = 0.5 * p_x_in +  0.5 * p_x_out
 
+        self.logger.print_it(f'Computing p(x|theta) with the victim model...')
         p_x_thetas_victim = self.compute_p_x_theta(audit_dataset=dataset,
                                                 models_for_sample=[[self.victim_model] for _ in range(len(dataset))],
                                                 device=device)
         p_x_thetas_victim = p_x_thetas_victim.squeeze()
-        print('p_x_thetas_victim.shape: {}'.format(p_x_thetas_victim.shape))
 
         ratio = p_x_thetas_victim/(p_x + 1e-15)
-        print('ratio.shape: {}'.format(ratio.shape))
         return ratio
+    
 
+    def compute_p_z_theta_over_p_z(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
+        all_models_indices = self.shadow_manager.get_all_model_indeces()
+        trained_shadow_models_for_sample = [all_models_indices for _ in range(len(dataset))]
+        self.logger.print_it(f'Computing p(z)...')
+        p_z_thetas = self.compute_p_x_theta(audit_dataset=dataset,
+                                            models_for_sample=trained_shadow_models_for_sample,
+                                            device=device)
+        p_z = np.mean(p_z_thetas, axis=1)
 
+        self.logger.print_it(f'Computing p(z|theta) with victim model...')
+        p_z_thetas_victim = self.compute_p_x_theta(audit_dataset=dataset,
+                                                models_for_sample=[[self.victim_model] for _ in range(len(dataset))],
+                                                device=device)
+        p_z_thetas_victim = p_z_thetas_victim.squeeze()
+
+        ratio = p_z_thetas_victim/(p_z + 1e-15)
+        return ratio
+        
+        
     def compute_p_x_theta(self, audit_dataset: Dataset, models_for_sample: list[list[Union[int, torch.nn.Module]]], device: Union[torch.device, str] = 'cpu'):
+        tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         p_x_thetas = np.zeros((len(audit_dataset), len(models_for_sample[0])))
         for sample_index, (sample, label) in enumerate(audit_loader):
+            self.logger.print_it_same_line(f'Computing p(x|theta) for sample {sample_index+1}/{tot_samples}. This may take a while...')
             models = models_for_sample[sample_index]
             for model_index, model in enumerate(models):
                 if isinstance(model, torch.nn.Module):
@@ -168,6 +185,7 @@ class RMIA(BaseMIA):
                                         target=label,
                                         device=device)
                 p_x_thetas[sample_index, model_index] = p_x_theta
+        self.logger.set_logger_newline()
         return p_x_thetas
 
     @staticmethod
@@ -182,34 +200,3 @@ class RMIA(BaseMIA):
             prob = softmax_output[0][lab].detach().cpu().item()
         return prob
     
-    @staticmethod
-    def get_device(dev_str: str = 'cpu'):
-        # Set appropriate devices
-        if torch.cuda.is_available() and dev_str != 'cpu':
-            dev_str = 'cuda:{}'.format(dev_str)
-            device = torch.device(dev_str)
-        elif torch.backends.mps.is_available() and dev_str != 'cpu':
-            dev_str = 'mps'
-            device = torch.device(dev_str)
-        else:
-            device = torch.device('cpu')
-        return device
-
-
-    # def measure_effectiveness(self):
-    #     audit_dataset = self.audit_manager.get(labels='mia')
-    #     scores=[]
-    #     for sample in audit_dataset:
-    #         target_prob=prob_target[i]
-    #         target_prob_given_target_model=get_prob(target_model,target_data[i:i+1],target_labels[i:i+1],device)
-    #         lr_target=target_prob_given_target_model/(target_prob+1e-15)
-    #         C=0
-    #         for j in range(random_data.size(0)):
-    #             rand_prob=rand_probs_per_target[i][j]
-    #             rand_prob_given_target_model=get_prob(target_model,random_data[j:j+1],random_labs[j:j+1],device)
-    #             lr_rand=rand_prob_given_target_model/(rand_prob+1e-15)
-    #             C+=1 if lr_target/lr_rand>gamma else 0
-
-    #         scores.append(C/random_data.size(0))
-
-    #     return np.array(scores)
