@@ -66,7 +66,7 @@ def gather_settings():
 
     # MIA parameters
     parser.add_argument("--attack_mode", default="rmia",
-                        choices=["rmia", "lira", "nn", "quantile"])
+                        choices=['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia', "lira", "nn", "quantile"])
     parser.add_argument('--n_auditing_samples', type=int, default=1000,
                         help='Number of samples to use for auditing on the attacker side')
     parser.add_argument('--audit_in_perc', type=float, default=0.5,
@@ -81,6 +81,8 @@ def gather_settings():
                         help='Number of samples in Z to select randomly for LR computation')
     parser.add_argument('--rmia_alphas', nargs="+", type=float, default=0.5,
                         help='Set of alphas to be used in the RMIA attack')
+    parser.add_argument('--rmia_gamma', type=float, default=1,
+                        help='Gamma value to be used in the RMIA attack')
     
     
 
