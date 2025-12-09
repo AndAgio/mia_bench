@@ -13,3 +13,6 @@ DEFAULT_DATASETS_FOLDER = PATH_REPO.joinpath('datas')
 DEFAULT_METRICS_FOLDER = PATH_REPO.joinpath('metrics')
 DEFAULT_OUT_FOLDER = PATH_REPO.joinpath('outs')
 DEFAULT_PLOTS_FOLDER = PATH_REPO.joinpath('plots')
+
+
+DEFAULT_METRICS = ['auc', 'tpr', 'fpr', 'roc']
