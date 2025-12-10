@@ -1,3 +1,4 @@
+import torch
 from typing import Union
 from src.trainer.train_manager import TrainManager
 from src.mia.shadow_data_manager import ShadowDatasetsManager
@@ -64,11 +65,14 @@ class ShadowManager(Loggable):
     def get_all_datasets(self, labels: str = 'mia'):
         return self.shadow_data.get_all(labels=labels)
     
-    def get_model(self, id: int):
-        return self.shadow_models.get(index=id)
+    def get_model(self, index: int):
+        return self.shadow_models.get(index=index)
     
-    def get_dataset(self, labels: str = 'mia'):
-        return self.shadow_data.get(index=id,
+    def update_model(self, index: int, model: torch.nn.Module):
+        self.shadow_models.update(index=index, model=model)
+    
+    def get_dataset(self, index: int, labels: str = 'mia'):
+        return self.shadow_data.get(index=index,
                                     labels=labels)
     
     def get_all_model_indeces(self):
