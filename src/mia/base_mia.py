@@ -7,12 +7,12 @@ import matplotlib.pyplot as plt
 from src.data.multi import MultiDatasets
 from .auditing_data_manager import AuditingDatasetManager
 from .results_manager import ResultManager
-from src.utils.configs import AuditingDataConfigs
+from src.utils.configs import AuditingDataConfigs, AttackConfigs
 from src.utils.log import Loggable, SmartLogger, DumbLogger
 
 
 class BaseMIA(Loggable):
-    def __init__(self, victim_model: torch.nn.Module, victim_dataset: MultiDatasets, audit_configs: AuditingDataConfigs, logger: Union[SmartLogger, DumbLogger] = None):
+    def __init__(self, victim_model: torch.nn.Module, victim_dataset: MultiDatasets, audit_configs: AuditingDataConfigs, attack_configs: AttackConfigs, logger: Union[SmartLogger, DumbLogger] = None):
         super().__init__(logger=logger)
         self.logger.print_it('Setting up and MIA attacker. First thing to do is sampling the auditing dataset...')
         self.victim_model = victim_model
@@ -22,6 +22,7 @@ class BaseMIA(Loggable):
                                                     configs=audit_configs,
                                                     logger=logger)
         self.results_manager = ResultManager()
+        self.attack_configs = attack_configs
 
     def optimize(self):
         raise NotImplementedError('MIA should implement the method to optimize it!')
@@ -31,6 +32,7 @@ class BaseMIA(Loggable):
     
     def compute_stats(self, scores: np.array, params: dict = {}):
         audit_data = self.audit_manager.get(labels='mia')
+        self.reset_logger()
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         tpr, fpr, roc = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)

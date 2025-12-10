@@ -4,7 +4,7 @@ import numpy as np
 from src.data.multi import MultiDatasets
 from src.mia.base_mia import BaseMIA
 from src.mia.shadow_manager import ShadowManager
-from src.utils.configs import TrainConfigs, AuditingDataConfigs, ShadowDataConfigs, ModelConfigs
+from src.utils.configs import TrainConfigs, AuditingDataConfigs, ShadowDataConfigs, ModelConfigs, AttackConfigs
 from src.utils.log import SmartLogger, DumbLogger
 from src.utils import convert_to_hms
 from typing import Union
@@ -16,11 +16,13 @@ class RMIA(BaseMIA):
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
                 audit_configs: AuditingDataConfigs,
+                attack_configs: AttackConfigs,
                 shadow_configs: ShadowDataConfigs, 
                 model_configs: ModelConfigs,
                 logger: Union[SmartLogger, DumbLogger] = None):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, audit_configs=audit_configs, logger=logger)
-        self.mode = shadow_configs.mode
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, audit_configs=audit_configs, attack_configs=attack_configs, logger=logger)
+        assert shadow_configs.mode == attack_configs.mode, f'Whenever working with RMIA the mode for shadow datasets and attack should be the same!'
+        self.mode = attack_configs.mode
         self.logger.print_it(f'Working with RMIA in {self.mode.upper()} mode!')
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('RMIA attacker: sampling of shadow datasets...')
@@ -42,7 +44,10 @@ class RMIA(BaseMIA):
         self.logger.print_it('RMIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
 
-    def measure_effectiveness(self, random_pop_size: int = 1000, alpha: Union[float, list[float]] = None, gamma: float = 1, device: Union[torch.device, str] = 'cpu'):
+    def measure_effectiveness(self, random_pop_size: int = None, alpha: Union[float, list[float]] = None, gamma: float = None, device: Union[torch.device, str] = 'cpu'):
+        random_pop_size = self.attack_configs.random_pop_size if random_pop_size is None else random_pop_size
+        alpha = self.attack_configs.alpha if alpha is None else alpha
+        gamma = self.attack_configs.gamma if gamma is None else gamma
         if self.mode == 'online':
             self.logger.print_it('Found RMIA in ONLINE mode, setting alpha to 0 for ease')
             alphas = [0]

@@ -5,7 +5,7 @@ from scipy.stats import norm
 from src.data.multi import MultiDatasets
 from src.mia.base_mia import BaseMIA
 from src.mia.shadow_manager import ShadowManager
-from src.utils.configs import TrainConfigs, AuditingDataConfigs, ShadowDataConfigs, ModelConfigs
+from src.utils.configs import TrainConfigs, AuditingDataConfigs, ShadowDataConfigs, ModelConfigs, AttackConfigs
 from src.utils.log import SmartLogger, DumbLogger
 from src.utils import convert_to_hms
 from typing import Union
@@ -17,10 +17,11 @@ class LiRA(BaseMIA):
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
                 audit_configs: AuditingDataConfigs,
+                attack_configs: AttackConfigs,
                 shadow_configs: ShadowDataConfigs, 
                 model_configs: ModelConfigs,
                 logger: Union[SmartLogger, DumbLogger] = None):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, audit_configs=audit_configs, logger=logger)
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, audit_configs=audit_configs, attack_configs=attack_configs, logger=logger)
         self.logger.print_it(f'Working with LiRA!')
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('LiRA attacker: sampling of shadow datasets...')

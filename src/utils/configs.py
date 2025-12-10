@@ -2,7 +2,7 @@ import pathlib
 from dataclasses import dataclass
 from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
 from pydantic import validate_arguments
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, Callable
 
 
 @validate_arguments
@@ -14,7 +14,7 @@ class TrainConfigs:
     epochs: int
     batch_size: int
     # Optional arguments with default values
-    loss: Optional[str] = 'crossentropy'
+    loss: Optional[Union[str, Callable]] = 'crossentropy'
     lr_sched: Optional[str] = 'const'
     device: Optional[str] = 'cpu'
     seed: Optional[int] = 12345
@@ -144,3 +144,24 @@ class ShadowDataConfigs:
     # Optional arguments with default values
     test_perc: Optional[float] = 0.5
     seed: Optional[int] = 12345
+
+
+@validate_arguments
+@dataclass
+class AttackConfigs:
+    # Optional arguments with default values
+
+    # RMIA
+    mode: str = 'offline'
+    alpha: Union[float, list[float]] = 0.5
+    gamma: float = 1
+    random_pop_size: int = 1000
+    # LiRA
+
+    # Quantile MIA
+    n_quantile: int = 100
+    low_quantile: float = 0.01
+    high_quantile: float = 0.99 
+    use_logscale: bool = False
+    use_gaussian: bool = False
+    quantile_alpha: float = 0.05
