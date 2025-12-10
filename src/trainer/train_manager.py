@@ -153,12 +153,16 @@ class TrainManager(Loggable):
     def get_model_name(self):
         return self.model_name
 
-    def setup_loss(self, loss: str):
-        self.logger.print_it('Setting up {} loss...'.format(loss))
-        if loss == 'crossentropy':
-            self.criterion = nn.CrossEntropyLoss(reduction='none').to(self.device)
-        else:
-            print('Specified loss "{}" not recognized!'.format(loss))
+    def setup_loss(self, loss: Union[str, Callable]):
+        if isinstance(loss, str):
+            self.logger.print_it('Setting up {} loss...'.format(loss))
+            if loss == 'crossentropy':
+                self.criterion = nn.CrossEntropyLoss(reduction='none').to(self.device)
+            else:
+                print('Specified loss "{}" not recognized!'.format(loss))
+        elif isinstance(loss, Callable):
+            self.logger.print_it('Setting up loss directly to function {}...'.format(loss))
+            self.criterion = loss
 
     def setup_optimizer(self, optimizer: str, lr: float = None):
         self.logger.print_it('Setting up "{}" optimizer...'.format(optimizer))
@@ -268,7 +272,7 @@ class TrainManager(Loggable):
             raise ValueError('Learning rate scheduler "{}" not available!'.format(lr_sched))
 
     def setup_training(self, 
-                        loss: str,
+                        loss: Union[str, Callable],
                         optimizer: str,
                         lr: float,
                         lr_sched: str,
@@ -343,7 +347,7 @@ class TrainManager(Loggable):
 
 
     def initialize_train(self, 
-                        dataset: MultiDatasets,
+                        dataset: Union[MultiDatasets, Dataset],
                         model: Union[ModelConfigs,nn.Module],
                         configs: TrainConfigs,
                         ):
