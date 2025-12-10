@@ -64,7 +64,7 @@ def gather_settings():
                         help="augment data by flipping and cropping",)
     
 
-    # MIA parameters
+    # Shared MIA parameters
     parser.add_argument("--attack_mode", default="rmia",
                         choices=['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia', "lira", "nn", "quantile"])
     parser.add_argument('--n_auditing_samples', type=int, default=1000,
@@ -77,13 +77,26 @@ def gather_settings():
                         help='Number of samples to use for each shadow datasets on the attacker side')
     parser.add_argument('--shadow_test_perc', type=float, default=0.5,
                         help='Percentage of shadow dataset samples that are coming from the testing set')
+    # RMIA parameters
     parser.add_argument('--random_population_size', type=int, default=1000,
                         help='Number of samples in Z to select randomly for LR computation')
     parser.add_argument('--rmia_alphas', nargs="+", type=float, default=0.5,
                         help='Set of alphas to be used in the RMIA attack')
     parser.add_argument('--rmia_gamma', type=float, default=1,
                         help='Gamma value to be used in the RMIA attack')
-    
+    # Quantile MIA parameters
+    parser.add_argument('--n_quantile', type=int, default=100,
+                            help='Number of quantiles')
+    parser.add_argument('--low_quantile', type=float, default=0.01,
+                        help='Lowest quantile in the quantile MIA attack')
+    parser.add_argument('--high_quantile', type=float, default=0.99,
+                        help='Highest quantile in the quantile MIA attack')
+    parser.add_argument('--quantile_alpha', type=float, default=0.05,
+                        help='Alpha to be used in the Quantile MIA attack')
+    parser.add_argument("--quantile_use_logscale", action="store_true", default=False,
+                        help="use logscale for quantile MIA attack",)
+    parser.add_argument("--quantile_use_gaussian", action="store_true", default=False,
+                        help="use use_gaussian for quantile MIA attack",)
     
 
     # Attacker training parameters

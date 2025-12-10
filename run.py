@@ -1,10 +1,11 @@
 import os
 from src.utils.settings import gather_settings
-from src.utils.configs import TrainConfigs, LogConfigs, ModelConfigs, DatasetConfigs, AuditingDataConfigs, ShadowDataConfigs
+from src.utils.configs import TrainConfigs, LogConfigs, ModelConfigs, DatasetConfigs, AuditingDataConfigs, ShadowDataConfigs, AttackConfigs
 from src.utils.log import get_logger_from_configs
 from src.mia.victim import Victim
 from src.mia.rmia import RMIA
 from src.mia.lira import LiRA
+from src.mia.quantile import QuantileMIA
 
 
 def main():
@@ -72,25 +73,45 @@ def main():
 
     if settings.attack_mode in ['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia']:
         rmia_mode = 'online' if settings.attack_mode in ['online_rmia', 'on_rmia'] else 'offline'
+        attack_configs = AttackConfigs(mode=rmia_mode,
+                                        alpha=settings.rmia_alphas,
+                                        gamma=settings.rmia_gamma,
+                                        random_pop_size=settings.random_population_size)
         attacker_shadow_configs.mode = rmia_mode
         attacker = RMIA(victim_model=victim_model,
                         victim_dataset=victim.get_dataset(),
                         audit_configs=attacker_audit_configs,
                         shadow_configs=attacker_shadow_configs,
                         model_configs=attacker_model_configs,
+                        attack_configs=attack_configs,
                         logger=get_logger_from_configs(attacker_log_configs))
         attacker.optimize(train_config=attacker_train_configs)
-        attacker.measure_effectiveness(alpha=settings.rmia_alphas,
-                                    gamma=settings.rmia_gamma,
-                                    random_pop_size=settings.random_population_size,
-                                    device=attacker_train_configs.device)
+        attacker.measure_effectiveness(device=attacker_train_configs.device)
     elif settings.attack_mode == 'lira':
+        attack_configs = AttackConfigs()
         attacker = LiRA(victim_model=victim_model,
                         victim_dataset=victim.get_dataset(),
                         audit_configs=attacker_audit_configs,
+                        attack_configs=attack_configs,
                         shadow_configs=attacker_shadow_configs,
                         model_configs=attacker_model_configs,
                         logger=get_logger_from_configs(attacker_log_configs))
+        attacker.optimize(train_config=attacker_train_configs)
+        attacker.measure_effectiveness(device=attacker_train_configs.device)
+    elif settings.attack_mode == 'quantile':
+        attack_configs = AttackConfigs(n_quantile=settings.n_quantile,
+                                        low_quantile=settings.low_quantile,
+                                        high_quantile=settings.high_quantile,
+                                        use_logscale=settings.quantile_use_logscale,
+                                        use_gaussian=settings.quantile_use_gaussian,
+                                        quantile_alpha=settings.quantile_alpha)
+        attacker = QuantileMIA(victim_model=victim_model,
+                                victim_dataset=victim.get_dataset(),
+                                audit_configs=attacker_audit_configs,
+                                attack_configs=attack_configs,
+                                shadow_configs=attacker_shadow_configs,
+                                model_configs=attacker_model_configs,
+                                logger=get_logger_from_configs(attacker_log_configs))
         attacker.optimize(train_config=attacker_train_configs)
         attacker.measure_effectiveness(device=attacker_train_configs.device)
     else:

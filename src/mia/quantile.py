@@ -1,0 +1,152 @@
+import math
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+import numpy as np
+from src.data.multi import MultiDatasets
+from src.mia.base_mia import BaseMIA
+from src.mia.shadow_manager import ShadowManager
+from src.utils.configs import TrainConfigs, AuditingDataConfigs, ShadowDataConfigs, ModelConfigs, AttackConfigs
+from src.utils.log import SmartLogger, DumbLogger, get_logger
+from src.utils import convert_to_hms
+from typing import Union
+import time
+from src.trainer.train_manager import TrainManager
+
+
+class QuantileMIA(BaseMIA):
+    def __init__(self, 
+                victim_model: torch.nn.Module,
+                victim_dataset: MultiDatasets,
+                audit_configs: AuditingDataConfigs,
+                attack_configs: AttackConfigs,
+                shadow_configs: ShadowDataConfigs, 
+                model_configs: ModelConfigs,
+                logger: Union[SmartLogger, DumbLogger] = None):
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, audit_configs=audit_configs, attack_configs=attack_configs, logger=logger)
+        self.logger.print_it(f'Working with Quantile MIA!')
+        assert shadow_configs.n_shadow_datasets == 1, f'When using quantile MIA, only 1 shadow dataset must be used!'
+        self.shadow_manager = ShadowManager(logger=self.logger)
+        self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
+        self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
+                                                    auditing_dataset=self.audit_manager,
+                                                    shadow_configs=shadow_configs)
+        self.logger.print_it('Quantile MIA attacker: definition of quantile model...')
+        model_configs.num_classes = 2 if self.attack_configs.use_gaussian else self.attack_configs.n_quantile
+        self.shadow_manager.build_shadow_models(n_models=1,
+                                                model_configs=model_configs)
+
+    # Helper functions
+    def pinball_loss_fn(self, score, target):
+        target = target.reshape([-1, 1])
+        delta_score = target - score
+        loss = torch.nn.functional.relu(delta_score) * self.quantile + torch.nn.functional.relu(-delta_score) * (1.0 - self.quantile)
+        return loss
+
+    def gaussian_loss_fn(self, score, target):
+        mu = score[:, 0]
+        log_std = score[:, 1]
+        loss = log_std + 0.5 * torch.exp(-2 * log_std) * (target - mu) ** 2
+        return loss
+
+    def optimize(self, train_config: TrainConfigs):
+        self.logger.print_it('Quantile MIA attacker: setting quantiles and loss function...')
+        # Set up quantiles
+        device = self.get_device(dev_str=train_config)
+        if self.attack_configs.use_logscale:
+            log_low = np.log10(self.attack_configs.low_quantile)
+            log_high = np.log10(self.attack_configs.high_quantile)
+            self.quantile = torch.sort(
+                                torch.logspace(log_low, log_high, self.attack_configs.n_quantile)
+                            )[0].reshape([1, -1]).to(device)
+        else:
+            self.quantile = torch.linspace(self.attack_configs.low_quantile,
+                                    self.attack_configs.high_quantile,
+                                    self.attack_configs.n_quantile).reshape([1, -1]).to(device)
+        self.quantile_loss_fn = self.gaussian_loss_fn if self.attack_configs.use_gaussian else self.pinball_loss_fn
+        train_config.loss = self.quantile_loss_fn
+
+        self.logger.print_it('Quantile MIA attacker: constructing quantile dataset...')
+        self.victim_model.eval()
+        features = []
+        target_scores = []
+        shadow_dataset = self.shadow_manager.get_dataset(index=0,
+                                                        labels='original')
+        shadow_loader = DataLoader(shadow_dataset, batch_size=1, shuffle=False)
+        with torch.no_grad():
+            for data, target in shadow_loader:
+                features.append(data)
+                target_score, _ = self.victim_scoring_fn(data, target, device=train_config.device)
+                target_scores.append(target_score)
+        features = torch.cat(features)
+        target_scores = torch.cat(target_scores)
+        quantile_dataset = TensorDataset(features, target_scores)
+
+        self.logger.print_it('Quantile MIA attacker: training quantile model. This will take a while. Sit back and chill...')
+        start = time.time()
+        logger = get_logger(name='{} quantile shadow'.format(self.logger.name),
+                            log_folder=self.logger.get_folder(),
+                            mode=self.logger.get_mode())
+        train_manager = TrainManager(train_configs=train_config,
+                                    name='quantile shadow',
+                                    logger=logger)
+        train_manager.initialize_train(dataset=quantile_dataset,
+                                        model=self.shadow_manager.get_model(index=0),
+                                        configs=train_config)
+        quantile_model = train_manager.train(return_model=True)
+        self.shadow_manager.update_model(index=0,
+                                        model=quantile_model)
+        stop = time.time()
+        self.reset_logger()
+        h, m, s = convert_to_hms(stop-start)
+        self.logger.print_it('Quantile MIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
+
+
+    def victim_scoring_fn(self, data: torch.Tensor, target: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+        if isinstance(device, str):
+            device = QuantileMIA.get_device(dev_str=device)
+        self.victim_model.eval()
+        with torch.no_grad():
+            logits = self.victim_model(data.to(device)).detach().cpu()
+            onehot_label = torch.nn.functional.one_hot(target, num_classes=logits.shape[-1]).bool()
+            score = logits[onehot_label]
+            # Mask out the true label before taking max over incorrect labels
+            logits_masked = logits.masked_fill(onehot_label, float('-inf'))
+            score -= torch.max(logits_masked, dim=1)[0]
+        return score, logits
+
+    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+        self.logger.print_it('Computing Quantile MIA scores. This may take a while...')
+        start = time.time()
+        if isinstance(device, str):
+            device = QuantileMIA.get_device(dev_str=device)
+        quantile_model = self.shadow_manager.get_model(index=0).to(device)
+        quantile_model.eval()
+        self.victim_model.eval()
+        audit_dataset = self.audit_manager.get(labels='original')
+        self.reset_logger()
+        tot_samples = len(audit_dataset)
+        audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
+        scores = np.zeros((len(audit_dataset), ))
+        for sample_index, (sample, label) in enumerate(audit_loader):
+            self.logger.print_it_same_line(f'Computing score for sample {sample_index+1}/{tot_samples}. This may take a while...')
+            with torch.no_grad():
+                target_score, _ = self.victim_scoring_fn(sample, label, device=device)
+                predicted_scores = quantile_model(sample.to(device))
+                
+                if self.attack_configs.use_gaussian:
+                    mu = predicted_scores[:, 0]
+                    log_std = predicted_scores[:, 1]
+                    predicted_scores = mu.reshape([-1, 1]) + torch.exp(log_std).reshape([-1, 1]) * torch.erfinv(2 * self.quantile.to(predicted_scores.device) - 1).reshape([1, -1]) * math.sqrt(2)
+                quantile_value = 1 - self.attack_configs.quantile_alpha
+                quantile_index = torch.argmin(torch.abs(self.quantile - quantile_value))
+                score = target_score.detach().cpu().item() - predicted_scores[0, quantile_index].detach().cpu().item()
+                scores[sample_index] = score
+        self.logger.set_logger_newline()
+        stop = time.time()
+        h, m, s = convert_to_hms(stop-start)
+        self.logger.print_it('Quantile MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))
+
+        metrics = self.compute_stats(scores)
+        self.logger.print_it('Quantile MIA attacker: Obtained scores are: {}'.format(metrics))
+        return metrics
+    
