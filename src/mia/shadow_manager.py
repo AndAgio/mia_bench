@@ -46,7 +46,9 @@ class ShadowManager(Loggable):
                                                                     labels=labels_mode),
                                         model=self.shadow_models.get(index=id),
                                         configs=train_configs)
-        model = train_manager.train(return_model=True)
+        model = train_manager.train(return_best_model=False,
+                                    return_last_model=True,
+                                    return_stats=False)
         self.shadow_models.update(index=id,
                                 model=model)
         self.logger.print_it(f'Finished training shadow model with ID {id} on the corresponding dataset!')

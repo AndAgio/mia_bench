@@ -108,9 +108,9 @@ class LiRA(BaseMIA):
                 else:
                     raise ValueError('Model should be either a torch Module or an integer referring to the id of the shadow model!')
                 phi = LiRA.compute_phi(model=model,
-                                                    data=sample,
-                                                    target=label,
-                                                    device=device)
+                                        data=sample,
+                                        target=label,
+                                        device=device)
                 phis[sample_index, model_index] = phi
         self.logger.set_logger_newline()
         return phis

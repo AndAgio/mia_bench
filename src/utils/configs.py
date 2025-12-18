@@ -2,9 +2,13 @@ import pathlib
 from dataclasses import dataclass
 from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
 from pydantic import validate_arguments
-from typing import Optional, Tuple, Union, Callable
+from typing import Optional, Tuple, Union, Callable, List
+import torch
 
+Loss = Union[str, Callable] # , torch.nn.Module
 
+# TODO: Fix TrainConfigs class to work with torch module loss and with list of metrics.
+# assignees: AndAgio
 @validate_arguments
 @dataclass
 class TrainConfigs:
@@ -14,11 +18,15 @@ class TrainConfigs:
     epochs: int
     batch_size: int
     # Optional arguments with default values
-    loss: Optional[Union[str, Callable]] = 'crossentropy'
+    loss: Optional[Loss] = 'crossentropy'
+    metrics: Optional[Tuple[Union[str, Callable], ...]] = ('multi_class_accuracy')
+    metric_to_track: Optional[str] = 'multi_class_accuracy'
     lr_sched: Optional[str] = 'const'
     device: Optional[str] = 'cpu'
-    seed: Optional[int] = 12345
+    use_grad_scaling: Optional[bool] = False
     distributed: Optional[bool] = False
+    seed: Optional[int] = 12345
+    resume: Optional[bool] = True
     ckpts_folder: Optional[pathlib.Path] = DEFAULT_MODELS_FOLDER
     resume_ckpts_folder: Optional[pathlib.Path] = DEFAULT_RESUME_CKPTS_FOLDER
 

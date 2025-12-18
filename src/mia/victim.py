@@ -2,9 +2,7 @@ from typing import Union
 from src.data import get_dataset
 from src.models import get_model
 from src.trainer.train_manager import TrainManager
-from src.utils.configs import TrainConfigs, ModelConfigs, DatasetConfigs, LogConfigs
-from src.utils.log import get_logger
-
+from src.utils.configs import TrainConfigs, ModelConfigs, DatasetConfigs
 from src.utils.log import Loggable, SmartLogger, DumbLogger
 
 
@@ -38,5 +36,7 @@ class Victim(Loggable):
         train_manager.initialize_train(dataset=self.dataset,
                                         model=self.model,
                                         configs=train_configs)
-        self.model = train_manager.train(return_model=True)
+        self.model = train_manager.train(return_best_model=True,
+                                        return_last_model=False,
+                                        return_stats=False)
         return self.model

@@ -31,18 +31,23 @@ def main():
                                         epochs=settings.victim_epochs,
                                         batch_size=settings.victim_batch_size,
                                         loss=settings.victim_loss,
+                                        metrics=settings.perf_metrics,
+                                        metric_to_track=settings.perf_metric_to_track,
                                         lr_sched=settings.victim_lr_sched,
                                         device=settings.device,
-                                        seed=settings.victim_seed,
+                                        use_grad_scaling=settings.use_grad_scaling,
                                         distributed=settings.distributed,
+                                        seed=settings.victim_seed,
+                                        resume=settings.resume,
                                         ckpts_folder=exp_ckpts_folder,
                                         resume_ckpts_folder=exp_resume_ckpts_folder)
-
+    print(victim_train_configs.metrics)
+    print(victim_train_configs.metric_to_track)
     victim = Victim(dataset_configs=dataset_configs,
                     model_configs=victim_model_configs,
                     logger=get_logger_from_configs(victim_log_configs))
     victim_model = victim.train_model(train_configs=victim_train_configs,)
-    
+
 
     attacker_log_configs = LogConfigs(name='attacker',
                                     log_folder=exp_log_folder,
@@ -56,10 +61,14 @@ def main():
                                         epochs=settings.att_epochs,
                                         batch_size=settings.att_batch_size,
                                         loss=settings.att_loss,
+                                        metrics=settings.perf_metrics,
+                                        metric_to_track=settings.perf_metric_to_track,
                                         lr_sched=settings.att_lr_sched,
                                         device=settings.device,
-                                        seed=settings.att_seed,
+                                        use_grad_scaling=settings.use_grad_scaling,
                                         distributed=settings.distributed,
+                                        seed=settings.att_seed,
+                                        resume=settings.resume,
                                         ckpts_folder=exp_ckpts_folder,
                                         resume_ckpts_folder=exp_resume_ckpts_folder)
     attacker_audit_configs = AuditingDataConfigs(n_auditing_samples=settings.n_auditing_samples,
@@ -99,6 +108,8 @@ def main():
         attacker.optimize(train_config=attacker_train_configs)
         attacker.measure_effectiveness(device=attacker_train_configs.device)
     elif settings.attack_mode == 'quantile':
+        attacker_train_configs.metric_to_track = "quantile_coverage"
+        attacker_train_configs.metrics = ["quantile_coverage"]
         attack_configs = AttackConfigs(n_quantile=settings.n_quantile,
                                         low_quantile=settings.low_quantile,
                                         high_quantile=settings.high_quantile,

@@ -35,19 +35,6 @@ class QuantileMIA(BaseMIA):
         self.shadow_manager.build_shadow_models(n_models=1,
                                                 model_configs=model_configs)
 
-    # Helper functions
-    def pinball_loss_fn(self, score, target):
-        target = target.reshape([-1, 1])
-        delta_score = target - score
-        loss = torch.nn.functional.relu(delta_score) * self.quantile + torch.nn.functional.relu(-delta_score) * (1.0 - self.quantile)
-        return loss
-
-    def gaussian_loss_fn(self, score, target):
-        mu = score[:, 0]
-        log_std = score[:, 1]
-        loss = log_std + 0.5 * torch.exp(-2 * log_std) * (target - mu) ** 2
-        return loss
-
     def optimize(self, train_config: TrainConfigs):
         self.logger.print_it('Quantile MIA attacker: setting quantiles and loss function...')
         # Set up quantiles
@@ -62,7 +49,7 @@ class QuantileMIA(BaseMIA):
             self.quantile = torch.linspace(self.attack_configs.low_quantile,
                                     self.attack_configs.high_quantile,
                                     self.attack_configs.n_quantile).reshape([1, -1]).to(device)
-        self.quantile_loss_fn = self.gaussian_loss_fn if self.attack_configs.use_gaussian else self.pinball_loss_fn
+        self.quantile_loss_fn = GaussianLoss().to(device) if self.attack_configs.use_gaussian else PinballLoss(quantile=self.quantile).to(device)
         train_config.loss = self.quantile_loss_fn
 
         self.logger.print_it('Quantile MIA attacker: constructing quantile dataset...')
@@ -92,7 +79,10 @@ class QuantileMIA(BaseMIA):
         train_manager.initialize_train(dataset=quantile_dataset,
                                         model=self.shadow_manager.get_model(index=0),
                                         configs=train_config)
-        quantile_model = train_manager.train(return_model=True)
+        quantile_model = train_manager.train(extra_configs={'quantiles': self.quantile},
+                                            return_last_model=True,
+                                            return_best_model=False,
+                                            return_stats=False)
         self.shadow_manager.update_model(index=0,
                                         model=quantile_model)
         stop = time.time()
@@ -147,6 +137,29 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it('Quantile MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))
 
         metrics = self.compute_stats(scores)
-        self.logger.print_it('Quantile MIA attacker: Obtained scores are: {}'.format(metrics))
+        self.logger.print_it('Quantile MIA attacker: Obtained AUC score is: {}'.format(metrics['auc']))
         return metrics
     
+
+# Custom loss functions
+class PinballLoss(torch.nn.Module):
+    def __init__(self, quantile: torch.Tensor):
+        super(PinballLoss, self).__init__()
+        self.quantile = quantile
+    
+    def forward(self, input: torch.Tensor, target: torch.Tensor):
+        target = target.reshape([-1, 1])
+        delta_score = target - input
+        loss = torch.nn.functional.relu(delta_score) * self.quantile + torch.nn.functional.relu(-delta_score) * (1.0 - self.quantile)
+        return loss
+
+
+class GaussianLoss(torch.nn.Module):
+    def __init__(self):
+        super(GaussianLoss, self).__init__()
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor):
+        mu = input[:, 0]
+        log_std = input[:, 1]
+        loss = log_std + 0.5 * torch.exp(-2 * log_std) * (target - mu) ** 2
+        return loss
