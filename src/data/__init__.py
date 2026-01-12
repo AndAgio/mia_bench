@@ -108,7 +108,7 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, au
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
     info = get_dataset_info_from_name(dataset=dataset)
-    printer_func('Gathered dataset "{}":\tTraining samples = {} '
+    printer_func('Gathered dataset "{}": Training samples = {} '
                         '& Testing samples = {}'.format(dataset,
                                                         len(train_dataset),
                                                         len(test_dataset)))

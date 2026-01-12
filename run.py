@@ -41,8 +41,7 @@ def main():
                                         resume=settings.resume,
                                         ckpts_folder=exp_ckpts_folder,
                                         resume_ckpts_folder=exp_resume_ckpts_folder)
-    print(victim_train_configs.metrics)
-    print(victim_train_configs.metric_to_track)
+    
     victim = Victim(dataset_configs=dataset_configs,
                     model_configs=victim_model_configs,
                     logger=get_logger_from_configs(victim_log_configs))
