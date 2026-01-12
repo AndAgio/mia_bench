@@ -63,10 +63,10 @@ def gather_settings():
     # parser.add_argument('--models_visualization_folder', type=pathlib.Path, default='models_graphviz')
 
     # parser.add_argument('--resume_ckpts_folder', type=str, default='resume_ckpts')
-    parser.add_argument("--resume", action="store_true", default=True,
+    parser.add_argument("--resume", action="store_true", default=False,
                         help="resume training from last checkpoint found",)
     
-    parser.add_argument("--data_augmentation", action="store_true", default=True,
+    parser.add_argument("--data_augmentation", action="store_true", default=False,
                         help="augment data by flipping and cropping",)
     
 
