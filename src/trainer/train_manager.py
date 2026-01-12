@@ -75,10 +75,9 @@ class TrainManager(Loggable):
         # For MPS (Apple Silicon):
         if hasattr(torch, "mps") and torch.backends.mps.is_available():
             torch.mps.manual_seed(seed)
-        # Enforce deterministic algorithms globally:
-        torch.use_deterministic_algorithms(True)
         # cuDNN flags (safe even if CUDA is not available):
         torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
         self.seed = seed
 
     def setup_model_from_configs(self, model_configs: ModelConfigs):
