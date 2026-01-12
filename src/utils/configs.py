@@ -8,6 +8,7 @@ import torch
 Loss = Union[str, Callable] # , torch.nn.Module
 
 # TODO: Fix TrainConfigs class to work with torch module loss and with list of metrics.
+# Issue URL: https://github.com/AndAgio/mia_bench/issues/11
 # assignees: AndAgio
 @validate_arguments
 @dataclass

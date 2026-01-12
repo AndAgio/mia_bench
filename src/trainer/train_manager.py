@@ -516,6 +516,7 @@ class TrainManager(Loggable):
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             assert not self.amp_enabled, f'GradScaler for SAM and SMA-like optimizers not yet implemented!' 
             # TODO: Implement gradscaler for SAM-like optimizers.
+            # Issue URL: https://github.com/AndAgio/mia_bench/issues/10
             # assignees: AndAgio
 
             # Working with closure
@@ -558,6 +559,7 @@ class TrainManager(Loggable):
                     loss = self.criterion(outputs, targets)
             loss = loss.mean()
             # TODO: Double-check that loss.mean() is ok with gradscaler.
+            # Issue URL: https://github.com/AndAgio/mia_bench/issues/9
             # assignees: AndAgio
             loss.backward() if not self.amp_enabled else self.grad_scaler.scale(loss).backward()
             self.optimizer.step() if not self.amp_enabled else self.grad_scaler.step(self.optimizer)
