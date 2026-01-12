@@ -84,6 +84,8 @@ class LiRA(BaseMIA):
 
         scores = p_in/(p_out+1e-15)
 
+        self.logger.print_it(f'LiRA attacker: scores = {scores}')
+
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('LiRA attacker: score computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))
