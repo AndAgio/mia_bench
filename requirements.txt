@@ -11,3 +11,6 @@ wget
 scikit-learn
 graphviz
 pysdd
+pydantic
+python-telegram-bot
+PyYaml
