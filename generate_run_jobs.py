@@ -56,7 +56,7 @@ for dataset in DATASETS:
 
                 # Define python script to launch
                 text += f"\n\npython run.py --dataset='{dataset}' --victim_epochs={VICTIM_EPOCHS} --att_epochs={ATTACKER_EPOCHS} "\
-                        f"--n_shadows={N_SHADOWS if dataset in ['on_rmia', 'off_rmia', 'lira'] else 1} --device=0 "\
+                        f"--n_shadows={N_SHADOWS if attack in ['on_rmia', 'off_rmia', 'lira'] else 1} --device=0 "\
                         f"--n_samples_per_shadow_dataset={SAMPLES_SHADOW} --n_auditing_samples={SAMPLES_AUDIT} --attack_mode='{attack}' "\
                         f"--resume"
 
