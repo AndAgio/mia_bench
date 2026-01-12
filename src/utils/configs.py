@@ -92,7 +92,7 @@ def get_im_size_from_name(dataset: str):
         im_size = (28, 28)
     elif dataset == 'imagenet':
         im_size = (224, 224)
-    elif dataset == 'tiny_imagenet':
+    elif dataset == 'tinyimagenet':
         im_size = (64, 64)
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
@@ -109,7 +109,7 @@ def get_im_channels_from_name(dataset: str):
         im_channels = 1
     elif dataset == 'imagenet':
         im_channels = 3
-    elif dataset == 'tiny_imagenet':
+    elif dataset == 'tinyimagenet':
         im_channels = 3
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
@@ -126,7 +126,7 @@ def get_num_classes_from_name(dataset: str):
         num_classes = 10
     elif dataset == 'imagenet':
         num_classes = 1000
-    elif dataset == 'tiny_imagenet':
+    elif dataset == 'tinyimagenet':
         num_classes = 200
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))

@@ -22,7 +22,7 @@ def main():
     FashionMNIST(root=root, train=True, download=True, transform=None)
     FashionMNIST(root=root, train=False, download=True, transform=None)
     print('Downloading TinyImageNet...')
-    root = os.path.join(settings.datasets_folder, 'tiny_imagenet')
+    root = os.path.join(settings.datasets_folder, 'tinyimagenet')
     TinyImageNet(root=root, train=True, transform=None)
     TinyImageNet(root=root, train=False, transform=None)
     print('Downloading ImageNet...')

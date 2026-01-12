@@ -70,14 +70,14 @@ class TinyImageNet(Dataset):
         self.data = np.array(self.data)
 
     def download_file(self):
-        tiny_imagenet_url = 'http://cs231n.stanford.edu/tiny-imagenet-200.zip'
+        tinyimagenet_url = 'http://cs231n.stanford.edu/tiny-imagenet-200.zip'
         if not os.path.exists(self.root_dir):
             os.makedirs(self.root_dir)  # Create folder if it does not exist
 
-        filename = tiny_imagenet_url.split('/')[-1].replace(" ", "_")  # Be sure to replace spaces with '_'
+        filename = tinyimagenet_url.split('/')[-1].replace(" ", "_")  # Be sure to replace spaces with '_'
         file_path = os.path.join(self.root_dir, filename)
 
-        r = requests.get(tiny_imagenet_url, stream=True)
+        r = requests.get(tinyimagenet_url, stream=True)
         if r.ok:
             print("Saving to", os.path.abspath(file_path))
             with open(file_path, 'wb') as f:
