@@ -1,5 +1,5 @@
 import os
-from src.data import CIFAR10, CIFAR100, SVHN, FashionMNIST, ImageNet, TinyImageNet
+from src.data import CIFAR10, CIFAR100, SVHN, FashionMNIST, ImageNet, TinyImageNet, ImageNet1K
 from src.utils import gather_settings
 
 
@@ -29,6 +29,10 @@ def main():
     root = os.path.join(settings.datasets_folder, 'imagenet')
     ImageNet(root=root, split='train', download=True, transform=None)
     ImageNet(root=root, split='val', download=True, transform=None)
+    print('Downloading ImageNet1K...')
+    root = os.path.join(settings.datasets_folder, 'imagenet1k')
+    ImageNet1K(root=root, split='train', download=True, transform=None)
+    ImageNet1K(root=root, split='val', download=True, transform=None)
     print('Done!')
 
 if __name__=='__main__':

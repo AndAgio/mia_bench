@@ -10,6 +10,7 @@ from torchvision.datasets import CIFAR10
 from torchvision.datasets import SVHN
 from torchvision.datasets import FashionMNIST
 from .imagenet import ImageNet
+from .imagenet1k import ImageNet1K
 from .tiny_imagenet import TinyImageNet
 from .wrapper import DatasetWrapper
 from .multi import MultiDatasets
@@ -45,7 +46,7 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, au
         std = [0.3530]
         train_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
         test_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
-    elif dataset == 'imagenet':
+    elif dataset in ['imagenet', 'imagenet1k']:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
         train_transform = transforms.Compose([])
@@ -96,6 +97,10 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, au
         root = os.path.join(datasets_folder, 'imagenet')
         train_dataset = ImageNet(root=root, split='train', download=True, transform=train_transform)
         test_dataset = ImageNet(root=root, split='val', download=True, transform=test_transform)
+    elif dataset == 'imagenet1k':
+        root = os.path.join(datasets_folder, 'imagenet1k')
+        train_dataset = ImageNet1K(root=root, split='train', download=True, transform=train_transform)
+        test_dataset = ImageNet1K(root=root, split='val', download=True, transform=test_transform)
     elif dataset == 'tiny_imagenet':
         root = os.path.join(datasets_folder, 'tiny_imagenet')
         train_dataset = TinyImageNet(root=root, train=True, transform=train_transform)
