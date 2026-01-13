@@ -38,7 +38,7 @@ class QuantileMIA(BaseMIA):
     def optimize(self, train_config: TrainConfigs):
         self.logger.print_it('Quantile MIA attacker: setting quantiles and loss function...')
         # Set up quantiles
-        device = self.get_device(dev_str=train_config)
+        device = self.get_device(dev_str=train_config.device)
         if self.attack_configs.use_logscale:
             log_low = np.log10(self.attack_configs.low_quantile)
             log_high = np.log10(self.attack_configs.high_quantile)
