@@ -400,10 +400,6 @@ class TrainManager(Loggable):
     def train(self, extra_configs: dict[str, Any] = None, return_best_model: bool = True, return_last_model: bool = False, return_stats: bool = False):
         self.extra_configs = extra_configs
         
-        self.amp_enabled = bool(self.train_configs.use_grad_scaling) and torch.cuda.is_available()
-        self.grad_scaler = torch.amp.GradScaler(device=self.train_configs.device,
-                                            enabled=self.amp_enabled)
-        
 
         # Checkpoint manager works in both single and DDP
         self.ckpts_manager = CheckpointManager(
@@ -411,7 +407,6 @@ class TrainManager(Loggable):
             optimizer=self.optimizer,
             checkpoint_dir=self.resume_folder, # self.ckpts_folder, #self.train_configs.ckpts_folder,
             scheduler=self.scheduler,
-            scaler=self.grad_scaler if self.amp_enabled else None,  # persist scaler only if AMP is enabled
             logger=self.logger,
         )
 
@@ -513,12 +508,7 @@ class TrainManager(Loggable):
         self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
-            assert not self.amp_enabled, f'GradScaler for SAM and SMA-like optimizers not yet implemented!' 
-            # TODO: Implement gradscaler for SAM-like optimizers.
-            # Issue URL: https://github.com/AndAgio/mia_bench/issues/10
-            # assignees: AndAgio
-
-            # Working with closure
+            # SAM-like optimizers use a closure that handles two forward/backward passes.
             def closure(inputs, targets, mean=True, backward=True, run_stats=True):
                 if run_stats:
                     enable_running_stats(self.model)
@@ -534,36 +524,15 @@ class TrainManager(Loggable):
             self.optimizer.step(closure, inputs, targets)
             self.optimizer.zero_grad()
             loss, outputs = self.optimizer.get_first_closure_outputs()
-            # An alternative to running with closure is to run manually both steps of the sam-like optimizers, like the following.
-            # # first forward-backward step
-            # enable_running_stats(self.model)
-            # outputs = self.model(inputs)
-            # loss = self.criterion(outputs, targets).mean()
-            # loss.backward()
-            # self.optimizer.first_step(zero_grad=True)
-            # # second forward-backward step
-            # disable_running_stats(self.model)
-            # self.criterion(self.model(inputs), targets).mean().backward()
-            # self.optimizer.second_step(zero_grad=True)
+            # An alternative to running with closure is to run manually both steps of the sam-like optimizers.
         else:
-            # Forward propagation, compute loss, get predictions
-            if not self.amp_enabled:
-                self.optimizer.zero_grad()
-                outputs = self.model(inputs)
-                loss = self.criterion(outputs, targets)
-            else:
-                # AMP path: autocast + GradScaler
-                with torch.amp.autocast(self.device.type):
-                    outputs = self.model(inputs)
-                    loss = self.criterion(outputs, targets)
+            # Forward propagation, compute loss, get predictions (no GradScaler/AMP)
+            self.optimizer.zero_grad()
+            outputs = self.model(inputs)
+            loss = self.criterion(outputs, targets)
             loss = loss.mean()
-            # TODO: Double-check that loss.mean() is ok with gradscaler.
-            # Issue URL: https://github.com/AndAgio/mia_bench/issues/9
-            # assignees: AndAgio
-            loss.backward() if not self.amp_enabled else self.grad_scaler.scale(loss).backward()
-            self.optimizer.step() if not self.amp_enabled else self.grad_scaler.step(self.optimizer)
-            if self.amp_enabled:
-                self.grad_scaler.update()
+            loss.backward()
+            self.optimizer.step()
         
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))

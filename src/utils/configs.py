@@ -24,7 +24,6 @@ class TrainConfigs:
     metric_to_track: Optional[str] = 'multi_class_accuracy'
     lr_sched: Optional[str] = 'const'
     device: Optional[str] = 'cpu'
-    use_grad_scaling: Optional[bool] = False
     distributed: Optional[bool] = False
     seed: Optional[int] = 12345
     resume: Optional[bool] = True

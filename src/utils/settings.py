@@ -43,8 +43,6 @@ def gather_settings():
                         help='weight decay')
     parser.add_argument('--victim_seed', type=int, default=12345,
                         help='random seed (default:12345)')
-    parser.add_argument("--use_grad_scaling", action="store_true", default=False,
-                        help="use gradient scaling in training",)
     
     # Hardware related settings
     parser.add_argument("--device", default='0',

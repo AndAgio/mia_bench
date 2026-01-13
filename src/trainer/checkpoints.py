@@ -47,13 +47,11 @@ class CheckpointManager:
         optimizer: torch.optim.Optimizer,
         checkpoint_dir: Path,
         scheduler: Optional[Any] = None,
-        scaler: Optional[Any] = None,
         logger: Optional[Any] = None,
     ):
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.scaler = scaler
         self.logger = logger
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -167,8 +165,6 @@ class CheckpointManager:
         }
         if self.scheduler is not None:
             ckpt["scheduler_state"] = self.scheduler.state_dict()
-        if self.scaler is not None:
-            ckpt["scaler_state"] = self.scaler.state_dict()
         ckpt["rng"] = self._capture_rng_state()
         return ckpt
 
@@ -196,8 +192,6 @@ class CheckpointManager:
         self.optimizer.load_state_dict(ckpt["optimizer_state"])
         if self.scheduler is not None and "scheduler_state" in ckpt:
             self.scheduler.load_state_dict(ckpt["scheduler_state"])
-        if self.scaler is not None and "scaler_state" in ckpt:
-            self.scaler.load_state_dict(ckpt["scaler_state"])
 
     def restore_rng(self, ckpt: Dict[str, Any]) -> None:
         rng = ckpt.get("rng")
