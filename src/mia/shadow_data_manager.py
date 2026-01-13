@@ -52,6 +52,7 @@ class ShadowDatasetsManager(Loggable):
         train_data = self.original_datasets.get('train')
         test_data = self.original_datasets.get('test')
         # TODO: Add method to store and load shadow datasets from memory (pickling them) since defining a large amount of shadow datasets (like 50) takes very long.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/12
         # assignees: AndAgio
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
         if self.mode == 'online':
