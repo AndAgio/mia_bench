@@ -426,20 +426,37 @@ class TrainStats:
         self._timer_t0 = time.perf_counter()
 
     def update_timer(self) -> float:
-        self._timer_sec += (time.perf_counter() - self._timer_t0)
+        # If timer was never started, nothing to update
+        if self._timer_t0 is None:
+            return self._timer_sec
+        # Add elapsed since last checkpoint, then reset checkpoint to now
+        now = time.perf_counter()
+        elapsed = now - self._timer_t0
+        self._timer_sec += elapsed
+        self._timer_t0 = now
         return self._timer_sec
 
     def restore_timer(self, total_seconds: float) -> None:
         self._timer_sec = float(total_seconds)
 
     def total_time(self) -> float:
-        return self._timer_sec
+        # If timer is currently running, include the in-progress interval
+        if self._timer_t0 is None:
+            return self._timer_sec
+        return self._timer_sec + (time.perf_counter() - self._timer_t0)
     
     def get_current_running_time(self, op: str = "max") -> float:
+        # Compute full total time including accumulated and current running interval
+        if self._timer_t0 is None:
+            total = float(self._timer_sec)
+        else:
+            total = float(self._timer_sec + (time.perf_counter() - self._timer_t0))
+
         if not _dist_ready():
-            return time.perf_counter() - self._timer_t0
+            return total
+
         dev = _collective_device()
-        t = torch.tensor([time.perf_counter() - self._timer_t0], dtype=torch.float64, device=dev)
+        t = torch.tensor([total], dtype=torch.float64, device=dev)
         reduce_op = dist.ReduceOp.MAX if op == "max" else dist.ReduceOp.SUM
         dist.all_reduce(t, op=reduce_op)
         if op == "mean":

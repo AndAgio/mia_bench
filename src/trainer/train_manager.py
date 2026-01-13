@@ -444,7 +444,6 @@ class TrainManager(Loggable):
         maybe_cleanup_ddp()
 
         h, m, s = convert_to_hms(self.train_stats_tracker.total_time())
-        self.logger.print_it(f'Debugging time taken is: {self.train_stats_tracker.total_time()}')
         self.logger.print_it('Training for "{}" with seed {} completed in: {}:{:02d}:{:02d}'.format(self.model.name, self.seed, h, m, s))
 
         best_model = self.ckpts_manager.load_best_model()
