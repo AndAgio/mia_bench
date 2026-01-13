@@ -35,12 +35,16 @@ def gather_settings():
                         help='performance metrics to be used for training', choices=['accuracy', 'mse', 'mae', 'rmse'])
     parser.add_argument('--perf_metric_to_track', type=str, required=False, default='accuracy',
                         help='performance metric to track best model while training', choices=['accuracy', 'mse', 'mae', 'rmse'])
-    parser.add_argument('--victim_lr', type=float, required=False, default=0.001,
+    parser.add_argument('--victim_lr', type=float, required=False, default=0.01,
                         help='learning rate')
     parser.add_argument('--victim_lr_sched', type=str, required=False, default='cosine',
                         help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
-    parser.add_argument('--victim_weight_decay', type=float, required=False, default=1e-5,
+    parser.add_argument('--victim_weight_decay', type=float, required=False, default=5e-4,
                         help='weight decay')
+    parser.add_argument('--victim_momentum', type=float, required=False, default=0.9,
+                        help='momentum')
+    parser.add_argument('--victim_nesterov', action="store_true", default=False,
+                        help='nesterov')
     parser.add_argument('--victim_seed', type=int, default=12345,
                         help='random seed (default:12345)')
     
@@ -119,12 +123,16 @@ def gather_settings():
                         help='input batch size for training')
     parser.add_argument('--att_loss', type=str, required=False, default='crossentropy',
                         help='loss to be used for training', choices=['crossentropy'])
-    parser.add_argument('--att_lr', type=float, required=False, default=0.001,
+    parser.add_argument('--att_lr', type=float, required=False, default=0.01,
                         help='learning rate')
     parser.add_argument('--att_lr_sched', type=str, required=False, default='cosine',
                         help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
-    parser.add_argument('--att_weight_decay', type=float, required=False, default=1e-5,
+    parser.add_argument('--att_weight_decay', type=float, required=False, default=5e-4,
                         help='weight decay')
+    parser.add_argument('--att_momentum', type=float, required=False, default=0.9,
+                        help='momentum')
+    parser.add_argument('--att_nesterov', action="store_true", default=False,
+                        help='nesterov')
     parser.add_argument('--att_seed', type=int, default=12345,
                         help='random seed (default:12345)')
     

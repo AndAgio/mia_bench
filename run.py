@@ -1,6 +1,7 @@
 import os
+from dataclasses import asdict
 from src.utils.settings import gather_settings
-from src.utils.configs import TrainConfigs, LogConfigs, ModelConfigs, DatasetConfigs, AuditingDataConfigs, ShadowDataConfigs, AttackConfigs
+from src.utils.configs import TrainConfigs, LogConfigs, ModelConfigs, DatasetConfigs, AuditingDataConfigs, ShadowDataConfigs, AttackConfigs, OptimizerConfigs, SchedulerConfigs
 from src.utils.log import get_logger_from_configs
 from src.mia.victim import Victim
 from src.mia.rmia import RMIA
@@ -26,16 +27,22 @@ def main():
                                         im_channels=dataset_configs.im_channels,
                                         num_classes=dataset_configs.num_classes,
                                         im_size=dataset_configs.im_size,)
-    victim_train_configs = TrainConfigs(optimizer=settings.victim_optimizer,
+    victim_optimizer_config = OptimizerConfigs(name=settings.victim_optimizer,
                                         lr=settings.victim_lr,
-                                        epochs=settings.victim_epochs,
+                                        weight_decay=settings.victim_weight_decay,
+                                        momentum=settings.victim_momentum,
+                                        nesterov=settings.victim_nesterov,)
+    victim_scheduler_config = SchedulerConfigs(name=settings.victim_lr_sched,
+                                            lr=settings.victim_lr,
+                                            epochs=settings.victim_epochs,)
+    victim_train_configs = TrainConfigs(optimizer_config=asdict(victim_optimizer_config),
+                                        scheduler_config=asdict(victim_scheduler_config),
                                         batch_size=settings.victim_batch_size,
                                         loss=settings.victim_loss,
                                         metrics=settings.perf_metrics,
                                         metric_to_track=settings.perf_metric_to_track,
                                         lr_sched=settings.victim_lr_sched,
                                         device=settings.device,
-                                        use_grad_scaling=settings.use_grad_scaling,
                                         distributed=settings.distributed,
                                         seed=settings.victim_seed,
                                         resume=settings.resume,
@@ -55,16 +62,21 @@ def main():
                                         im_channels=dataset_configs.im_channels,
                                         num_classes=dataset_configs.num_classes,
                                         im_size=dataset_configs.im_size,)
-    attacker_train_configs = TrainConfigs(optimizer=settings.att_optimizer,
+    attacker_optimizer_config = OptimizerConfigs(name=settings.att_optimizer,
                                         lr=settings.att_lr,
-                                        epochs=settings.att_epochs,
+                                        weight_decay=settings.att_weight_decay,
+                                        momentum=settings.att_momentum,
+                                        nesterov=settings.att_nesterov,)
+    attacker_scheduler_config = SchedulerConfigs(name=settings.att_lr_sched,
+                                            lr=settings.att_lr,
+                                            epochs=settings.att_epochs,)
+    attacker_train_configs = TrainConfigs(optimizer_config=asdict(attacker_optimizer_config),
+                                        scheduler_config=asdict(attacker_scheduler_config),
                                         batch_size=settings.att_batch_size,
                                         loss=settings.att_loss,
                                         metrics=settings.perf_metrics,
                                         metric_to_track=settings.perf_metric_to_track,
-                                        lr_sched=settings.att_lr_sched,
                                         device=settings.device,
-                                        use_grad_scaling=settings.use_grad_scaling,
                                         distributed=settings.distributed,
                                         seed=settings.att_seed,
                                         resume=settings.resume,

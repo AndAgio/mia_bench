@@ -1,11 +1,32 @@
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
 from pydantic import validate_arguments
-from typing import Optional, Tuple, Union, Callable, List
+from typing import Optional, Tuple, Union, Callable, List, Dict, Any
 import torch
 
 Loss = Union[str, Callable] # , torch.nn.Module
+
+
+@validate_arguments
+@dataclass
+class OptimizerConfigs:
+    name: str = 'sgd'
+    lr: float = 0.01
+    weight_decay: float = 5e-4
+    momentum: float = 0.9
+    nesterov: bool = False
+    extra: Dict[str, Any] = field(default_factory=dict)
+
+
+@validate_arguments
+@dataclass
+class SchedulerConfigs:
+    name: str = 'cosine'
+    lr: float = 0.01
+    epochs: int = 100
+    extra: Dict[str, Any] = field(default_factory=dict)
+    
 
 # TODO: Fix TrainConfigs class to work with torch module loss and with list of metrics.
 # Issue URL: https://github.com/AndAgio/mia_bench/issues/11
@@ -14,11 +35,10 @@ Loss = Union[str, Callable] # , torch.nn.Module
 @dataclass
 class TrainConfigs:
     # Mandatory arguments
-    optimizer: str
-    lr: float
-    epochs: int
-    batch_size: int
+    optimizer_config: OptimizerConfigs
+    scheduler_config: SchedulerConfigs
     # Optional arguments with default values
+    batch_size: Optional[int] = 256
     loss: Optional[Loss] = 'crossentropy'
     metrics: Optional[Tuple[Union[str, Callable], ...]] = ('multi_class_accuracy')
     metric_to_track: Optional[str] = 'multi_class_accuracy'

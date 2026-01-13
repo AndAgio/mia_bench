@@ -18,7 +18,7 @@ from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
 from src.optimizers.schedulers import GradualWarmupScheduler, CosineAnnealingWarmupRestarts
-from src.utils.configs import TrainConfigs, ModelConfigs
+from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs
 from src.utils import convert_to_hms
 from src.trainer.stats_tracker import TrainStats, EpochStats
 from src.trainer.checkpoints import CheckpointManager
@@ -37,7 +37,7 @@ class TrainManager(Loggable):
         self.set_devices_and_seed(train_configs=self.train_configs)
 
     
-    def reset_config(self, configs: TrainConfigs):
+    def reset_configs(self, configs: TrainConfigs):
         self.train_configs = configs
         self.setup_folders(train_configs=self.train_configs)
         self.set_devices_and_seed(train_configs=self.train_configs)
@@ -97,7 +97,7 @@ class TrainManager(Loggable):
                         logger=self.logger)
         # Move model to device
         if self.distributed:
-            self.model = DDP(self.model, device_ids=[self.local_rank])
+            self.model = DDP(model, device_ids=[self.local_rank])
         else:
             self.model = model.to(self.device)
         self.model_name = model_name
@@ -145,55 +145,55 @@ class TrainManager(Loggable):
             assert metric_to_track in list(self.performance_metrics.keys()), f'Metric to track should be among tracked metrics. Found "{metric_to_track}" and {list(self.performance_metrics.keys())}!'
             self.metric_to_track = metric_to_track
 
-    def setup_optimizer(self, optimizer: str, lr: float = None):
-        self.logger.print_it('Setting up "{}" optimizer...'.format(optimizer))
-        if optimizer == 'adam':
+    def setup_optimizer(self, opt_cfg: OptimizerConfigs):
+        self.logger.print_it('Setting up "{}" optimizer...'.format(opt_cfg.name))
+        if opt_cfg.name == 'adam':
             self.optimizer = Adam(params=self.model.parameters(),
-                                lr=lr)
-        elif optimizer == 'sgd':
-            self.optimizer = SGD(params=self.model.parameters(), 
-                                lr=lr,
-                                momentum=0.9,
-                                nesterov=False,
-                                weight_decay=0.0005)
-        elif optimizer.split('_')[-1] == 'sam':
-            adaptive = True if optimizer.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
+                                lr=opt_cfg.lr)
+        elif opt_cfg.name == 'sgd':
+            self.optimizer = SGD(params=self.model.parameters(),
+                                lr=opt_cfg.lr,
+                                momentum=opt_cfg.momentum,
+                                nesterov=opt_cfg.nesterov,
+                                weight_decay=opt_cfg.weight_decay)
+        elif opt_cfg.name.split('_')[-1] == 'sam':
+            adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = SAM(params=self.model.parameters(),
                                 base_optimizer=SGD,
-                                lr=lr,
+                                lr=opt_cfg.lr,
                                 rho=0.05,
                                 adaptive=adaptive,
-                                momentum=0.9,
-                                nesterov=False,
-                                weight_decay=0.0005)
-        elif optimizer.split('_')[-1] == 'esam':
-            adaptive = True if optimizer.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
+                                momentum=opt_cfg.momentum,
+                                nesterov=opt_cfg.nesterov,
+                                weight_decay=opt_cfg.weight_decay)
+        elif opt_cfg.name.split('_')[-1] == 'esam':
+            adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = ESAM(params=self.model.parameters(),
                                 base_optimizer=SGD,
-                                lr=lr,
+                                lr=opt_cfg.lr,
                                 rho=0.05,
                                 beta=1,
                                 gamma=0.5,
                                 adaptive=adaptive,
-                                momentum=0.9,
-                                nesterov=False,
-                                weight_decay=0.0005)
-        elif optimizer.split('_')[-1] == 'wsam':
-            adaptive = True if optimizer.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
+                                momentum=opt_cfg.momentum,
+                                nesterov=opt_cfg.nesterov,
+                                weight_decay=opt_cfg.weight_decay)
+        elif opt_cfg.name.split('_')[-1] == 'wsam':
+            adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = WSAM(params=self.model.parameters(),
                                 base_optimizer=SGD,
-                                lr=lr,
+                                lr=opt_cfg.lr,
                                 rho=0.05,
                                 gamma=0.9,
                                 sam_eps=1e-12,
                                 adaptive=adaptive,
                                 decouple=True,
                                 max_norm=None,
-                                momentum=0.9,
-                                nesterov=False,
-                                weight_decay=0.0005)
-        elif optimizer.split('_')[-1] == 'looksam':
-            adaptive = True if optimizer.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
+                                momentum=opt_cfg.momentum,
+                                nesterov=opt_cfg.nesterov,
+                                weight_decay=opt_cfg.weight_decay)
+        elif opt_cfg.name.split('_')[-1] == 'looksam':
+            adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = LookSAM(params=self.model.parameters(),
                                     base_optimizer=SGD,
                                     rho=0.05,
@@ -202,10 +202,10 @@ class TrainManager(Loggable):
                                     adaptive=adaptive,
                                     use_gc=False,
                                     perturb_eps=1e-12,
-                                    nesterov=False,
-                                    weight_decay=0.0005)
-        elif optimizer.split('_')[-1] == 'friendlysam':
-            adaptive = True if optimizer.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
+                                    nesterov=opt_cfg.nesterov,
+                                    weight_decay=opt_cfg.weight_decay)
+        elif opt_cfg.name.split('_')[-1] == 'friendlysam':
+            adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = FriendlySAM(params=self.model.parameters(),
                                         base_optimizer=SGD,
                                         rho=0.05,
@@ -213,62 +213,52 @@ class TrainManager(Loggable):
                                         lmbda=0.9,
                                         adaptive=adaptive,
                                         perturb_eps=1e-12,
-                                        momentum=0.9,
-                                        nesterov=False,
-                                        weight_decay=0.0005)
+                                        momentum=opt_cfg.momentum,
+                                        nesterov=opt_cfg.nesterov,
+                                        weight_decay=opt_cfg.weight_decay)
         else:
-            raise ValueError('Specified optimizer "{}" not supported. Options are: adam and sgd and sam'.format(optimizer))
+            raise ValueError('Specified optimizer "{}" not supported. Options are: adam and sgd and sam'.format(opt_cfg.name))
 
-    def setup_lr_scheduler(self, lr_sched: str, epochs: int = None, lr: float = None):
-        self.logger.print_it('Setting up "{}" learning rate scheduler...'.format(lr_sched))
-        if lr_sched == 'const':
+    def setup_lr_scheduler(self, sched_cfg: SchedulerConfigs):
+        self.logger.print_it('Setting up "{}" learning rate scheduler...'.format(sched_cfg.name))
+        if sched_cfg.name == 'const':
             self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1)
-        elif lr_sched == 'warmup_step':
-            assert epochs is not None and epochs > 0
-            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(epochs/3), gamma=0.1)
-            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(epochs/40), after_scheduler=scheduler)
+        elif sched_cfg.name == 'warmup_step':
+            assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
+            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(sched_cfg.epochs/3), gamma=0.1)
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(sched_cfg.epochs/40), after_scheduler=scheduler)
             self.scheduler.step()
-        elif lr_sched == 'warmup_exp':
-            assert epochs is not None and epochs > 0
+        elif sched_cfg.name == 'warmup_exp':
+            assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
             scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
-            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(epochs/40), after_scheduler=scheduler)
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(sched_cfg.epochs/40), after_scheduler=scheduler)
             self.scheduler.step()
-        elif lr_sched == 'warmup_cosine':
-            assert epochs is not None and epochs > 0
-            assert lr is not None and 0 < lr < 1
-            cycle_steps = math.ceil(epochs/5)
+        elif sched_cfg.name == 'warmup_cosine':
+            assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
+            assert sched_cfg.lr is not None and 0 < sched_cfg.lr < 1
+            cycle_steps = math.ceil(sched_cfg.epochs/5)
             warmup_steps = math.ceil(cycle_steps/10)
-            max_lr=self.settings.lr
+            max_lr=sched_cfg.lr
             min_lr=max_lr/100
             self.scheduler = CosineAnnealingWarmupRestarts(self.optimizer, first_cycle_steps=cycle_steps, cycle_mult=1.0, max_lr=max_lr, min_lr=min_lr, warmup_steps=warmup_steps, gamma=0.5)
-        elif lr_sched == 'step':
-            assert epochs is not None and epochs > 0
-            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(epochs/3), gamma=0.1)
-        elif lr_sched == 'exp':
+        elif sched_cfg.name == 'step':
+            assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(sched_cfg.epochs/3), gamma=0.1)
+        elif sched_cfg.name == 'exp':
             self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
-        elif lr_sched == 'cosine':
-            assert epochs is not None and epochs > 0
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, epochs)
+        elif sched_cfg.name == 'cosine':
+            assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, sched_cfg.epochs)
         else:
-            raise ValueError('Learning rate scheduler "{}" not available!'.format(lr_sched))
+            raise ValueError('Learning rate scheduler "{}" not available!'.format(sched_cfg.name))
 
-    def setup_training(self, 
-                        loss: Union[str, Callable],
-                        metrics: list[Union[str, Callable]],
-                        metric_to_track: str,
-                        optimizer: str,
-                        lr: float,
-                        lr_sched: str,
-                        epochs: int):
+    def setup_training(self):
         self.logger.print_it('Setting up training...')
-        self.setup_loss(loss=loss)
-        self.setup_performance_metrics(metrics=metrics,
-                                    metric_to_track=metric_to_track)
-        self.setup_optimizer(optimizer=optimizer,
-                            lr=lr,)
-        self.setup_lr_scheduler(lr_sched=lr_sched,
-                                epochs=epochs, 
-                                lr=lr)
+        self.setup_loss(loss=self.train_configs.loss)
+        self.setup_performance_metrics(metrics=self.train_configs.metrics,
+                                        metric_to_track=self.train_configs.metric_to_track)
+        self.setup_optimizer(opt_cfg=self.train_configs.optimizer_config)
+        self.setup_lr_scheduler(sched_cfg=self.train_configs.scheduler_config)
         self.logger.print_it('Training setup done!')
 
     def setup_dataloaders_from_multidatasets(self, dataset: MultiDatasets, batch_size: int = 128):
@@ -366,13 +356,7 @@ class TrainManager(Loggable):
             self.setup_model_from_configs(model_configs=model)
         else:
             raise ValueError('Not recognizing model given!')
-        self.setup_training(loss=self.train_configs.loss,
-                            metrics=self.train_configs.metrics,
-                            metric_to_track=self.train_configs.metric_to_track,
-                            optimizer=self.train_configs.optimizer,
-                            lr=self.train_configs.lr,
-                            lr_sched=self.train_configs.lr_sched,
-                            epochs=self.train_configs.epochs)
+        self.setup_training()
         self.logger.print_it('Training initialization completed!')
 
 
@@ -427,7 +411,7 @@ class TrainManager(Loggable):
         self.best_perf = self.train_stats_tracker.get_best()
         self.epoch_stats_tracker = EpochStats()
 
-        while(self.epoch <= self.train_configs.epochs):
+        while(self.epoch <= self.train_configs.scheduler_config.epochs):
             self.epoch_stats_tracker.epoch_start()
             self.train_epoch()
             if self.run_test:
@@ -546,8 +530,9 @@ class TrainManager(Loggable):
         self.model.eval()
         if self.distributed:
             self.test_loader.sampler.set_epoch(self.epoch)
-        for batch_idx, (inputs, targets) in enumerate(self.test_loader):
-            self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.test_loader))
+        with torch.no_grad():
+            for batch_idx, (inputs, targets) in enumerate(self.test_loader):
+                self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.test_loader))
         self.logger.set_logger_newline()
 
         self.epoch_stats_tracker.ddp_reduce_current_stage()
@@ -572,7 +557,7 @@ class TrainManager(Loggable):
                             total_batches=total_batches)
 
     def print_message(self, index_batch, total_batches):
-        message = f'{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.epochs} |'
+        message = f'{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |'
         bar_length = 10
         progress = float(index_batch) / float(total_batches)
         if progress >= 1.:
@@ -594,8 +579,36 @@ class TrainManager(Loggable):
                 index += 1
             message += train_metrics_message
         message += '|'
+        current_lr = self.get_current_lr()
+        if current_lr is not None:
+            if isinstance(current_lr, (list, tuple)):
+                message += ' LR=[' + ','.join(f"{x:.2e}" for x in current_lr) + '] |'
+            else:
+                message += f' LR={current_lr:.2e} |'
         h,m,s = convert_to_hms(self.epoch_stats_tracker.get_current_running_time())
         message += ' Epoch time {}:{:02d}:{:02d} |'.format(h,m,s)
         h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())
         message += ' Total time {}:{:02d}:{:02d} |'.format(h,m,s)
         self.logger.print_it_same_line(message)
+
+    def get_current_lr(self):
+        # Append current learning rate(s)
+        current_lr = None
+        try:
+            opt = getattr(self, 'optimizer', None)
+            param_groups = None
+            if opt is not None:
+                param_groups = getattr(opt, 'param_groups', None)
+                # Some SAM-like wrappers expose base_optimizer
+                if param_groups is None and hasattr(opt, 'base_optimizer'):
+                    param_groups = getattr(opt.base_optimizer, 'param_groups', None)
+            if param_groups:
+                lrs = [pg.get('lr') for pg in param_groups]
+                # if all equal, show single value
+                if all(abs(lrs[0] - x) < 1e-16 for x in lrs):
+                    current_lr = lrs[0]
+                else:
+                    current_lr = lrs
+        except Exception:
+            current_lr = None
+        return current_lr
