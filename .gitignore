@@ -19,8 +19,9 @@ outs/
 *.pdf
 *.txt
 
-
+tests/
 temp.py
+debug.py
 
 
 

@@ -42,9 +42,8 @@ class ShadowDatasetsManager(Loggable):
                             'test_ids': None,
                             'all_ids': None}
         self.shadow_datasets_map = None
-        self.logger.print_it(f'Sampling {self.n_shadow_datasets} shadow datasets. This may take a while...')
         start = time.time()
-        self.logger.print_it(f'Sampling, refining and checking shadow datasets. This may take a while...')
+        self.logger.print_it(f'Sampling, refining and checking {self.n_shadow_datasets} shadow datasets. This may take a while...')
         self.sample()
         stop = time.time()
         self.logger.print_it('Sampling of {} shadow datasets completed in {:.3f} seconds'.format(self.n_shadow_datasets, stop-start))
@@ -52,40 +51,50 @@ class ShadowDatasetsManager(Loggable):
     def sample(self):
         train_data = self.original_datasets.get('train')
         test_data = self.original_datasets.get('test')
+        # TODO: Add method to store and load shadow datasets from memory (pickling them) since defining a large amount of shadow datasets (like 50) takes very long.
+        # assignees: AndAgio
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
         if self.mode == 'online':
+            # Use a set for fast membership checks and avoid rebuilding 'ids' on every small change.
             in_indices_to_add = copy.deepcopy(self.auditing_indices)
+            in_indices_set = set(in_indices_to_add)
+            train_len = len(train_data)
             for k, index_to_add in enumerate(in_indices_to_add):
                 self.logger.print_it_same_line(f'Refining online shadow datasets for sample {k+1}/{len(in_indices_to_add)}. This may take a while...')
                 n_datasets_to_randomly_sample = math.floor(self.n_shadow_datasets / 2)
                 datasets_to_modify = self._rng.choice(np.arange(self.n_shadow_datasets), n_datasets_to_randomly_sample, replace=False).tolist()
                 for dataset_to_modify in datasets_to_modify:
-                    if index_to_add < len(train_data):
-                        indices_to_replace_from = [i for i in shadow_datasets_indices[dataset_to_modify]['tr_ids'] if i not in in_indices_to_add]
+                    # Select replacement candidates excluding auditing indices using set membership (O(1)).
+                    if index_to_add < train_len:
+                        candidates = shadow_datasets_indices[dataset_to_modify]['tr_ids']
                     else:
-                        indices_to_replace_from = [i for i in shadow_datasets_indices[dataset_to_modify]['te_ids'] if i not in in_indices_to_add]
-                    index_to_substitute = self._rng.choice(indices_to_replace_from, 1, replace=False)
-                    if index_to_add < len(train_data):
+                        candidates = shadow_datasets_indices[dataset_to_modify]['te_ids']
+                    indices_to_replace_from = [i for i in candidates if i not in in_indices_set]
+                    if not indices_to_replace_from:
+                        continue
+                    # Ensure scalar Python int from numpy choice
+                    index_to_substitute = int(self._rng.choice(indices_to_replace_from, 1, replace=False)[0])
+                    if index_to_add < train_len:
                         shadow_datasets_indices[dataset_to_modify]['tr_ids'].remove(index_to_substitute)
                         shadow_datasets_indices[dataset_to_modify]['tr_ids'].append(index_to_add)
                     else:
                         shadow_datasets_indices[dataset_to_modify]['te_ids'].remove(index_to_substitute)
                         shadow_datasets_indices[dataset_to_modify]['te_ids'].append(index_to_add)
-                    shadow_datasets_indices[dataset_to_modify]['ids'] = shadow_datasets_indices[dataset_to_modify]['tr_ids'] + shadow_datasets_indices[dataset_to_modify]['te_ids']
+            # Rebuild combined ids once per dataset instead of on every modification
+            for dataset_idx in range(self.n_shadow_datasets):
+                shadow_datasets_indices[dataset_idx]['ids'] = shadow_datasets_indices[dataset_idx]['tr_ids'] + shadow_datasets_indices[dataset_idx]['te_ids']
             self.logger.set_logger_newline()
-            self.shadow_datasets_map = {i: copy.deepcopy(self.basic_dictionary) for i in range(self.n_shadow_datasets)}
-            for index in range(self.n_shadow_datasets):
-                self.shadow_datasets_map[index]['train_ids'] = copy.deepcopy(shadow_datasets_indices[index]['tr_ids'])
-                self.shadow_datasets_map[index]['test_ids'] = copy.deepcopy(shadow_datasets_indices[index]['te_ids'])
-                self.shadow_datasets_map[index]['all_ids'] = copy.deepcopy(shadow_datasets_indices[index]['ids'])
         elif self.mode == 'offline':
-            self.shadow_datasets_map = {i: copy.deepcopy(self.basic_dictionary) for i in range(self.n_shadow_datasets)}
-            for index in range(self.n_shadow_datasets):
-                self.shadow_datasets_map[index]['train_ids'] = copy.deepcopy(shadow_datasets_indices[index]['tr_ids'])
-                self.shadow_datasets_map[index]['test_ids'] = copy.deepcopy(shadow_datasets_indices[index]['te_ids'])
-                self.shadow_datasets_map[index]['all_ids'] = copy.deepcopy(shadow_datasets_indices[index]['ids'])
+            pass
         else:
             raise ValueError(f'Mode should be either online or offline! Found "{self.mode}" instead!')
+        # Copying correct indices to final map
+        self.shadow_datasets_map = {i: copy.deepcopy(self.basic_dictionary) for i in range(self.n_shadow_datasets)}
+        for index in range(self.n_shadow_datasets):
+            self.shadow_datasets_map[index]['train_ids'] = copy.deepcopy(shadow_datasets_indices[index]['tr_ids'])
+            self.shadow_datasets_map[index]['test_ids'] = copy.deepcopy(shadow_datasets_indices[index]['te_ids'])
+            self.shadow_datasets_map[index]['all_ids'] = copy.deepcopy(shadow_datasets_indices[index]['ids'])
+        # Checking for correctness
         assert self.check_in_out_correctness(), f'Something went wrong with shadow dataset sampling!'
         self.logger.print_it(f'Shadow datasets are OK for {self.mode} mode!')
 
