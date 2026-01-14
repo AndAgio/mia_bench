@@ -117,8 +117,8 @@ class QuantileMIA(BaseMIA):
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         scores = np.zeros((len(audit_dataset), ))
+        self.logger.print_it(f'Computing scores for all {tot_samples} samples. This may take a while...')
         for sample_index, (sample, label) in enumerate(audit_loader):
-            self.logger.print_it_same_line(f'Computing score for sample {sample_index+1}/{tot_samples}. This may take a while...')
             with torch.no_grad():
                 target_score, _ = self.victim_scoring_fn(sample, label, device=device)
                 predicted_scores = quantile_model(sample.to(device))
@@ -131,7 +131,6 @@ class QuantileMIA(BaseMIA):
                 quantile_index = torch.argmin(torch.abs(self.quantile - quantile_value))
                 score = target_score.detach().cpu().item() - predicted_scores[0, quantile_index].detach().cpu().item()
                 scores[sample_index] = score
-        self.logger.set_logger_newline()
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Quantile MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))

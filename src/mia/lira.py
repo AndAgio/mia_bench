@@ -99,8 +99,9 @@ class LiRA(BaseMIA):
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         phis = np.zeros((len(audit_dataset), len(models_for_sample[0])))
+        s = time.time()
+        self.logger.print_it(f'Computing phi for all {tot_samples} samples. This may take a while...')
         for sample_index, (sample, label) in enumerate(audit_loader):
-            self.logger.print_it_same_line(f'Computing phi for sample {sample_index+1}/{tot_samples}. This may take a while...')
             models = models_for_sample[sample_index]
             for model_index, model in enumerate(models):
                 if isinstance(model, torch.nn.Module):
@@ -114,7 +115,7 @@ class LiRA(BaseMIA):
                                         target=label,
                                         device=device)
                 phis[sample_index, model_index] = phi
-        self.logger.set_logger_newline()
+        self.logger.print_it(f'Computed phis in {time.time() - s} seconds.')
         return phis
 
     @staticmethod

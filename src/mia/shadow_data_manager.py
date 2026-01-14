@@ -57,8 +57,9 @@ class ShadowDatasetsManager(Loggable):
             in_indices_to_add = copy.deepcopy(self.auditing_indices)
             in_indices_set = set(in_indices_to_add)
             train_len = len(train_data)
+            s = time.time()
+            self.logger.print_it(f'Refining online shadow datasets for all {len(in_indices_to_add)} samples. This may take a while...')
             for k, index_to_add in enumerate(in_indices_to_add):
-                self.logger.print_it_same_line(f'Refining online shadow datasets for sample {k+1}/{len(in_indices_to_add)}. This may take a while...')
                 n_datasets_to_randomly_sample = math.floor(self.n_shadow_datasets / 2)
                 datasets_to_modify = self._rng.choice(np.arange(self.n_shadow_datasets), n_datasets_to_randomly_sample, replace=False).tolist()
                 for dataset_to_modify in datasets_to_modify:
@@ -78,10 +79,10 @@ class ShadowDatasetsManager(Loggable):
                     else:
                         shadow_datasets_indices[dataset_to_modify]['te_ids'].remove(index_to_substitute)
                         shadow_datasets_indices[dataset_to_modify]['te_ids'].append(index_to_add)
+            self.logger.print_it(f'Refinement executed in {time.time() - s} seconds.')
             # Rebuild combined ids once per dataset instead of on every modification
             for dataset_idx in range(self.n_shadow_datasets):
                 shadow_datasets_indices[dataset_idx]['ids'] = shadow_datasets_indices[dataset_idx]['tr_ids'] + shadow_datasets_indices[dataset_idx]['te_ids']
-            self.logger.set_logger_newline()
         elif self.mode == 'offline':
             pass
         else:
@@ -105,8 +106,9 @@ class ShadowDatasetsManager(Loggable):
         n_samples_from_victim_train = math.floor(self.n_samples_per_dataset * (1 - self.test_perc))
         n_samples_from_victim_test = self.n_samples_per_dataset - n_samples_from_victim_train
         shadow_datasets_indices = {i: {} for i in range(self.n_shadow_datasets)}
+        s = time.time()
+        self.logger.print_it(f'Sampling all {self.n_shadow_datasets} shadow datasets...')
         for i in range(self.n_shadow_datasets):
-            self.logger.print_it_same_line(f'Sampling shadow dataset {i+1}/{self.n_shadow_datasets}...')
             train_indexes = self._rng.choice(available_indices_train,
                                             n_samples_from_victim_train,
                                             replace=False).tolist()
@@ -117,7 +119,7 @@ class ShadowDatasetsManager(Loggable):
             shadow_datasets_indices[i] = {'tr_ids': train_indexes,
                                         'te_ids': test_indexes,
                                         'ids': all_indexes}
-        self.logger.set_logger_newline()
+        self.logger.print_it(f'Sampling executed in {time.time() - s} seconds.')
         return shadow_datasets_indices
     
     def check_in_out_correctness(self):
@@ -131,8 +133,9 @@ class ShadowDatasetsManager(Loggable):
             raise ValueError(f'Mode should be either online or offline! Found "{self.mode}" instead!')
         train_data = self.original_datasets.get('train')
         found_outcomes = []
+        s = time.time()
+        self.logger.print_it(f'Checking correctness of shadow datasets in {self.mode} mode for all {len(self.auditing_indices)} samples. This may take a while...')
         for k, index in enumerate(self.auditing_indices):
-            self.logger.print_it_same_line(f'Checking correctness of shadow datasets in {self.mode} mode for sample {k+1}/{len(self.auditing_indices)}. This may take a while...')
             n_ins_found = 0
             n_outs_found = 0
             n_ins_found_all = 0
@@ -157,7 +160,7 @@ class ShadowDatasetsManager(Loggable):
                         n_ins_found_all == expected_num_ins,
                         n_outs_found_all == expected_num_outs]
             found_outcomes += outcome
-        self.logger.set_logger_newline()
+        self.logger.print_it(f'Checking executed in {time.time() - s} seconds with {"positive" if all(found_outcomes) else "negative"} outcome.')
         return all(found_outcomes)
 
     def sample_random_indices(self, num_data: int = 1000):

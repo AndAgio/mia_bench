@@ -175,8 +175,9 @@ class RMIA(BaseMIA):
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         p_x_thetas = np.zeros((len(audit_dataset), len(models_for_sample[0])))
+        s = time.time()
+        self.logger.print_it(f'Computing p(x|theta) for all {tot_samples} samples. This may take a while...')
         for sample_index, (sample, label) in enumerate(audit_loader):
-            self.logger.print_it_same_line(f'Computing p(x|theta) for sample {sample_index+1}/{tot_samples}. This may take a while...')
             models = models_for_sample[sample_index]
             for model_index, model in enumerate(models):
                 if isinstance(model, torch.nn.Module):
@@ -190,7 +191,7 @@ class RMIA(BaseMIA):
                                         target=label,
                                         device=device)
                 p_x_thetas[sample_index, model_index] = p_x_theta
-        self.logger.set_logger_newline()
+        self.logger.print_it(f'Computed all p(x|theta) in {time.time() - s} seconds.')
         return p_x_thetas
 
     @staticmethod
