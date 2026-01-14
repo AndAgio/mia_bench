@@ -1,15 +1,16 @@
 import pathlib
-from dataclasses import dataclass, field
+# from dataclasses import dataclass, field
 from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
-from pydantic import validate_arguments
+from dataclasses import field
+from pydantic.dataclasses import dataclass
+from pydantic import ConfigDict
 from typing import Optional, Tuple, Union, Callable, List, Dict, Any
 import torch
 
-Loss = Union[str, Callable] # , torch.nn.Module
+Loss = Union[str, Callable[..., Any], torch.nn.Module]
 
 
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class OptimizerConfigs:
     name: str = 'sgd'
     lr: float = 0.01
@@ -19,8 +20,7 @@ class OptimizerConfigs:
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SchedulerConfigs:
     name: str = 'cosine'
     lr: float = 0.01
@@ -28,19 +28,15 @@ class SchedulerConfigs:
     extra: Dict[str, Any] = field(default_factory=dict)
     
 
-# TODO: Fix TrainConfigs class to work with torch module loss and with list of metrics.
-# Issue URL: https://github.com/AndAgio/mia_bench/issues/11
-# assignees: AndAgio
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class TrainConfigs:
-    # Mandatory arguments
-    optimizer_config: OptimizerConfigs
-    scheduler_config: SchedulerConfigs
+    # Mandatory arguments (accept either dict or OptimizerConfigs/SchedulerConfigs)
+    optimizer_config: Union[OptimizerConfigs, Dict[str, Any]]
+    scheduler_config: Union[SchedulerConfigs, Dict[str, Any]]
     # Optional arguments with default values
     batch_size: Optional[int] = 256
     loss: Optional[Loss] = 'crossentropy'
-    metrics: Optional[Tuple[Union[str, Callable], ...]] = ('multi_class_accuracy')
+    metrics: Optional[Tuple[Union[str, Callable[..., Any]], ...]] = ('multi_class_accuracy',)
     metric_to_track: Optional[str] = 'multi_class_accuracy'
     lr_sched: Optional[str] = 'const'
     device: Optional[str] = 'cpu'
@@ -50,9 +46,41 @@ class TrainConfigs:
     ckpts_folder: Optional[pathlib.Path] = DEFAULT_MODELS_FOLDER
     resume_ckpts_folder: Optional[pathlib.Path] = DEFAULT_RESUME_CKPTS_FOLDER
 
+    def __post_init__(self):
+        # normalize nested optimizer/scheduler configs
+        if isinstance(self.optimizer_config, dict):
+            self.optimizer_config = OptimizerConfigs(**self.optimizer_config)
+        if isinstance(self.scheduler_config, dict):
+            self.scheduler_config = SchedulerConfigs(**self.scheduler_config)
 
-@validate_arguments
-@dataclass
+        # normalize metrics to a tuple
+        if self.metrics is None:
+            self.metrics = tuple()
+        elif isinstance(self.metrics, (str, Callable)):
+            self.metrics = (self.metrics,)
+        elif isinstance(self.metrics, list):
+            self.metrics = tuple(self.metrics)
+
+        # metric_to_track must be one of metrics (if provided); otherwise keep as-is
+        if self.metric_to_track is None and len(self.metrics) > 0:
+            self.metric_to_track = self.metrics[0] if isinstance(self.metrics[0], str) else None
+
+        # loss: allow str, callable, or nn.Module instance — nothing to coerce here
+        # but keep a convenience hook: if the user passed a class (not instance) instantiate it without args
+        try:
+            from inspect import isclass
+        except Exception:
+            isclass = lambda x: False
+
+        if isclass(self.loss) and not isinstance(self.loss, str):
+            try:
+                self.loss = self.loss()
+            except Exception:
+                # if instantiation fails, leave as provided
+                pass
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class ModelConfigs:
     # Mandatory arguments
     model_name: str
@@ -61,8 +89,7 @@ class ModelConfigs:
     im_size: Tuple[int, ...]
 
 
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class LogConfigs:
     # Mandatory arguments
     name: str
@@ -71,8 +98,7 @@ class LogConfigs:
     log_mode: str = 'smart'
 
 
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class DatasetConfigs:
     # Mandatory arguments
     name: str
@@ -152,8 +178,7 @@ def get_num_classes_from_name(dataset: str):
     return num_classes
 
 
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class AuditingDataConfigs:
     # Mandatory arguments
     n_auditing_samples: int
@@ -162,8 +187,7 @@ class AuditingDataConfigs:
     seed: Optional[int] = 12345
 
 
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class ShadowDataConfigs:
     # Mandatory arguments
     n_shadow_datasets: int
@@ -174,8 +198,7 @@ class ShadowDataConfigs:
     seed: Optional[int] = 12345
 
 
-@validate_arguments
-@dataclass
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class AttackConfigs:
     # Optional arguments with default values
 

@@ -35,8 +35,8 @@ def main():
     victim_scheduler_config = SchedulerConfigs(name=settings.victim_lr_sched,
                                             lr=settings.victim_lr,
                                             epochs=settings.victim_epochs,)
-    victim_train_configs = TrainConfigs(optimizer_config=asdict(victim_optimizer_config),
-                                        scheduler_config=asdict(victim_scheduler_config),
+    victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_config,
+                                        scheduler_config=victim_scheduler_config,
                                         batch_size=settings.victim_batch_size,
                                         loss=settings.victim_loss,
                                         metrics=settings.perf_metrics,
@@ -70,8 +70,8 @@ def main():
     attacker_scheduler_config = SchedulerConfigs(name=settings.att_lr_sched,
                                             lr=settings.att_lr,
                                             epochs=settings.att_epochs,)
-    attacker_train_configs = TrainConfigs(optimizer_config=asdict(attacker_optimizer_config),
-                                        scheduler_config=asdict(attacker_scheduler_config),
+    attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_config,
+                                        scheduler_config=attacker_scheduler_config,
                                         batch_size=settings.att_batch_size,
                                         loss=settings.att_loss,
                                         metrics=settings.perf_metrics,
