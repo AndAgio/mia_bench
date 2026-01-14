@@ -35,6 +35,10 @@ class TrainManager(Loggable):
 
         self.setup_folders(train_configs=self.train_configs)
         self.set_devices_and_seed(train_configs=self.train_configs)
+        # Simple time-based profiler (uses time.time)
+        # `profiler_epoch` stores per-epoch accumulations, `profiler_total` stores totals across training
+        self.profiler_epoch: dict[str, float] = {}
+        self.profiler_total: dict[str, float] = {}
 
     
     def reset_configs(self, configs: TrainConfigs):
@@ -369,6 +373,8 @@ class TrainManager(Loggable):
                                             metric_to_track_best=self.metric_to_track,
                                             stage_to_track_best=stage_to_track_best,
                                             mode_to_track_best=mode_to_track_best)
+        # Reset global profiler totals when starting a new training run
+        self.profiler_total = {}
 
     
     def reset_epoch_stats(self, phase: str = 'train'):
@@ -379,6 +385,23 @@ class TrainManager(Loggable):
                                             metrics=metrics,
                                             sync_cuda=True,
                                             sync_mps=True)
+
+    # --- Simple profiler helpers (time.time based) ---
+    def _profiler_reset_epoch(self):
+        self.profiler_epoch = {}
+
+    def _profiler_add(self, label: str, seconds: float):
+        self.profiler_epoch[label] = self.profiler_epoch.get(label, 0.0) + float(seconds)
+        self.profiler_total[label] = self.profiler_total.get(label, 0.0) + float(seconds)
+
+    def _profiler_log_epoch_summary(self):
+        if is_rank0():
+            if not self.profiler_epoch:
+                return
+            lines = [f'Profiling summary for epoch {self.epoch}:']
+            for k, v in sorted(self.profiler_epoch.items(), key=lambda x: -x[1]):
+                lines.append(f'  {k}: {v:.4f}s')
+            self.logger.print_it('\n'.join(lines))
     
 
     def train(self, extra_configs: dict[str, Any] = None, return_best_model: bool = True, return_last_model: bool = False, return_stats: bool = False):
@@ -472,7 +495,9 @@ class TrainManager(Loggable):
 
 
     def train_epoch(self):
+        # reset epoch stats and per-epoch profiler
         self.reset_epoch_stats(phase='train')
+        self._profiler_reset_epoch()
         self.model.train()
         if self.distributed:
             self.train_loader.sampler.set_epoch(self.epoch)
@@ -481,15 +506,21 @@ class TrainManager(Loggable):
         self.logger.set_logger_newline()
         self.epoch_stats_tracker.ddp_reduce_current_stage()
         train_summary = self.epoch_stats_tracker.stage_end()
+        # Log per-epoch profiling summary
+        self._profiler_log_epoch_summary()
         return train_summary
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
-        # Map to available device
+        # Map to available device (profile this)
+        t0 = time.time()
         inputs = inputs.to(self.device, non_blocking=True)
         targets = targets.to(self.device, non_blocking=True)
+        t1 = time.time()
+        self._profiler_add('to_device', t1 - t0)
 
         self.epoch_stats_tracker.batch_start()
-        # Compute loss and predictions
+        # Compute loss and predictions (profile compute: forward + backward + optimizer)
+        t_comp0 = time.time()
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
             def closure(inputs, targets, mean=True, backward=True, run_stats=True):
@@ -507,7 +538,6 @@ class TrainManager(Loggable):
             self.optimizer.step(closure, inputs, targets)
             self.optimizer.zero_grad()
             loss, outputs = self.optimizer.get_first_closure_outputs()
-            # An alternative to running with closure is to run manually both steps of the sam-like optimizers.
         else:
             # Forward propagation, compute loss, get predictions (no GradScaler/AMP)
             self.optimizer.zero_grad()
@@ -516,16 +546,23 @@ class TrainManager(Loggable):
             loss = loss.mean()
             loss.backward()
             self.optimizer.step()
-        
+        t_comp1 = time.time()
+        self._profiler_add('compute', t_comp1 - t_comp0)
+
+        t_up0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
+        t_up1 = time.time()
+        self._profiler_add('metrics_update', t_up1 - t_up0)
 
-        # Print message on console
+        # Print message on console (the print itself is profiled inside print_message)
         self.print_message(index_batch=batch_idx+1, total_batches=total_batches)
 
 
     def test_epoch(self):
+        # reset per-epoch profiler for test stage as well (keeps same epoch bucket)
         self.reset_epoch_stats(phase='test')
+        self._profiler_reset_epoch()
         self.model.eval()
         if self.distributed:
             self.test_loader.sampler.set_epoch(self.epoch)
@@ -536,26 +573,39 @@ class TrainManager(Loggable):
 
         self.epoch_stats_tracker.ddp_reduce_current_stage()
         test_summary = self.epoch_stats_tracker.stage_end()
+        # Log per-epoch profiling summary for test
+        self._profiler_log_epoch_summary()
         return test_summary
 
     
     def test_step(self, inputs, targets, batch_idx=0, total_batches=0):
         self.epoch_stats_tracker.batch_start()
-        # Map to available device
+        # Map to available device (profile)
+        t0 = time.time()
         inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
+        t1 = time.time()
+        self._profiler_add('to_device', t1 - t0)
+
+        t_c0 = time.time()
         # Forward propagation, compute loss, get predictions
         outputs = self.model(inputs)
         loss = self.criterion(outputs, targets)
         loss = loss.mean()
+        t_c1 = time.time()
+        self._profiler_add('compute', t_c1 - t_c0)
 
+        t_u0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
+        t_u1 = time.time()
+        self._profiler_add('metrics_update', t_u1 - t_u0)
 
-        # Print message on console
+        # Print message on console (profiled inside print_message)
         self.print_message(index_batch=batch_idx+1,
                             total_batches=total_batches)
 
     def print_message(self, index_batch, total_batches):
+        t0 = time.time()
         message = f'{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |'
         bar_length = 10
         progress = float(index_batch) / float(total_batches)
@@ -589,7 +639,13 @@ class TrainManager(Loggable):
         h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())
         message += ' Total time {}:{:02d}:{:02d} |'.format(h,m,s)
         self.logger.print_it_same_line(message)
-
+        t1 = time.time()
+        # record logging duration
+        try:
+            self._profiler_add('logging', t1 - t0)
+        except Exception:
+            pass
+    
     def get_current_lr(self):
         # Append current learning rate(s)
         current_lr = None
