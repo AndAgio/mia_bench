@@ -49,6 +49,8 @@ class ShadowDatasetsManager(Loggable):
         self.logger.print_it('Sampling of {} shadow datasets completed in {:.3f} seconds'.format(self.n_shadow_datasets, stop-start))
 
     def sample(self):
+        # TODO: add method to store and reload shadow datasets maps.
+        # assignees: AndAgio
         train_data = self.original_datasets.get('train')
         test_data = self.original_datasets.get('test')
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
