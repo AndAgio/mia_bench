@@ -50,6 +50,7 @@ class ShadowDatasetsManager(Loggable):
 
     def sample(self):
         # TODO: add method to store and reload shadow datasets maps.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/13
         # assignees: AndAgio
         train_data = self.original_datasets.get('train')
         test_data = self.original_datasets.get('test')
