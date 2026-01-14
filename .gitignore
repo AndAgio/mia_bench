@@ -22,6 +22,7 @@ outs/
 tests/
 temp.py
 debug.py
+trial.py
 
 
 
