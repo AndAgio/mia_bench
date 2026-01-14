@@ -34,7 +34,7 @@ class BaseMIA(Loggable):
         audit_data = self.audit_manager.get(labels='mia')
         self.reset_logger()
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
-        tpr, fpr, roc = roc_curve(audit_labels, scores)
+        fpr, tpr, roc = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)
         results = {'auc': auc_score,
                 'tpr': tpr.tolist(),
@@ -61,7 +61,7 @@ class BaseMIA(Loggable):
     def get_stats(self, scores: np.array, plot: bool = False):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
-        tpr, fpr, roc = roc_curve(audit_labels, scores)
+        fpr, tpr, roc = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)
         if plot:
             plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % auc_score)
@@ -78,20 +78,20 @@ class BaseMIA(Loggable):
     def compute_auc(self, scores: np.array):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
-        tpr, fpr, _ = roc_curve(audit_labels, scores)
+        fpr, tpr, _ = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)
         return auc_score
     
     def compute_tpr(self, scores: np.array):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
-        tpr, _, _ = roc_curve(audit_labels, scores)
+        _, tpr, _ = roc_curve(audit_labels, scores)
         return tpr.tolist()
     
     def compute_fpr(self, scores: np.array):
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
-        _, fpr, _ = roc_curve(audit_labels, scores)
+        fpr, _, _ = roc_curve(audit_labels, scores)
         return fpr.tolist()
     
     def compute_roc(self, scores: np.array):
