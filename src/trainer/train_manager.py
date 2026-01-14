@@ -504,10 +504,17 @@ class TrainManager(Loggable):
         for batch_idx, (inputs, targets) in enumerate(self.train_loader):
             self.train_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
         self.logger.set_logger_newline()
+        
+        t_ddp_red0 = time.time()
         self.epoch_stats_tracker.ddp_reduce_current_stage()
+        t_ddp_red1 = time.time()
+        self._profiler_add('ddp_reduce_current_stage', t_ddp_red1 - t_ddp_red0)
         train_summary = self.epoch_stats_tracker.stage_end()
+        t_ddp_red2 = time.time()
+        self._profiler_add('stage_end', t_ddp_red2 - t_ddp_red1)
         # Log per-epoch profiling summary
         self._profiler_log_epoch_summary()
+
         return train_summary
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
@@ -551,9 +558,11 @@ class TrainManager(Loggable):
 
         t_up0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
-        self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
         t_up1 = time.time()
         self._profiler_add('metrics_update', t_up1 - t_up0)
+        self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
+        t_up2 = time.time()
+        self._profiler_add('metrics_batch_end', t_up2 - t_up1)
 
         # Print message on console (the print itself is profiled inside print_message)
         self.print_message(index_batch=batch_idx+1, total_batches=total_batches)
@@ -571,8 +580,13 @@ class TrainManager(Loggable):
                 self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.test_loader))
         self.logger.set_logger_newline()
 
+        t_ddp_red0 = time.time()
         self.epoch_stats_tracker.ddp_reduce_current_stage()
+        t_ddp_red1 = time.time()
+        self._profiler_add('ddp_reduce_current_stage', t_ddp_red1 - t_ddp_red0)
         test_summary = self.epoch_stats_tracker.stage_end()
+        t_ddp_red2 = time.time()
+        self._profiler_add('stage_end', t_ddp_red2 - t_ddp_red1)
         # Log per-epoch profiling summary for test
         self._profiler_log_epoch_summary()
         return test_summary
@@ -596,9 +610,11 @@ class TrainManager(Loggable):
 
         t_u0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets)
-        self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
         t_u1 = time.time()
         self._profiler_add('metrics_update', t_u1 - t_u0)
+        self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
+        t_u2 = time.time()
+        self._profiler_add('metrics_batch_end', t_u2 - t_u1)
 
         # Print message on console (profiled inside print_message)
         self.print_message(index_batch=batch_idx+1,
