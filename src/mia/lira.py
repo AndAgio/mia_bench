@@ -13,6 +13,7 @@ import time
 
 
 class LiRA(BaseMIA):
+    # Implementation of Membership inference attacks from first principles (https://ieeexplore.ieee.org/abstract/document/9833649).
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,

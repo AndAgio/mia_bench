@@ -14,6 +14,7 @@ from src.trainer.train_manager import TrainManager
 
 
 class QuantileMIA(BaseMIA):
+    # Implementation of Scalable membership inference attacks via quantile regression (https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html).
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,

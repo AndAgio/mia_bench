@@ -12,6 +12,7 @@ import time
 
 
 class RMIA(BaseMIA):
+    # Implementation of Low-Cost High-Power Membership Inference Attacks (https://arxiv.org/pdf/2312.03262)
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
