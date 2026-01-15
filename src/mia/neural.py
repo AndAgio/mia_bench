@@ -21,4 +21,5 @@ class NeuralMIA(BaseMIA):
         raise NotImplementedError('Neural network-based MIA method is not yet implemented!')
 
         # TODO: Implement neural network-based MIA method (https://ieeexplore.ieee.org/document/7958568).
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/17
         # assignees: AndAgio

@@ -20,4 +20,5 @@ class LossMIA(BaseMIA):
         raise NotImplementedError('Loss-based MIA method is not yet implemented!')
 
         # TODO: Implement loss-based MIA method.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/16
         # assignees: AndAgio

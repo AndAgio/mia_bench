@@ -13,6 +13,7 @@ def main():
     settings = gather_settings()
 
     # TODO: Assign one hash code to each experiment based on settings.
+    # Issue URL: https://github.com/AndAgio/mia_bench/issues/14
     # assignees: AndAgio
 
     exp_code = f'{settings.attack_mode}_{settings.dataset}_victim_{settings.victim_model}_{settings.victim_optimizer}_{settings.victim_lr}_{settings.victim_lr_sched}_{settings.victim_seed}_attacker_{settings.att_model}_{settings.att_optimizer}_{settings.att_lr}_{settings.att_lr_sched}_{settings.att_seed}'

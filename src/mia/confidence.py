@@ -20,4 +20,5 @@ class ConfidenceMIA(BaseMIA):
         raise NotImplementedError('Confidence-based MIA method is not yet implemented!')
     
         # TODO: Implement confidence-based MIA method.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/15
         # assignees: AndAgio
