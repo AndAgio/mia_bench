@@ -12,6 +12,9 @@ from src.mia.quantile import QuantileMIA
 def main():
     settings = gather_settings()
 
+    # TODO: Assign one hash code to each experiment based on settings.
+    # assignees: AndAgio
+
     exp_code = f'{settings.attack_mode}_{settings.dataset}_victim_{settings.victim_model}_{settings.victim_optimizer}_{settings.victim_lr}_{settings.victim_lr_sched}_{settings.victim_seed}_attacker_{settings.att_model}_{settings.att_optimizer}_{settings.att_lr}_{settings.att_lr_sched}_{settings.att_seed}'
     exp_log_folder = settings.log_folder/f'{exp_code}'
     exp_ckpts_folder = settings.models_folder/f'{exp_code}'
