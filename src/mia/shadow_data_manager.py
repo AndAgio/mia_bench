@@ -30,7 +30,7 @@ class ShadowDatasetsManager(Loggable):
         self.auditing_indices = auditing_dataset.get_all_ids()
 
         if self.mode == 'online':
-            if not self.n_samples_per_dataset > len(self.auditing_indices):
+            if not shadow_configs.n_samples_per_dataset > len(self.auditing_indices):
                 self.logger.print_it(f'Number of samples per shadow dataset should be larger than number of auditing samples in online mode! Resetting n_samples_per_dataset to {len(self.auditing_indices)*2}...')
                 shadow_configs.n_samples_per_dataset = len(self.auditing_indices) * 2
                 self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
