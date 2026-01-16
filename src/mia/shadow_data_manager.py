@@ -65,7 +65,7 @@ class ShadowDatasetsManager(Loggable):
         # Issue URL: https://github.com/AndAgio/mia_bench/issues/13
         # assignees: AndAgio
 
-        # use self.exp_hash to store/retrieve shadow datasets maps.
+        # use self.attacker_hash to store/retrieve shadow datasets maps.
         
         train_data = self.original_datasets.get('train')
         test_data = self.original_datasets.get('test')

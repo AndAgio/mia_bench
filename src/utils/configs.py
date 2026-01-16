@@ -263,16 +263,6 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
         relevant_settings = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
     return relevant_settings
 
-# def get_hash_from_settings(settings: Dict[str, Any]) -> str:
-#     exclude_keys = ["resume", "device"]
-#     filtered_settings_dict = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
-#     # Convert settings dict to a JSON string with sorted keys to ensure consistent ordering
-#     settings_str = json.dumps(filtered_settings_dict, sort_keys=True)
-#     # Create a MD5 hash of the settings string
-#     hash_object = hashlib.md5(settings_str.encode())
-#     # Return the hexadecimal representation of the hash
-#     return hash_object.hexdigest()
-
 def get_hash_from_settings(settings: Any, mode: str = 'attacker') -> str:
     relevant_settings = get_relevant_settings(settings, mode=mode)
     # Convert settings dict to a JSON string with sorted keys to ensure consistent ordering
@@ -289,6 +279,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     exp_log_folder = settings.out_folder/'experiments'/exp_hash/'logs'
     victim_ckpts_folder = settings.out_folder/'victims'/victim_hash/'ckpts'
     victim_resume_ckpts_folder = settings.out_folder/'victims'/victim_hash/'resume_ckpts'
+    attacker_ckpts_folder = settings.out_folder/'attackers'/victim_hash/'ckpts'
+    attacker_resume_ckpts_folder = settings.out_folder/'attackers'/victim_hash/'resume_ckpts'
     victim_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation)
@@ -322,8 +314,6 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                     model=victim_model_configs,
                                     train=victim_train_configs)
 
-    attacker_ckpts_folder = settings.out_folder/'attacker'/victim_hash/'ckpts'
-    attacker_resume_ckpts_folder = settings.out_folder/'attacker'/victim_hash/'resume_ckpts'
     attacker_log_configs = LogConfigs(name='attacker',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
