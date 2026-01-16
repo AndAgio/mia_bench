@@ -2,12 +2,15 @@ import math
 import time
 import numpy as np
 import copy
-from torch.utils.data import Subset, ConcatDataset, Dataset
+from torch.utils.data import Subset, ConcatDataset
 from src.data.multi import MultiDatasets
 from src.mia.auditing_data_manager import AuditingDatasetManager, FixedLabelDataset
 from src.utils.configs import ShadowDataConfigs
 from src.utils.log import Loggable, SmartLogger, DumbLogger
 from typing import Union
+
+MAX_SHADOW_DATASETS = 100
+MAX_SAMPLES_PER_SHADOW_DATASET = 100000
 
 class ShadowDatasetsManager(Loggable):
     def __init__(self,
@@ -35,9 +38,9 @@ class ShadowDatasetsManager(Loggable):
                 shadow_configs.n_samples_per_dataset = len(self.auditing_indices) * 2
                 self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
 
-        assert 0 < shadow_configs.n_shadow_datasets < 101
+        assert 0 < shadow_configs.n_shadow_datasets <= MAX_SHADOW_DATASETS 
         self.n_shadow_datasets = shadow_configs.n_shadow_datasets
-        assert 0 < shadow_configs.n_samples_per_dataset < 100000
+        assert 0 < shadow_configs.n_samples_per_dataset <= MAX_SAMPLES_PER_SHADOW_DATASET
         self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
         assert 0 < shadow_configs.test_perc < 1
         self.test_perc = shadow_configs.test_perc
