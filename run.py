@@ -20,6 +20,7 @@ def main():
     experiment_configs = generate_configs_from_settings(settings, exp_hash)
 
     # TODO: Separate output folders for victim and attacker depending on their own configs, so that victim can be only one for all attackers.
+    # Issue URL: https://github.com/AndAgio/mia_bench/issues/18
     # assignees: AndAgio.
     victim = Victim(victim_configs=experiment_configs.victim)
     victim_model = victim.train_model(train_configs=experiment_configs.victim.train,)
