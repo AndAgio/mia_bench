@@ -12,7 +12,7 @@ from src.utils.log import Loggable, get_logger_from_configs
 
 
 class BaseMIA(Loggable):
-    def __init__(self, victim_model: torch.nn.Module, victim_dataset: MultiDatasets, attacker_configs: AttackerConfigs, exp_hash: str):
+    def __init__(self, victim_model: torch.nn.Module, victim_dataset: MultiDatasets, attacker_configs: AttackerConfigs):
         logger = get_logger_from_configs(attacker_configs.log)
         super().__init__(logger=logger)
         self.logger.print_it('Setting up and MIA attacker. First thing to do is sampling the auditing dataset...')
@@ -27,7 +27,7 @@ class BaseMIA(Loggable):
         self.shadow_configs=attacker_configs.shadow
         self.model_configs=attacker_configs.model
         self.attack_configs=attacker_configs.attack
-        self.exp_hash = exp_hash
+        self.attacker_hash = attacker_configs.hash
 
     def optimize(self):
         raise NotImplementedError('MIA should implement the method to optimize it!')

@@ -222,6 +222,7 @@ class AttackConfigs:
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class VictimConfigs:
+    hash: str
     dataset: DatasetConfigs
     log: LogConfigs
     model: ModelConfigs
@@ -230,6 +231,7 @@ class VictimConfigs:
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class AttackerConfigs:
+    hash: str
     log: LogConfigs
     model: ModelConfigs
     train: TrainConfigs
@@ -245,21 +247,48 @@ class ExperimentConfigs:
     attacker: AttackerConfigs
 
 
-def get_hash_from_settings(settings: Dict[str, Any]) -> str:
-    exclude_keys = ["resume", "device"]
-    filtered_settings_dict = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
+def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
+    assert mode in ['attacker', 'victim', 'experiment'], f'Mode "{mode}" to get relevant settings not recognized! Choose between "attacker", "victim" or "experiment".'
+    if mode == 'attacker':
+        attacker_settings = ['dataset', 'attacker_model', 'attack_mode', 
+                            'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
+                            'random_population_size', 'rmia_alphas', 'rmia_gamma', 
+                            'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian' ]
+        relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
+    elif mode == 'victim':
+        victim_settings = ['dataset', 'victim_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
+        relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('victim_') or k in victim_settings}
+    else:
+        exclude_keys = ["resume", "device"]
+        relevant_settings = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
+    return relevant_settings
+
+# def get_hash_from_settings(settings: Dict[str, Any]) -> str:
+#     exclude_keys = ["resume", "device"]
+#     filtered_settings_dict = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
+#     # Convert settings dict to a JSON string with sorted keys to ensure consistent ordering
+#     settings_str = json.dumps(filtered_settings_dict, sort_keys=True)
+#     # Create a MD5 hash of the settings string
+#     hash_object = hashlib.md5(settings_str.encode())
+#     # Return the hexadecimal representation of the hash
+#     return hash_object.hexdigest()
+
+def get_hash_from_settings(settings: Any, mode: str = 'attacker') -> str:
+    relevant_settings = get_relevant_settings(settings, mode=mode)
     # Convert settings dict to a JSON string with sorted keys to ensure consistent ordering
-    settings_str = json.dumps(filtered_settings_dict, sort_keys=True)
+    settings_str = json.dumps(relevant_settings, sort_keys=True)
     # Create a MD5 hash of the settings string
     hash_object = hashlib.md5(settings_str.encode())
     # Return the hexadecimal representation of the hash
     return hash_object.hexdigest()
 
-
-def generate_configs_from_settings(settings: Any, exp_hash: str) -> ExperimentConfigs:
-    exp_log_folder = settings.out_folder/exp_hash/'logs'
-    exp_ckpts_folder = settings.out_folder/exp_hash/'ckpts'
-    exp_resume_ckpts_folder = settings.out_folder/exp_hash/'resume_ckpts'
+def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
+    exp_hash = get_hash_from_settings(settings, mode='experiment')
+    victim_hash = get_hash_from_settings(settings, mode='victim')
+    attacker_hash = get_hash_from_settings(settings, mode='attacker')
+    exp_log_folder = settings.out_folder/'experiments'/exp_hash/'logs'
+    victim_ckpts_folder = settings.out_folder/'victims'/victim_hash/'ckpts'
+    victim_resume_ckpts_folder = settings.out_folder/'victims'/victim_hash/'resume_ckpts'
     victim_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation)
@@ -282,16 +311,19 @@ def generate_configs_from_settings(settings: Any, exp_hash: str) -> ExperimentCo
                                         distributed=settings.distributed,
                                         seed=settings.victim_seed,
                                         resume=settings.resume,
-                                        ckpts_folder=exp_ckpts_folder,
-                                        resume_ckpts_folder=exp_resume_ckpts_folder)
+                                        ckpts_folder=victim_ckpts_folder,
+                                        resume_ckpts_folder=victim_resume_ckpts_folder)
     victim_log_configs = LogConfigs(name='victim',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
-    victim_configs = VictimConfigs(dataset=victim_dataset_configs,
+    victim_configs = VictimConfigs(hash=victim_hash,
+                                    dataset=victim_dataset_configs,
                                     log=victim_log_configs,
                                     model=victim_model_configs,
                                     train=victim_train_configs)
 
+    attacker_ckpts_folder = settings.out_folder/'attacker'/victim_hash/'ckpts'
+    attacker_resume_ckpts_folder = settings.out_folder/'attacker'/victim_hash/'resume_ckpts'
     attacker_log_configs = LogConfigs(name='attacker',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
@@ -317,8 +349,8 @@ def generate_configs_from_settings(settings: Any, exp_hash: str) -> ExperimentCo
                                             distributed=settings.distributed,
                                             seed=settings.att_seed,
                                             resume=settings.resume,
-                                            ckpts_folder=exp_ckpts_folder,
-                                            resume_ckpts_folder=exp_resume_ckpts_folder)
+                                            ckpts_folder=attacker_ckpts_folder,
+                                            resume_ckpts_folder=attacker_resume_ckpts_folder)
     attacker_auditing_configs = AuditingDataConfigs(n_auditing_samples=settings.n_auditing_samples,
                                                 in_perc=settings.audit_in_perc,
                                                 seed=settings.att_seed)
@@ -336,11 +368,12 @@ def generate_configs_from_settings(settings: Any, exp_hash: str) -> ExperimentCo
                                         random_pop_size=settings.random_population_size)
         attacker_shadow_configs.mode = rmia_mode
     elif settings.attack_mode == 'lira':
-        attack_configs = AttackConfigs()
+        attack_configs = AttackConfigs(mode='online')
     elif settings.attack_mode == 'quantile':
         attacker_train_configs.metric_to_track = "quantile_coverage"
         attacker_train_configs.metrics = ["quantile_coverage"]
-        attack_configs = AttackConfigs(n_quantile=settings.n_quantile,
+        attack_configs = AttackConfigs(mode='offline',
+                                        n_quantile=settings.n_quantile,
                                         low_quantile=settings.low_quantile,
                                         high_quantile=settings.high_quantile,
                                         use_logscale=settings.quantile_use_logscale,
@@ -348,7 +381,8 @@ def generate_configs_from_settings(settings: Any, exp_hash: str) -> ExperimentCo
                                         quantile_alpha=settings.quantile_alpha)
     else:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attack_mode))
-    attacker_configs = AttackerConfigs(log=attacker_log_configs,
+    attacker_configs = AttackerConfigs(hash=attacker_hash,
+                                        log=attacker_log_configs,
                                         model=attacker_model_configs,
                                         train=attacker_train_configs,
                                         audit=attacker_auditing_configs,

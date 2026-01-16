@@ -17,7 +17,7 @@ class ShadowDatasetsManager(Loggable):
                 original_datasets: MultiDatasets, 
                 auditing_dataset: AuditingDatasetManager,
                 shadow_configs: ShadowDataConfigs,
-                exp_hash: str,
+                attacker_hash: str,
                 logger: Union[SmartLogger, DumbLogger] = None):
         super().__init__(logger=logger)
         assert original_datasets is not None
@@ -48,7 +48,7 @@ class ShadowDatasetsManager(Loggable):
         self.seed = shadow_configs.seed
         self._rng = np.random.default_rng(seed=self.seed)
 
-        self.exp_hash = exp_hash
+        self.attacker_hash = attacker_hash
 
         self.basic_dictionary = {'train_ids': None, 
                             'test_ids': None,

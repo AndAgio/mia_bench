@@ -18,9 +18,8 @@ class QuantileMIA(BaseMIA):
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
-                attacker_configs: AttackerConfigs, 
-                exp_hash: str):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs, exp_hash=exp_hash)
+                attacker_configs: AttackerConfigs):
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
         self.logger.print_it(f'Working with Quantile MIA!')
         assert self.shadow_configs.n_shadow_datasets == 1, f'When using quantile MIA, only 1 shadow dataset must be used!'
         self.shadow_manager = ShadowManager(logger=self.logger)
@@ -28,7 +27,7 @@ class QuantileMIA(BaseMIA):
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
-                                                    exp_hash=self.exp_hash)
+                                                    attacker_hash=self.attacker_hash)
         self.logger.print_it('Quantile MIA attacker: definition of quantile model...')
         self.model_configs.num_classes = 2 if self.attack_configs.use_gaussian else self.attack_configs.n_quantile
         self.shadow_manager.build_shadow_models(n_models=1,

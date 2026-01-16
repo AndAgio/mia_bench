@@ -17,13 +17,13 @@ class ShadowManager(Loggable):
         self.shadow_data = shadow_data
         self.shadow_models = shadow_models
 
-    def sample_shadow_datasets(self, original_datasets: MultiDatasets, auditing_dataset: AuditingDatasetManager, shadow_configs: ShadowDataConfigs, exp_hash: str):
+    def sample_shadow_datasets(self, original_datasets: MultiDatasets, auditing_dataset: AuditingDatasetManager, shadow_configs: ShadowDataConfigs, attacker_hash: str):
         if self.shadow_models is not None:
             assert shadow_configs.n_shadow_datasets == self.shadow_models.get_num_models(), f"Number of shadow datasets you're trying to sample does not match the number of shadow models already built!"
         self.shadow_data = ShadowDatasetsManager(original_datasets=original_datasets,
                                                 auditing_dataset=auditing_dataset,
                                                 shadow_configs=shadow_configs,
-                                                exp_hash=exp_hash,
+                                                attacker_hash=attacker_hash,
                                                 logger=self.logger)
 
     def build_shadow_models(self, n_models: int, model_configs: ModelConfigs):

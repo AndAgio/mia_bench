@@ -10,6 +10,7 @@ class Victim(Loggable):
     def __init__(self, victim_configs: VictimConfigs):
         logger=get_logger_from_configs(victim_configs.log)
         super().__init__(logger=logger)
+        self.victim_hash = victim_configs.hash
         self.dataset_configs = victim_configs.dataset
         self.model_configs = victim_configs.model
         self.dataset = get_dataset(dataset=self.dataset_configs.name,

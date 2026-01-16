@@ -48,12 +48,12 @@ class TrainManager(Loggable):
     
 
     def setup_folders(self, train_configs: TrainConfigs):
-        models_folder = os.path.join(train_configs.ckpts_folder, self.name)
+        models_folder = os.path.join(train_configs.ckpts_folder)
         self.logger.print_it(f'Setting up checkpoints folder to {models_folder}')
         os.makedirs(models_folder, exist_ok=True)
         self.models_folder = models_folder
         self.ckpts_folder = train_configs.ckpts_folder
-        resume_folder = os.path.join(train_configs.resume_ckpts_folder, self.name)
+        resume_folder = os.path.join(train_configs.resume_ckpts_folder)
         self.logger.print_it(f'Setting up resume folder to {resume_folder}')
         os.makedirs(resume_folder, exist_ok=True)
         self.resume_folder = resume_folder

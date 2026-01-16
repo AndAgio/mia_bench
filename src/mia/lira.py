@@ -16,16 +16,15 @@ class LiRA(BaseMIA):
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
-                attacker_configs: AttackerConfigs, 
-                exp_hash: str):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs, exp_hash=exp_hash)
+                attacker_configs: AttackerConfigs):
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
         self.logger.print_it(f'Working with LiRA!')
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('LiRA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
-                                                    exp_hash=self.exp_hash)
+                                                    attacker_hash=self.attacker_hash)
         self.logger.print_it('LiRA attacker: definition of shadow models...')
         self.shadow_manager.build_shadow_models(n_models=self.shadow_configs.n_shadow_datasets,
                                                 model_configs=self.model_configs)

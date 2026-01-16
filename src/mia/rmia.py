@@ -15,9 +15,8 @@ class RMIA(BaseMIA):
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
-                attacker_configs: AttackerConfigs, 
-                exp_hash: str):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs, exp_hash=exp_hash)
+                attacker_configs: AttackerConfigs):
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
         assert self.shadow_configs.mode == self.attack_configs.mode, f'Whenever working with RMIA the mode for shadow datasets and attack should be the same!'
         self.mode = self.attack_configs.mode
         self.logger.print_it(f'Working with RMIA in {self.mode.upper()} mode!')
@@ -26,7 +25,7 @@ class RMIA(BaseMIA):
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
-                                                    exp_hash=self.exp_hash)
+                                                    attacker_hash=self.attacker_hash)
         self.logger.print_it('RMIA attacker: definition of shadow models...')
         self.shadow_manager.build_shadow_models(n_models=self.shadow_configs.n_shadow_datasets,
                                                 model_configs=self.model_configs)
