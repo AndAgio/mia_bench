@@ -1,13 +1,16 @@
 import math
+import os
 import time
 import numpy as np
 import copy
+import torch
+from typing import Union
 from torch.utils.data import Subset, ConcatDataset
 from src.data.multi import MultiDatasets
 from src.mia.auditing_data_manager import AuditingDatasetManager, FixedLabelDataset
 from src.utils.configs import ShadowDataConfigs
 from src.utils.log import Loggable, SmartLogger, DumbLogger
-from typing import Union
+from src.utils.variables import DEFAULT_SHADOW_DATASETS_FOLDER
 
 MAX_SHADOW_DATASETS = 100
 MAX_SAMPLES_PER_SHADOW_DATASET = 100000
@@ -61,12 +64,24 @@ class ShadowDatasetsManager(Loggable):
         self.logger.print_it('Sampling of {} shadow datasets completed in {:.3f} seconds'.format(self.n_shadow_datasets, stop-start))
 
     def sample(self):
-        # TODO: add method to store and reload shadow datasets maps.
-        # Issue URL: https://github.com/AndAgio/mia_bench/issues/13
-        # assignees: AndAgio
-
         # use self.attacker_hash to store/retrieve shadow datasets maps.
-        
+        shadow_data_dir = os.path.join(DEFAULT_SHADOW_DATASETS_FOLDER, self.attacker_hash)
+        shadow_datasets_path = os.path.join(shadow_data_dir, f'shadow_datasets_map.pt')
+        if os.path.exists(shadow_datasets_path):
+            self.logger.print_it(f'Loading previously stored shadow datasets map for attacker {self.attacker_hash}...')
+            self.shadow_datasets_map = torch.load(shadow_datasets_path)
+            self.logger.print_it(f'Shadow datasets map loaded successfully!')
+            assert self.check_in_out_correctness(), f'Something went wrong with shadow dataset sampling!'
+            self.logger.print_it(f'Shadow datasets are OK for {self.mode} mode!')
+            return
+        else:
+            self.logger.print_it(f'No previously stored shadow datasets map found for attacker {self.attacker_hash}, sampling new shadow datasets map...')
+            self._sample()
+            os.makedirs(shadow_data_dir, exist_ok=True)
+            torch.save(self.shadow_datasets_map, shadow_datasets_path)
+            self.logger.print_it(f'Shadow datasets map sampled and stored successfully to {shadow_datasets_path}!')
+
+    def _sample(self):
         train_data = self.original_datasets.get('train')
         test_data = self.original_datasets.get('test')
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()

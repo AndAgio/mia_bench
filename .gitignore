@@ -7,6 +7,7 @@ resume_ckpts/
 datas/
 logs/
 outs/
+shadow_datas/
 
 *.log
 *.pth
