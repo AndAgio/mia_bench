@@ -93,7 +93,7 @@ def mean_absolute_calibration_error(y_true: torch.Tensor,
 
 
 def get_performance_metric_func(metric_name: str):
-    if metric_name in ['multiclass_accuracy', 'multiclass_acc', 'multi_acc', 'accuracy', 'acc']:
+    if metric_name in ['multiclass_accuracy', 'multi_class_accuracy', 'multiclass_acc', 'multi_acc', 'accuracy', 'acc']:
         return multiclass_accuracy_from_logits
     elif metric_name in ['binary_accuracy', 'binary_acc', 'bin_acc']:
         return binary_accuracy_from_logits

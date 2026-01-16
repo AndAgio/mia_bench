@@ -1,153 +1,40 @@
+import json
 import os
-from dataclasses import asdict
+from pathlib import PosixPath
 from src.utils.settings import gather_settings
-from src.utils.configs import TrainConfigs, LogConfigs, ModelConfigs, DatasetConfigs, AuditingDataConfigs, ShadowDataConfigs, AttackConfigs, OptimizerConfigs, SchedulerConfigs
-from src.utils.log import get_logger_from_configs
+from src.utils.configs import get_hash_from_settings, generate_configs_from_settings
 from src.mia.victim import Victim
-from src.mia.rmia import RMIA
-from src.mia.lira import LiRA
-from src.mia.quantile import QuantileMIA
+from src.mia import get_attacker_class
 
 
 def main():
     settings = gather_settings()
+    exp_hash = get_hash_from_settings(settings)
+    exp_out_folder = settings.out_folder/exp_hash
+    os.makedirs(exp_out_folder, exist_ok=True)
+    settings_file = exp_out_folder/'settings.json'
+    with open(settings_file, 'w') as f:
+        settings_dict = {k: str(v) if isinstance(v, PosixPath) else v for k, v in vars(settings).items()}
+        json.dump(settings_dict, f, indent=4)
+        print(f'Experiment settings saved to {settings_file}')
+    experiment_configs = generate_configs_from_settings(settings, exp_hash)
 
-    # TODO: Assign one hash code to each experiment based on settings.
-    # Issue URL: https://github.com/AndAgio/mia_bench/issues/14
-    # assignees: AndAgio
+    victim = Victim(victim_configs=experiment_configs.victim)
+    victim_model = victim.train_model(train_configs=experiment_configs.victim.train,)
 
-    exp_code = f'{settings.attack_mode}_{settings.dataset}_victim_{settings.victim_model}_{settings.victim_optimizer}_{settings.victim_lr}_{settings.victim_lr_sched}_{settings.victim_seed}_attacker_{settings.att_model}_{settings.att_optimizer}_{settings.att_lr}_{settings.att_lr_sched}_{settings.att_seed}'
-    exp_log_folder = settings.log_folder/f'{exp_code}'
-    exp_ckpts_folder = settings.models_folder/f'{exp_code}'
-    exp_resume_ckpts_folder = settings.resume_ckpts_folder/f'{exp_code}'
-
-    dataset_configs = DatasetConfigs(name=settings.dataset,
-                                    data_folder=settings.datasets_folder,
-                                    data_augmentation=settings.data_augmentation,)
-    victim_log_configs = LogConfigs(name='victim',
-                                    log_folder=exp_log_folder,
-                                    log_mode='smart')
-    victim_model_configs = ModelConfigs(model_name=settings.victim_model,
-                                        im_channels=dataset_configs.im_channels,
-                                        num_classes=dataset_configs.num_classes,
-                                        im_size=dataset_configs.im_size,)
-    victim_optimizer_config = OptimizerConfigs(name=settings.victim_optimizer,
-                                        lr=settings.victim_lr,
-                                        weight_decay=settings.victim_weight_decay,
-                                        momentum=settings.victim_momentum,
-                                        nesterov=settings.victim_nesterov,)
-    victim_scheduler_config = SchedulerConfigs(name=settings.victim_lr_sched,
-                                            lr=settings.victim_lr,
-                                            epochs=settings.victim_epochs,)
-    victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_config,
-                                        scheduler_config=victim_scheduler_config,
-                                        batch_size=settings.victim_batch_size,
-                                        loss=settings.victim_loss,
-                                        metrics=settings.perf_metrics,
-                                        metric_to_track=settings.perf_metric_to_track,
-                                        lr_sched=settings.victim_lr_sched,
-                                        device=settings.device,
-                                        distributed=settings.distributed,
-                                        seed=settings.victim_seed,
-                                        resume=settings.resume,
-                                        ckpts_folder=exp_ckpts_folder,
-                                        resume_ckpts_folder=exp_resume_ckpts_folder)
-    
-    victim = Victim(dataset_configs=dataset_configs,
-                    model_configs=victim_model_configs,
-                    logger=get_logger_from_configs(victim_log_configs))
-    victim_model = victim.train_model(train_configs=victim_train_configs,)
-
-
-    attacker_log_configs = LogConfigs(name='attacker',
-                                    log_folder=exp_log_folder,
-                                    log_mode='smart')
-    attacker_model_configs = ModelConfigs(model_name=settings.att_model,
-                                        im_channels=dataset_configs.im_channels,
-                                        num_classes=dataset_configs.num_classes,
-                                        im_size=dataset_configs.im_size,)
-    attacker_optimizer_config = OptimizerConfigs(name=settings.att_optimizer,
-                                        lr=settings.att_lr,
-                                        weight_decay=settings.att_weight_decay,
-                                        momentum=settings.att_momentum,
-                                        nesterov=settings.att_nesterov,)
-    attacker_scheduler_config = SchedulerConfigs(name=settings.att_lr_sched,
-                                            lr=settings.att_lr,
-                                            epochs=settings.att_epochs,)
-    attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_config,
-                                        scheduler_config=attacker_scheduler_config,
-                                        batch_size=settings.att_batch_size,
-                                        loss=settings.att_loss,
-                                        metrics=settings.perf_metrics,
-                                        metric_to_track=settings.perf_metric_to_track,
-                                        device=settings.device,
-                                        distributed=settings.distributed,
-                                        seed=settings.att_seed,
-                                        resume=settings.resume,
-                                        ckpts_folder=exp_ckpts_folder,
-                                        resume_ckpts_folder=exp_resume_ckpts_folder)
-    attacker_audit_configs = AuditingDataConfigs(n_auditing_samples=settings.n_auditing_samples,
-                                                in_perc=settings.audit_in_perc,
-                                                seed=settings.att_seed)
-    attacker_shadow_configs = ShadowDataConfigs(n_shadow_datasets=settings.n_shadows,
-                                                n_samples_per_dataset=settings.n_samples_per_shadow_dataset,
-                                                mode='online',
-                                                test_perc=settings.shadow_test_perc,
-                                                seed=settings.att_seed)
-
-    if settings.attack_mode in ['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia']:
-        rmia_mode = 'online' if settings.attack_mode in ['online_rmia', 'on_rmia'] else 'offline'
-        attack_configs = AttackConfigs(mode=rmia_mode,
-                                        alpha=settings.rmia_alphas,
-                                        gamma=settings.rmia_gamma,
-                                        random_pop_size=settings.random_population_size)
-        attacker_shadow_configs.mode = rmia_mode
-        attacker = RMIA(victim_model=victim_model,
-                        victim_dataset=victim.get_dataset(),
-                        audit_configs=attacker_audit_configs,
-                        shadow_configs=attacker_shadow_configs,
-                        model_configs=attacker_model_configs,
-                        attack_configs=attack_configs,
-                        logger=get_logger_from_configs(attacker_log_configs))
-        attacker.optimize(train_config=attacker_train_configs)
-        attacker.measure_effectiveness(device=attacker_train_configs.device)
-    elif settings.attack_mode == 'lira':
-        attack_configs = AttackConfigs()
-        attacker = LiRA(victim_model=victim_model,
-                        victim_dataset=victim.get_dataset(),
-                        audit_configs=attacker_audit_configs,
-                        attack_configs=attack_configs,
-                        shadow_configs=attacker_shadow_configs,
-                        model_configs=attacker_model_configs,
-                        logger=get_logger_from_configs(attacker_log_configs))
-        attacker.optimize(train_config=attacker_train_configs)
-        attacker.measure_effectiveness(device=attacker_train_configs.device)
-    elif settings.attack_mode == 'quantile':
-        attacker_train_configs.metric_to_track = "quantile_coverage"
-        attacker_train_configs.metrics = ["quantile_coverage"]
-        attack_configs = AttackConfigs(n_quantile=settings.n_quantile,
-                                        low_quantile=settings.low_quantile,
-                                        high_quantile=settings.high_quantile,
-                                        use_logscale=settings.quantile_use_logscale,
-                                        use_gaussian=settings.quantile_use_gaussian,
-                                        quantile_alpha=settings.quantile_alpha)
-        attacker = QuantileMIA(victim_model=victim_model,
-                                victim_dataset=victim.get_dataset(),
-                                audit_configs=attacker_audit_configs,
-                                attack_configs=attack_configs,
-                                shadow_configs=attacker_shadow_configs,
-                                model_configs=attacker_model_configs,
-                                logger=get_logger_from_configs(attacker_log_configs))
-        attacker.optimize(train_config=attacker_train_configs)
-        attacker.measure_effectiveness(device=attacker_train_configs.device)
-    else:
-        raise ValueError('Attack "{}" not found or not implemented yet! Double check your settings please!'.format(settings.attack_mode))
+    attacker_class = get_attacker_class(settings.attack_mode)
+    attacker = attacker_class(victim_model=victim_model,
+                            victim_dataset=victim.get_dataset(),
+                            attacker_configs=experiment_configs.attacker,
+                            exp_hash=exp_hash)
+    attacker.optimize(train_config=experiment_configs.attacker.train)
+    attacker.measure_effectiveness(device=experiment_configs.attacker.train.device)
 
     best_auc_params, best_auc = attacker.get_best_result('auc', mode='max')
-    print('Best AUC was obtained for paramters:{} and was {}'.format(best_auc_params, best_auc))
+    print('Best AUC was obtained for parameters: {} and was {}'.format(best_auc_params, best_auc))
     # print(attacker.summarize_results())
 
-    exp_results_folder = settings.out_folder/f'{exp_code}'
+    exp_results_folder = exp_out_folder/'results'
     os.makedirs(exp_results_folder, exist_ok=True)
     attacker.save_results_to_json(os.path.join(exp_results_folder, 'results.json'))
 

@@ -7,22 +7,27 @@ import matplotlib.pyplot as plt
 from src.data.multi import MultiDatasets
 from .auditing_data_manager import AuditingDatasetManager
 from .results_manager import ResultManager
-from src.utils.configs import AuditingDataConfigs, AttackConfigs
-from src.utils.log import Loggable, SmartLogger, DumbLogger
+from src.utils.configs import AttackerConfigs
+from src.utils.log import Loggable, get_logger_from_configs
 
 
 class BaseMIA(Loggable):
-    def __init__(self, victim_model: torch.nn.Module, victim_dataset: MultiDatasets, audit_configs: AuditingDataConfigs, attack_configs: AttackConfigs, logger: Union[SmartLogger, DumbLogger] = None):
+    def __init__(self, victim_model: torch.nn.Module, victim_dataset: MultiDatasets, attacker_configs: AttackerConfigs, exp_hash: str):
+        logger = get_logger_from_configs(attacker_configs.log)
         super().__init__(logger=logger)
         self.logger.print_it('Setting up and MIA attacker. First thing to do is sampling the auditing dataset...')
         self.victim_model = victim_model
         self.victim_dataset = victim_dataset
-        self.seed = audit_configs.seed
+        self.seed = attacker_configs.audit.seed
         self.audit_manager = AuditingDatasetManager(original_datasets=victim_dataset,
-                                                    configs=audit_configs,
+                                                    configs=attacker_configs.audit,
                                                     logger=logger)
         self.results_manager = ResultManager()
-        self.attack_configs = attack_configs
+        self.audit_configs=attacker_configs.audit
+        self.shadow_configs=attacker_configs.shadow
+        self.model_configs=attacker_configs.model
+        self.attack_configs=attacker_configs.attack
+        self.exp_hash = exp_hash
 
     def optimize(self):
         raise NotImplementedError('MIA should implement the method to optimize it!')

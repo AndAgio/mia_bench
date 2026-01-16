@@ -4,8 +4,7 @@ import numpy as np
 from src.data.multi import MultiDatasets
 from src.mia.base_mia import BaseMIA
 from src.mia.shadow_manager import ShadowManager
-from src.utils.configs import TrainConfigs, AuditingDataConfigs, ShadowDataConfigs, ModelConfigs, AttackConfigs
-from src.utils.log import SmartLogger, DumbLogger
+from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
 from typing import Union
 import time
@@ -16,23 +15,21 @@ class RMIA(BaseMIA):
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
-                audit_configs: AuditingDataConfigs,
-                attack_configs: AttackConfigs,
-                shadow_configs: ShadowDataConfigs, 
-                model_configs: ModelConfigs,
-                logger: Union[SmartLogger, DumbLogger] = None):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, audit_configs=audit_configs, attack_configs=attack_configs, logger=logger)
-        assert shadow_configs.mode == attack_configs.mode, f'Whenever working with RMIA the mode for shadow datasets and attack should be the same!'
-        self.mode = attack_configs.mode
+                attacker_configs: AttackerConfigs, 
+                exp_hash: str):
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs, exp_hash=exp_hash)
+        assert self.shadow_configs.mode == self.attack_configs.mode, f'Whenever working with RMIA the mode for shadow datasets and attack should be the same!'
+        self.mode = self.attack_configs.mode
         self.logger.print_it(f'Working with RMIA in {self.mode.upper()} mode!')
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('RMIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
                                                     auditing_dataset=self.audit_manager,
-                                                    shadow_configs=shadow_configs)
+                                                    shadow_configs=self.shadow_configs,
+                                                    exp_hash=self.exp_hash)
         self.logger.print_it('RMIA attacker: definition of shadow models...')
-        self.shadow_manager.build_shadow_models(n_models=shadow_configs.n_shadow_datasets,
-                                                model_configs=model_configs)
+        self.shadow_manager.build_shadow_models(n_models=self.shadow_configs.n_shadow_datasets,
+                                                model_configs=self.model_configs)
 
     def optimize(self, train_config: TrainConfigs):
         self.logger.print_it('RMIA attacker: training all shadow models. This will take a while. Sit back and chill...')

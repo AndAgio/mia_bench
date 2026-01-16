@@ -14,6 +14,7 @@ class ShadowDatasetsManager(Loggable):
                 original_datasets: MultiDatasets, 
                 auditing_dataset: AuditingDatasetManager,
                 shadow_configs: ShadowDataConfigs,
+                exp_hash: str,
                 logger: Union[SmartLogger, DumbLogger] = None):
         super().__init__(logger=logger)
         assert original_datasets is not None
@@ -38,6 +39,8 @@ class ShadowDatasetsManager(Loggable):
         self.seed = shadow_configs.seed
         self._rng = np.random.default_rng(seed=self.seed)
 
+        self.exp_hash = exp_hash
+
         self.basic_dictionary = {'train_ids': None, 
                             'test_ids': None,
                             'all_ids': None}
@@ -52,6 +55,9 @@ class ShadowDatasetsManager(Loggable):
         # TODO: add method to store and reload shadow datasets maps.
         # Issue URL: https://github.com/AndAgio/mia_bench/issues/13
         # assignees: AndAgio
+
+        # use self.exp_hash to store/retrieve shadow datasets maps.
+        
         train_data = self.original_datasets.get('train')
         test_data = self.original_datasets.get('test')
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
@@ -62,7 +68,7 @@ class ShadowDatasetsManager(Loggable):
             train_len = len(train_data)
             s = time.time()
             self.logger.print_it(f'Refining online shadow datasets for all {len(in_indices_to_add)} samples. This may take a while...')
-            for k, index_to_add in enumerate(in_indices_to_add):
+            for _, index_to_add in enumerate(in_indices_to_add):
                 n_datasets_to_randomly_sample = math.floor(self.n_shadow_datasets / 2)
                 datasets_to_modify = self._rng.choice(np.arange(self.n_shadow_datasets), n_datasets_to_randomly_sample, replace=False).tolist()
                 for dataset_to_modify in datasets_to_modify:

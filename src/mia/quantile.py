@@ -5,8 +5,8 @@ import numpy as np
 from src.data.multi import MultiDatasets
 from src.mia.base_mia import BaseMIA
 from src.mia.shadow_manager import ShadowManager
-from src.utils.configs import TrainConfigs, AuditingDataConfigs, ShadowDataConfigs, ModelConfigs, AttackConfigs
-from src.utils.log import SmartLogger, DumbLogger, get_logger
+from src.utils.configs import AttackerConfigs, TrainConfigs
+from src.utils.log import get_logger
 from src.utils import convert_to_hms
 from typing import Union
 import time
@@ -18,23 +18,21 @@ class QuantileMIA(BaseMIA):
     def __init__(self, 
                 victim_model: torch.nn.Module,
                 victim_dataset: MultiDatasets,
-                audit_configs: AuditingDataConfigs,
-                attack_configs: AttackConfigs,
-                shadow_configs: ShadowDataConfigs, 
-                model_configs: ModelConfigs,
-                logger: Union[SmartLogger, DumbLogger] = None):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, audit_configs=audit_configs, attack_configs=attack_configs, logger=logger)
+                attacker_configs: AttackerConfigs, 
+                exp_hash: str):
+        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs, exp_hash=exp_hash)
         self.logger.print_it(f'Working with Quantile MIA!')
-        assert shadow_configs.n_shadow_datasets == 1, f'When using quantile MIA, only 1 shadow dataset must be used!'
+        assert self.shadow_configs.n_shadow_datasets == 1, f'When using quantile MIA, only 1 shadow dataset must be used!'
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
                                                     auditing_dataset=self.audit_manager,
-                                                    shadow_configs=shadow_configs)
+                                                    shadow_configs=self.shadow_configs,
+                                                    exp_hash=self.exp_hash)
         self.logger.print_it('Quantile MIA attacker: definition of quantile model...')
-        model_configs.num_classes = 2 if self.attack_configs.use_gaussian else self.attack_configs.n_quantile
+        self.model_configs.num_classes = 2 if self.attack_configs.use_gaussian else self.attack_configs.n_quantile
         self.shadow_manager.build_shadow_models(n_models=1,
-                                                model_configs=model_configs)
+                                                model_configs=self.model_configs)
 
     def optimize(self, train_config: TrainConfigs):
         self.logger.print_it('Quantile MIA attacker: setting quantiles and loss function...')

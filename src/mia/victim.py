@@ -2,25 +2,24 @@ from typing import Union
 from src.data import get_dataset
 from src.models import get_model
 from src.trainer.train_manager import TrainManager
-from src.utils.configs import TrainConfigs, ModelConfigs, DatasetConfigs
-from src.utils.log import Loggable, SmartLogger, DumbLogger
+from src.utils.configs import ExperimentConfigs, TrainConfigs, VictimConfigs
+from src.utils.log import Loggable, get_logger_from_configs
 
 
 class Victim(Loggable):
-    def __init__(self, dataset_configs: DatasetConfigs,
-                model_configs: ModelConfigs,
-                logger: Union[SmartLogger, DumbLogger] = None):
+    def __init__(self, victim_configs: VictimConfigs):
+        logger=get_logger_from_configs(victim_configs.log)
         super().__init__(logger=logger)
-        self.dataset_configs = dataset_configs
-        self.model_configs = model_configs
-        self.dataset = get_dataset(dataset=dataset_configs.name,
-                                datasets_folder=dataset_configs.data_folder,
-                                augment=dataset_configs.data_augmentation,
+        self.dataset_configs = victim_configs.dataset
+        self.model_configs = victim_configs.model
+        self.dataset = get_dataset(dataset=self.dataset_configs.name,
+                                datasets_folder=self.dataset_configs.data_folder,
+                                augment=self.dataset_configs.data_augmentation,
                                 logger=self.logger)
-        self.model = get_model(model_name=model_configs.model_name,
-                            im_channels=model_configs.im_channels,
-                            num_classes=model_configs.num_classes,
-                            im_size=model_configs.im_size,
+        self.model = get_model(model_name=self.model_configs.model_name,
+                            im_channels=self.model_configs.im_channels,
+                            num_classes=self.model_configs.num_classes,
+                            im_size=self.model_configs.im_size,
                             logger=self.logger)
 
     def get_dataset(self):

@@ -1,4 +1,6 @@
 import pathlib
+import hashlib
+import json
 # from dataclasses import dataclass, field
 from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
 from dataclasses import field
@@ -216,3 +218,143 @@ class AttackConfigs:
     use_logscale: bool = False
     use_gaussian: bool = False
     quantile_alpha: float = 0.05
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class VictimConfigs:
+    dataset: DatasetConfigs
+    log: LogConfigs
+    model: ModelConfigs
+    train: TrainConfigs
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class AttackerConfigs:
+    log: LogConfigs
+    model: ModelConfigs
+    train: TrainConfigs
+    audit: AuditingDataConfigs
+    shadow: ShadowDataConfigs
+    attack: AttackConfigs
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class ExperimentConfigs:
+    hash: str
+    victim: VictimConfigs
+    attacker: AttackerConfigs
+
+
+def get_hash_from_settings(settings: Dict[str, Any]) -> str:
+    exclude_keys = ["resume", "device"]
+    filtered_settings_dict = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
+    # Convert settings dict to a JSON string with sorted keys to ensure consistent ordering
+    settings_str = json.dumps(filtered_settings_dict, sort_keys=True)
+    # Create a MD5 hash of the settings string
+    hash_object = hashlib.md5(settings_str.encode())
+    # Return the hexadecimal representation of the hash
+    return hash_object.hexdigest()
+
+
+def generate_configs_from_settings(settings: Any, exp_hash: str) -> ExperimentConfigs:
+    exp_log_folder = settings.out_folder/exp_hash/'logs'
+    exp_ckpts_folder = settings.out_folder/exp_hash/'ckpts'
+    exp_resume_ckpts_folder = settings.out_folder/exp_hash/'resume_ckpts'
+    victim_dataset_configs = DatasetConfigs(name=settings.dataset,
+                                            data_folder=settings.datasets_folder,
+                                            data_augmentation=settings.data_augmentation)
+    victim_model_configs = ModelConfigs(model_name=settings.victim_model,
+                                        im_channels=victim_dataset_configs.im_channels,
+                                        num_classes=victim_dataset_configs.num_classes,
+                                        im_size=victim_dataset_configs.im_size)
+    victim_optimizer_configs = OptimizerConfigs(name=settings.victim_optimizer,
+                                                lr=settings.victim_lr,
+                                                weight_decay=settings.victim_weight_decay,
+                                                momentum=settings.victim_momentum,
+                                                nesterov=settings.victim_nesterov,)
+    victim_scheduler_configs = SchedulerConfigs(name=settings.victim_lr_sched,
+                                                lr=settings.victim_lr,
+                                                epochs=settings.victim_epochs)
+    victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_configs,
+                                        scheduler_config=victim_scheduler_configs,
+                                        batch_size=settings.victim_batch_size,
+                                        device=settings.device,
+                                        distributed=settings.distributed,
+                                        seed=settings.victim_seed,
+                                        resume=settings.resume,
+                                        ckpts_folder=exp_ckpts_folder,
+                                        resume_ckpts_folder=exp_resume_ckpts_folder)
+    victim_log_configs = LogConfigs(name='victim',
+                                    log_folder=exp_log_folder,
+                                    log_mode='smart')
+    victim_configs = VictimConfigs(dataset=victim_dataset_configs,
+                                    log=victim_log_configs,
+                                    model=victim_model_configs,
+                                    train=victim_train_configs)
+
+    attacker_log_configs = LogConfigs(name='attacker',
+                                    log_folder=exp_log_folder,
+                                    log_mode='smart')
+    attacker_model_configs = ModelConfigs(model_name=settings.att_model,
+                                            im_channels=victim_dataset_configs.im_channels,
+                                            num_classes=victim_dataset_configs.num_classes,
+                                            im_size=victim_dataset_configs.im_size)
+    attacker_optimizer_configs = OptimizerConfigs(name=settings.att_optimizer,
+                                                    lr=settings.att_lr,
+                                                    weight_decay=settings.att_weight_decay,
+                                                    momentum=settings.att_momentum,
+                                                    nesterov=settings.att_nesterov,)
+    attacker_scheduler_configs = SchedulerConfigs(name=settings.att_lr_sched,
+                                                    lr=settings.att_lr,
+                                                    epochs=settings.att_epochs)
+    attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
+                                            scheduler_config=attacker_scheduler_configs,
+                                            batch_size=settings.att_batch_size,
+                                            loss=settings.att_loss,
+                                            metrics=settings.perf_metrics,
+                                            metric_to_track=settings.perf_metric_to_track,
+                                            device=settings.device,
+                                            distributed=settings.distributed,
+                                            seed=settings.att_seed,
+                                            resume=settings.resume,
+                                            ckpts_folder=exp_ckpts_folder,
+                                            resume_ckpts_folder=exp_resume_ckpts_folder)
+    attacker_auditing_configs = AuditingDataConfigs(n_auditing_samples=settings.n_auditing_samples,
+                                                in_perc=settings.audit_in_perc,
+                                                seed=settings.att_seed)
+    attacker_shadow_configs = ShadowDataConfigs(n_shadow_datasets=settings.n_shadows,
+                                                n_samples_per_dataset=settings.n_samples_per_shadow_dataset,
+                                                mode='online',
+                                                test_perc=settings.shadow_test_perc,
+                                                seed=settings.att_seed)
+
+    if settings.attack_mode in ['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia']:
+        rmia_mode = 'online' if settings.attack_mode in ['online_rmia', 'on_rmia'] else 'offline'
+        attack_configs = AttackConfigs(mode=rmia_mode,
+                                        alpha=settings.rmia_alphas,
+                                        gamma=settings.rmia_gamma,
+                                        random_pop_size=settings.random_population_size)
+        attacker_shadow_configs.mode = rmia_mode
+    elif settings.attack_mode == 'lira':
+        attack_configs = AttackConfigs()
+    elif settings.attack_mode == 'quantile':
+        attacker_train_configs.metric_to_track = "quantile_coverage"
+        attacker_train_configs.metrics = ["quantile_coverage"]
+        attack_configs = AttackConfigs(n_quantile=settings.n_quantile,
+                                        low_quantile=settings.low_quantile,
+                                        high_quantile=settings.high_quantile,
+                                        use_logscale=settings.quantile_use_logscale,
+                                        use_gaussian=settings.quantile_use_gaussian,
+                                        quantile_alpha=settings.quantile_alpha)
+    else:
+        raise ValueError('Attack mode "{}" not recognized!'.format(settings.attack_mode))
+    attacker_configs = AttackerConfigs(log=attacker_log_configs,
+                                        model=attacker_model_configs,
+                                        train=attacker_train_configs,
+                                        audit=attacker_auditing_configs,
+                                        shadow=attacker_shadow_configs,
+                                        attack=attack_configs)
+    experiment_configs = ExperimentConfigs(hash=exp_hash,
+                                            victim=victim_configs,
+                                            attacker=attacker_configs)
+    return experiment_configs
