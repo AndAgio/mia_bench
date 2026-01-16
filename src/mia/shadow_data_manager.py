@@ -29,6 +29,12 @@ class ShadowDatasetsManager(Loggable):
         assert auditing_dataset.get_all_ids() != []
         self.auditing_indices = auditing_dataset.get_all_ids()
 
+        if self.mode == 'online':
+            if not self.n_samples_per_dataset > len(self.auditing_indices):
+                self.logger.print_it(f'Number of samples per shadow dataset should be larger than number of auditing samples in online mode! Resetting n_samples_per_dataset to {len(self.auditing_indices)*2}...')
+                shadow_configs.n_samples_per_dataset = len(self.auditing_indices) * 2
+                self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
+
         assert 0 < shadow_configs.n_shadow_datasets < 101
         self.n_shadow_datasets = shadow_configs.n_shadow_datasets
         assert 0 < shadow_configs.n_samples_per_dataset < 100000
@@ -63,6 +69,7 @@ class ShadowDatasetsManager(Loggable):
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
         if self.mode == 'online':
             # Use a set for fast membership checks and avoid rebuilding 'ids' on every small change.
+            assert self.n_samples_per_dataset > len(self.auditing_indices), f'Number of samples per shadow dataset should be larger than number of auditing samples in online mode!'
             in_indices_to_add = copy.deepcopy(self.auditing_indices)
             in_indices_set = set(in_indices_to_add)
             train_len = len(train_data)
