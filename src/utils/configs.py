@@ -219,6 +219,12 @@ class AttackConfigs:
     use_gaussian: bool = False
     quantile_alpha: float = 0.05
 
+    # Neural MIA
+    neural_input_mode: str = 'logit'
+    model_layers: list[int] = field(default_factory=lambda: [64, 32])
+    model_epochs: int = 10
+    model_lr: float = 0.01
+
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class VictimConfigs:
@@ -253,7 +259,8 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
         attacker_settings = ['dataset', 'attacker_model', 'attack_mode', 
                             'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
                             'random_population_size', 'rmia_alphas', 'rmia_gamma', 
-                            'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian' ]
+                            'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian',
+                            '--neural_model_layers', '--neural_model_epochs', '--neural_model_lr']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
     elif mode == 'victim':
         victim_settings = ['dataset', 'victim_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
@@ -279,8 +286,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     exp_log_folder = settings.out_folder/'experiments'/exp_hash/'logs'
     victim_ckpts_folder = settings.out_folder/'victims'/victim_hash/'ckpts'
     victim_resume_ckpts_folder = settings.out_folder/'victims'/victim_hash/'resume_ckpts'
-    attacker_ckpts_folder = settings.out_folder/'attackers'/victim_hash/'ckpts'
-    attacker_resume_ckpts_folder = settings.out_folder/'attackers'/victim_hash/'resume_ckpts'
+    attacker_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'ckpts'
+    attacker_resume_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'resume_ckpts'
     victim_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation)
@@ -369,6 +376,13 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         use_logscale=settings.quantile_use_logscale,
                                         use_gaussian=settings.quantile_use_gaussian,
                                         quantile_alpha=settings.quantile_alpha)
+    elif settings.attack_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
+        neural_input_mode = settings.attack_mode.split('_')[-1]
+        attack_configs = AttackConfigs(mode='online',
+                                        neural_input_mode=neural_input_mode,
+                                        model_layers=settings.neural_model_layers,
+                                        model_epochs=settings.neural_model_epochs,
+                                        model_lr=settings.neural_model_lr)
     else:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attack_mode))
     attacker_configs = AttackerConfigs(hash=attacker_hash,
