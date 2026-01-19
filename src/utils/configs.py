@@ -229,6 +229,10 @@ class AttackConfigs:
     r_alpha: float = 0.05
     r_score_type: str = 'loss'  # options: loss, confidence, entropy
 
+    # Attack-P MIA
+    p_alpha: float = 0.05
+    p_score_type: str = 'loss'  # options: loss, confidence, entropy
+
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class VictimConfigs:
@@ -395,6 +399,14 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         r_alpha=settings.r_alpha,
                                         r_score_type=score_type)
         attacker_shadow_configs.mode = 'offline'
+    elif settings.attack_mode in ['pmia_loss', 'pmia_confidence', 'pmia_entropy']:
+        score_type = settings.attack_mode.split('_')[-1]
+        attack_configs = AttackConfigs(mode='offline',
+                                        p_alpha=settings.p_alpha,
+                                        p_score_type=score_type)
+        attacker_shadow_configs.n_shadow_datasets = 1
+        attacker_shadow_configs.mode = 'offline'
+        attacker_shadow_configs.test_perc = 1.0
     else:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attack_mode))
     attacker_configs = AttackerConfigs(hash=attacker_hash,

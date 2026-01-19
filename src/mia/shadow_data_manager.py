@@ -45,7 +45,7 @@ class ShadowDatasetsManager(Loggable):
         self.n_shadow_datasets = shadow_configs.n_shadow_datasets
         assert 0 < shadow_configs.n_samples_per_dataset <= MAX_SAMPLES_PER_SHADOW_DATASET
         self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
-        assert 0 < shadow_configs.test_perc < 1
+        assert 0 <= shadow_configs.test_perc <= 1
         self.test_perc = shadow_configs.test_perc
 
         self.seed = shadow_configs.seed
