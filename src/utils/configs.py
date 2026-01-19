@@ -202,10 +202,10 @@ class ShadowDataConfigs:
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class AttackConfigs:
-    # Optional arguments with default values
+    # Shared arguments
+    mode: str = 'offline'
 
     # RobustMIA
-    mode: str = 'offline'
     alpha: Union[float, list[float]] = 0.5
     gamma: float = 1
     random_pop_size: int = 1000
@@ -224,6 +224,10 @@ class AttackConfigs:
     model_layers: list[int] = field(default_factory=lambda: [64, 32])
     model_epochs: int = 10
     model_lr: float = 0.01
+
+    # Attack-R MIA
+    r_alpha: float = 0.05
+    r_score_type: str = 'loss'  # options: loss, confidence, entropy
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -260,7 +264,8 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
                             'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
                             'random_population_size', 'robust_alphas', 'robust_gamma', 
                             'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian',
-                            '--neural_model_layers', '--neural_model_epochs', '--neural_model_lr']
+                            'neural_model_layers', 'neural_model_epochs', 'neural_model_lr',
+                            'r_alpha']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
     elif mode == 'victim':
         victim_settings = ['dataset', 'victim_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
@@ -376,6 +381,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         use_logscale=settings.quantile_use_logscale,
                                         use_gaussian=settings.quantile_use_gaussian,
                                         quantile_alpha=settings.quantile_alpha)
+        attacker_shadow_configs.mode = 'offline'
     elif settings.attack_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
         neural_input_mode = settings.attack_mode.split('_')[-1]
         attack_configs = AttackConfigs(mode='online',
@@ -383,6 +389,12 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         model_layers=settings.neural_model_layers,
                                         model_epochs=settings.neural_model_epochs,
                                         model_lr=settings.neural_model_lr)
+    elif settings.attack_mode in ['rmia_loss', 'rmia_confidence', 'rmia_entropy']:
+        score_type = settings.attack_mode.split('_')[-1]
+        attack_configs = AttackConfigs(mode='offline',
+                                        r_alpha=settings.r_alpha,
+                                        r_score_type=score_type)
+        attacker_shadow_configs.mode = 'offline'
     else:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attack_mode))
     attacker_configs = AttackerConfigs(hash=attacker_hash,

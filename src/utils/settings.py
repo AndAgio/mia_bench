@@ -78,7 +78,7 @@ def gather_settings():
         # Shared MIA parameters
         parser.add_argument("--attack_mode", default="robust",
                                 choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust', "lira", "nn", "quantile",
-                                        "neural_feat", "neural_prob", "neural_logit"])
+                                        "neural_feat", "neural_prob", "neural_logit", 'rmia_loss', 'rmia_confidence', 'rmia_entropy'])
         parser.add_argument('--n_auditing_samples', type=int, default=1000,
                                 help='Number of samples to use for auditing on the attacker side')
         parser.add_argument('--audit_in_perc', type=float, default=0.5,
@@ -116,6 +116,9 @@ def gather_settings():
                                 help='Number of epochs to train the neural MIA attacker model')
         parser.add_argument('--neural_model_lr', type=float, default=0.01,
                                 help='Learning rate to train the neural MIA attacker model')
+        # Attack-R MIA parameters
+        parser.add_argument('--r_alpha', type=float, default=0.05,
+                                help='Alpha to be used in the Attack-R MIA attack')
         
 
         # Attacker training parameters
