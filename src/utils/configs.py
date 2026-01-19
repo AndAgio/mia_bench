@@ -204,7 +204,7 @@ class ShadowDataConfigs:
 class AttackConfigs:
     # Optional arguments with default values
 
-    # RMIA
+    # RobustMIA
     mode: str = 'offline'
     alpha: Union[float, list[float]] = 0.5
     gamma: float = 1
@@ -258,7 +258,7 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
     if mode == 'attacker':
         attacker_settings = ['dataset', 'attacker_model', 'attack_mode', 
                             'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
-                            'random_population_size', 'rmia_alphas', 'rmia_gamma', 
+                            'random_population_size', 'robust_alphas', 'robust_gamma', 
                             'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian',
                             '--neural_model_layers', '--neural_model_epochs', '--neural_model_lr']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
@@ -357,13 +357,13 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                 test_perc=settings.shadow_test_perc,
                                                 seed=settings.att_seed)
 
-    if settings.attack_mode in ['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia']:
-        rmia_mode = 'online' if settings.attack_mode in ['online_rmia', 'on_rmia'] else 'offline'
-        attack_configs = AttackConfigs(mode=rmia_mode,
-                                        alpha=settings.rmia_alphas,
-                                        gamma=settings.rmia_gamma,
+    if settings.attack_mode in ['online_robust', 'offline_robust', 'on_robust', 'off_robust']:
+        robust_mode = 'online' if settings.attack_mode in ['online_robust', 'on_robust'] else 'offline'
+        attack_configs = AttackConfigs(mode=robust_mode,
+                                        alpha=settings.robust_alphas,
+                                        gamma=settings.robust_gamma,
                                         random_pop_size=settings.random_population_size)
-        attacker_shadow_configs.mode = rmia_mode
+        attacker_shadow_configs.mode = robust_mode
     elif settings.attack_mode == 'lira':
         attack_configs = AttackConfigs(mode='online')
     elif settings.attack_mode == 'quantile':

@@ -88,7 +88,6 @@ class LiRA(BaseMIA):
         self.logger.print_it('LiRA attacker: score computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))
 
         metrics = self.compute_stats(scores)
-        # self.logger.print_it('RMIA attacker: Obtained scores are: {}'.format(metrics))
         return metrics
 
         
