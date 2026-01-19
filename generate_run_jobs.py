@@ -222,7 +222,8 @@ for dataset in DATASETS:
             
             text += "\ncd .."
 
-            cfg = SGD_HYPERPARAMS[dataset][victim_model]
+            cfg = SGD_HYPERPARAMS[dataset]
+            cfg = cfg.get(victim_model, cfg["default"])
 
             # Define python script to launch
             text += f"\n\npython run.py --dataset='{dataset}' "\
