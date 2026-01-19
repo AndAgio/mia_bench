@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from torch import set_grad_enabled, flatten, Tensor
 from torchvision.models import mobilenetv3
@@ -170,6 +171,14 @@ class MobileNetV3_32x32(nn.Module):
             x = x.view(x.size(0), -1)
             x = self.classifier(x)
             return x
+    
+    def feature(self, x: Tensor) -> Tensor:
+        with torch.no_grad():
+            x = self.features(x)
+            x = self.conv(x)
+            x = self.avgpool(x)
+            x = x.view(x.size(0), -1)
+        return x
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -213,6 +222,13 @@ class MobileNetV3_224x224(mobilenetv3.MobileNetV3):
             x = flatten(x, 1)
             x = self.classifier(x)
             return x
+    
+    def feature(self, x: Tensor) -> Tensor:
+        with torch.no_grad():
+            x = self.features(x)
+            x = self.avgpool(x)
+            x = flatten(x, 1)
+        return x
 
 
 def MobileNetV3(arch: str, channel: int, num_classes: int, im_size, record_embedding: bool = False,

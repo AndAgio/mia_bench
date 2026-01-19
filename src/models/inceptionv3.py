@@ -327,6 +327,55 @@ class InceptionV3_32x32(nn.Module):
             x = self.embedding_recorder(x)
             x = self.linear(x)
         return x
+    
+    def feature(self, x):
+        with torch.no_grad():
+            # 32 -> 30
+            x = self.Conv2d_1a_3x3(x)
+            x = self.Conv2d_2a_3x3(x)
+            x = self.Conv2d_2b_3x3(x)
+            x = self.Conv2d_3b_1x1(x)
+            x = self.Conv2d_4a_3x3(x)
+
+            # 30 -> 30
+            x = self.Mixed_5b(x)
+            x = self.Mixed_5c(x)
+            x = self.Mixed_5d(x)
+
+            # 30 -> 14
+            # Efficient Grid Size Reduction to avoid representation
+            # bottleneck
+            x = self.Mixed_6a(x)
+
+            # 14 -> 14
+            # """In practice, we have found that employing this factorization does not
+            # work well on early layers, but it gives very good results on medium
+            # grid-sizes (On m × m feature maps, where m ranges between 12 and 20).
+            # On that level, very good results can be achieved by using 1 × 7 convolutions
+            # followed by 7 × 1 convolutions."""
+            x = self.Mixed_6b(x)
+            x = self.Mixed_6c(x)
+            x = self.Mixed_6d(x)
+            x = self.Mixed_6e(x)
+
+            # 14 -> 6
+            # Efficient Grid Size Reduction
+            x = self.Mixed_7a(x)
+
+            # 6 -> 6
+            # We are using this solution only on the coarsest grid,
+            # since that is the place where producing high dimensional
+            # sparse representation is the most critical as the ratio of
+            # local processing (by 1 × 1 convolutions) is increased compared
+            # to the spatial aggregation."""
+            x = self.Mixed_7b(x)
+            x = self.Mixed_7c(x)
+
+            # 6 -> 1
+            x = self.avgpool(x)
+            x = self.dropout(x)
+            x = x.view(x.size(0), -1)
+        return x
 
 
 class InceptionV3_224x224(inception.Inception3):
@@ -397,6 +446,58 @@ class InceptionV3_224x224(inception.Inception3):
             x = self.fc(x)
             # N x 1000 (num_classes)
             return x, aux
+        
+    def feature(self, x):
+        with torch.no_grad():
+            # N x 3 x 299 x 299
+            x = self.Conv2d_1a_3x3(x)
+            # N x 32 x 149 x 149
+            x = self.Conv2d_2a_3x3(x)
+            # N x 32 x 147 x 147
+            x = self.Conv2d_2b_3x3(x)
+            # N x 64 x 147 x 147
+            x = self.maxpool1(x)
+            # N x 64 x 73 x 73
+            x = self.Conv2d_3b_1x1(x)
+            # N x 80 x 73 x 73
+            x = self.Conv2d_4a_3x3(x)
+            # N x 192 x 71 x 71
+            x = self.maxpool2(x)
+            # N x 192 x 35 x 35
+            x = self.Mixed_5b(x)
+            # N x 256 x 35 x 35
+            x = self.Mixed_5c(x)
+            # N x 288 x 35 x 35
+            x = self.Mixed_5d(x)
+            # N x 288 x 35 x 35
+            x = self.Mixed_6a(x)
+            # N x 768 x 17 x 17
+            x = self.Mixed_6b(x)
+            # N x 768 x 17 x 17
+            x = self.Mixed_6c(x)
+            # N x 768 x 17 x 17
+            x = self.Mixed_6d(x)
+            # N x 768 x 17 x 17
+            x = self.Mixed_6e(x)
+            # N x 768 x 17 x 17
+            aux = None
+            if self.AuxLogits is not None:
+                if self.training:
+                    aux = self.AuxLogits(x)
+            # N x 768 x 17 x 17
+            x = self.Mixed_7a(x)
+            # N x 1280 x 8 x 8
+            x = self.Mixed_7b(x)
+            # N x 2048 x 8 x 8
+            x = self.Mixed_7c(x)
+            # N x 2048 x 8 x 8
+            # Adaptive average pooling
+            x = self.avgpool(x)
+            # N x 2048 x 1 x 1
+            x = self.dropout(x)
+            # N x 2048 x 1 x 1
+            x = torch.flatten(x, 1)
+        return x
 
 
 def InceptionV3(channel: int, num_classes: int, im_size, record_embedding: bool = False, no_grad: bool = False,

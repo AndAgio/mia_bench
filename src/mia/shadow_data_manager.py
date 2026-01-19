@@ -290,3 +290,27 @@ class ShadowDatasetsManager(Loggable):
     def get_all_ids(self):
         return list(self.shadow_datasets_map.keys())
     
+    def get_all_samples_ids(self):
+        all_ids = []
+        for index in range(self.n_shadow_datasets):
+            all_ids += self.shadow_datasets_map[index]['all_ids']
+        return list(set(all_ids))
+    
+    def get_all_samples_in_all_shadow_datasets(self, labels: str = 'original'):
+        original_train_data = self.original_datasets.get('train')
+        original_test_data = self.original_datasets.get('test')
+        all_train_indices = list(set().union(*[self.shadow_datasets_map[index]['train_ids'] for index in range(self.n_shadow_datasets)]))
+        all_test_indices = list(set().union(*[self.shadow_datasets_map[index]['test_ids'] for index in range(self.n_shadow_datasets)]))
+        if labels == 'mia':
+            train_data = Subset(original_train_data, all_train_indices)
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
+            return ConcatDataset([FixedLabelDataset(train_data,
+                                                    fixed_label=1),
+                                    FixedLabelDataset(test_data,
+                                                    fixed_label=0),])
+        elif labels == 'original':
+            train_data = Subset(original_train_data, all_train_indices)
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
+            return ConcatDataset([train_data,test_data])
+        else:
+            raise ValueError('Labels mode should be either mia or original!')

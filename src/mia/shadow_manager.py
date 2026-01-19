@@ -101,3 +101,9 @@ class ShadowManager(Loggable):
                                                     num_data=num_data,
                                                     labels=labels)
     
+    def get_all_samples_ids(self):
+        return self.shadow_data.get_all_samples_ids()
+    
+    def get_all_samples_in_all_shadow_datasets(self, labels: str = 'original'):
+        return self.shadow_data.get_all_samples_in_all_shadow_datasets(labels=labels)
+    

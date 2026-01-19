@@ -145,6 +145,17 @@ class ResNet(nn.Module):
 
         return output
 
+    def feature(self, x):
+        with torch.no_grad():
+            output = self.conv1(x)
+            output = self.conv2_x(output)
+            output = self.conv3_x(output)
+            output = self.conv4_x(output)
+            output = self.conv5_x(output)
+            output = self.avg_pool(output)
+            output = output.view(output.size(0), -1)
+        return output
+
 
 def ResNet18(channel=3, num_classes=10):
     return ResNet(BasicBlock, [2,2,2,2], channel, num_classes)

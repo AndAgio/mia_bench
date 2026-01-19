@@ -101,6 +101,17 @@ class WideResNet_32x32(nn.Module):
             out = out.view(-1, self.nChannels)
             out = self.embedding_recorder(out)
         return self.fc(out)
+    
+    def forward(self, x):
+        with torch.no_grad():
+            out = self.conv1(x)
+            out = self.block1(out)
+            out = self.block2(out)
+            out = self.block3(out)
+            out = self.relu(self.bn1(out))
+            out = F.avg_pool2d(out, 8)
+            out = out.view(-1, self.nChannels)
+        return out
 
 
 def WideResNet(arch: str, channel: int, num_classes: int, im_size, record_embedding: bool = False,

@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from torch import set_grad_enabled, flatten, Tensor
 from .utils import EmbeddingRecorder
@@ -33,6 +34,12 @@ class VGG_32x32(nn.Module):
             x = self.embedding_recorder(x)
             x = self.classifier(x)
         return x
+    
+    def feature(self, x):
+        with torch.no_grad():
+            x = self.features(x)
+            x = x.view(x.size(0), -1)
+        return x
 
     def get_last_layer(self):
         return self.classifier
@@ -45,8 +52,8 @@ class VGG_32x32(nn.Module):
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
                 layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=3 if self.channel == 1 and ic == 0 else 1),
-                           nn.BatchNorm2d(x),
-                           nn.ReLU(inplace=True)]
+                            nn.BatchNorm2d(x),
+                            nn.ReLU(inplace=True)]
                 in_channels = x
         layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
         return nn.Sequential(*layers)
@@ -77,6 +84,13 @@ class VGG_224x224(vgg.VGG):
             x = flatten(x, 1)
             x = self.classifier(x)
             return x
+    
+    def feature(self, x):
+        with torch.no_grad():
+            x = self.features(x)
+            x = self.avgpool(x)
+            x = flatten(x, 1)
+        return x
 
 
 def VGG(arch: str, channel: int, num_classes: int, im_size, record_embedding: bool = False, no_grad: bool = False,

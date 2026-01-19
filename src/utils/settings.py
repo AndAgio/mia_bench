@@ -77,11 +77,12 @@ def gather_settings():
 
         # Shared MIA parameters
         parser.add_argument("--attack_mode", default="rmia",
-                                choices=['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia', "lira", "nn", "quantile"])
+                                choices=['online_rmia', 'offline_rmia', 'on_rmia', 'off_rmia', "lira", "nn", "quantile",
+                                        "neural_feat", "neural_prob", "neural_logit"])
         parser.add_argument('--n_auditing_samples', type=int, default=1000,
                                 help='Number of samples to use for auditing on the attacker side')
         parser.add_argument('--audit_in_perc', type=float, default=0.5,
-                                help='Percentage of auditing samples that are coming from tßhe training set')
+                                help='Percentage of auditing samples that are coming from the training set')
         parser.add_argument('--n_shadows', type=int, default=10,
                                 help='Number of shadow models and datasets to be used for MIAs requiring shadow models')
         parser.add_argument('--n_samples_per_shadow_dataset', type=int, default=5000,
@@ -108,6 +109,13 @@ def gather_settings():
                                 help="use logscale for quantile MIA attack",)
         parser.add_argument("--quantile_use_gaussian", action="store_true", default=False,
                                 help="use use_gaussian for quantile MIA attack",)
+        # Neural MIA parameters
+        parser.add_argument('--neural_model_layers', type=int, nargs="+", default=[64, 32],
+                                help='List of hidden layer sizes for the neural MIA attacker model')
+        parser.add_argument('--neural_model_epochs', type=int, default=20,
+                                help='Number of epochs to train the neural MIA attacker model')
+        parser.add_argument('--neural_model_lr', type=float, default=0.01,
+                                help='Learning rate to train the neural MIA attacker model')
         
 
         # Attacker training parameters
