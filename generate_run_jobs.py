@@ -227,8 +227,8 @@ for dataset in DATASETS:
 
             # Define python script to launch
             text += f"\n\npython run.py --dataset='{dataset}' "\
-                    f"--victim_epochs={cfg['epochs']} --victim_lr={cfg['lr']} --victim_weight_decay={cfg['weight_decay']} --victim_lr_sched={cfg['scheduler']['type']} {'--nesterov' if cfg['nesterov'] else ''} "\
-                    f"--att_epochs={int(cfg['epochs']/2)} --att_lr={cfg['lr']} --att_weight_decay={cfg['weight_decay']} --att_lr_sched={cfg['scheduler']['type']} {'--nesterov' if cfg['nesterov'] else ''} "\
+                    f"--victim_epochs={cfg['epochs']} --victim_lr={cfg['lr']} --victim_weight_decay={cfg['weight_decay']} --victim_lr_sched={cfg['scheduler']['type']} {'--victim_nesterov' if cfg['nesterov'] else ''} "\
+                    f"--att_epochs={int(cfg['epochs']/2)} --att_lr={cfg['lr']} --att_weight_decay={cfg['weight_decay']} --att_lr_sched={cfg['scheduler']['type']} {'--att_nesterov' if cfg['nesterov'] else ''} "\
                     f"--attack_mode='{attack}' "\
                     f"--n_shadows={1 if 'pmia' in attack or 'quantile' in attack else N_SHADOWS} "\
                     f"--n_samples_per_shadow_dataset={5000  if 'pmia' in attack else SAMPLES_SHADOW} "\
