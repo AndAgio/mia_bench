@@ -23,6 +23,7 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it(f"Working with Quantile MIA!")
         
         # TODO: add silent check for n_shadow_datasets == 1 and avoid raising an error, but rather modify configurations on the fly.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/19
         # assignees: AndAgio.
 
         assert self.shadow_configs.n_shadow_datasets == 1, f"When using quantile MIA, only 1 shadow dataset must be used!"
