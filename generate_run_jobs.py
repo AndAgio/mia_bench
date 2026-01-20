@@ -4,7 +4,7 @@ import glob
 import subprocess
 from src.utils.yaml import load_secrets_yaml
 
-
+MODE = 'train_victim'  # 'train_victim' or 'run_attack'
 
 TIMEOUT = load_secrets_yaml()['cluster']['server_timeout']
 CLUSTER_MACHINE = load_secrets_yaml()['cluster']['server_qos']
@@ -202,13 +202,11 @@ if os.path.exists(jobs_dir) and os.path.isdir(jobs_dir):
     shutil.rmtree(jobs_dir)
 os.makedirs(jobs_dir, exist_ok=True)
 
-for dataset in DATASETS:
-    for attack in ATTACKS:
+if MODE == 'train_victim':
+    for dataset in DATASETS:
         for victim_model in VICTIM_MODELS:
-            attacker_model = victim_model
-            # for attacker_model in ATTACKER_MODEL:
             # Defining job name
-            job_name = '{}_on_{}_with_vic_{}_and_att_{}'.format(attack, dataset, attacker_model, victim_model)
+            job_name = 'train_victim_{}_with_{}'.format(dataset, victim_model)
             print(f"Generating sbatch file for job with name: {job_name}")
             # Define device usages
             text = "#!/bin/sh\n"
@@ -226,19 +224,53 @@ for dataset in DATASETS:
             cfg = cfg.get(victim_model, cfg["default"])
 
             # Define python script to launch
-            text += f"\n\npython run.py --dataset='{dataset}' "\
-                    f"--victim_epochs={cfg['epochs']} --victim_lr={cfg['lr']} --victim_weight_decay={cfg['weight_decay']} --victim_lr_sched={cfg['scheduler']['type']} {'--victim_nesterov' if cfg['nesterov'] else ''} "\
-                    f"--att_epochs={int(cfg['epochs']/2)} --att_lr={cfg['lr']} --att_weight_decay={cfg['weight_decay']} --att_lr_sched={cfg['scheduler']['type']} {'--att_nesterov' if cfg['nesterov'] else ''} "\
-                    f"--attack_mode='{attack}' "\
-                    f"--n_shadows={1 if 'pmia' in attack or 'quantile' in attack else N_SHADOWS} "\
-                    f"--n_samples_per_shadow_dataset={5000  if 'pmia' in attack else SAMPLES_SHADOW} "\
-                    f"--n_auditing_samples={SAMPLES_AUDIT} "\
-                    f"--device=0 "\
-                    f"--resume"
-
+            text += f"\n\npython train_victim.py --dataset='{dataset}' "\
+                    f"--victim_model={victim_model} --victim_epochs={cfg['epochs']} --victim_lr={cfg['lr']} --victim_weight_decay={cfg['weight_decay']} --victim_lr_sched={cfg['scheduler']['type']} {'--victim_nesterov' if cfg['nesterov'] else ''} "\
+                    f"--device=0 "
             # Write file
             with open(os.path.join(jobs_dir, '{}.sbatch'.format(job_name)), 'w') as f:
                 f.write(text)
+            
+elif MODE == 'run_attack':
+    for dataset in DATASETS:
+        for attack in ATTACKS:
+            for victim_model in VICTIM_MODELS:
+                attacker_model = victim_model
+                # for attacker_model in ATTACKER_MODEL:
+                # Defining job name
+                job_name = '{}_on_{}_with_vic_{}_and_att_{}'.format(attack, dataset, attacker_model, victim_model)
+                print(f"Generating sbatch file for job with name: {job_name}")
+                # Define device usages
+                text = "#!/bin/sh\n"
+                text += f"\n#SBATCH --account={ACCOUNT} --qos={CLUSTER_MACHINE} --partition={REQUESTED_GPU}"
+                text += f"\n#SBATCH --time {TIMEOUT}"
+                text += f"\n#SBATCH --nodes={NODES} --gpus-per-node={GPUS_PER_NODE} --cpus-per-task={CPUS_PER_TASK}"
+                text += f"\n#SBATCH --job-name {job_name}"
+                text += f"\n#SBATCH --output={job_name}.out"
+                text += f"\n#SBATCH --error={job_name}.out"
+                text += f"\n#SBATCH --mem-per-cpu={MEM_PER_CPU}"
+                
+                text += "\ncd .."
+
+                cfg = SGD_HYPERPARAMS[dataset]
+                cfg = cfg.get(victim_model, cfg["default"])
+
+                # Define python script to launch
+                text += f"\n\npython run.py --dataset='{dataset}' "\
+                        f"--victim_model={victim_model} --victim_epochs={cfg['epochs']} --victim_lr={cfg['lr']} --victim_weight_decay={cfg['weight_decay']} --victim_lr_sched={cfg['scheduler']['type']} {'--victim_nesterov' if cfg['nesterov'] else ''} "\
+                        f"--att_model={attacker_model} --att_epochs={int(cfg['epochs']/2)} --att_lr={cfg['lr']} --att_weight_decay={cfg['weight_decay']} --att_lr_sched={cfg['scheduler']['type']} {'--att_nesterov' if cfg['nesterov'] else ''} "\
+                        f"--attack_mode='{attack}' "\
+                        f"--n_shadows={1 if 'pmia' in attack or 'quantile' in attack else N_SHADOWS} "\
+                        f"--n_samples_per_shadow_dataset={5000  if 'pmia' in attack else SAMPLES_SHADOW} "\
+                        f"--n_auditing_samples={SAMPLES_AUDIT} "\
+                        f"--device=0 "\
+                        f"--resume"
+
+                # Write file
+                with open(os.path.join(jobs_dir, '{}.sbatch'.format(job_name)), 'w') as f:
+                    f.write(text)
+else:
+    raise ValueError(f"Unknown MODE '{MODE}' specified!")
 
 # SUBMIT
 files = glob.glob(os.path.join(jobs_dir, '*.sbatch'))
