@@ -40,7 +40,7 @@ class ShadowModelsManager(Loggable):
         self.n_models -= 1
 
     def get(self, index: int):
-        assert self.check_id(index), f'ID "{index}" not in datasets managed by {self}!'
+        assert self.check_id(index), f"ID '{index}' not in datasets managed by {self}!"
         return self.models[index]
     
     def get_all(self):

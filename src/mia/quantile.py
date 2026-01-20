@@ -20,8 +20,8 @@ class QuantileMIA(BaseMIA):
                 victim_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
         super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
-        self.logger.print_it(f'Working with Quantile MIA!')
-        assert self.shadow_configs.n_shadow_datasets == 1, f'When using quantile MIA, only 1 shadow dataset must be used!'
+        self.logger.print_it(f"Working with Quantile MIA!")
+        assert self.shadow_configs.n_shadow_datasets == 1, f"When using quantile MIA, only 1 shadow dataset must be used!"
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
@@ -115,7 +115,7 @@ class QuantileMIA(BaseMIA):
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         scores = np.zeros((len(audit_dataset), ))
-        self.logger.print_it(f'Computing scores for all {tot_samples} samples. This may take a while...')
+        self.logger.print_it(f"Computing scores for all {tot_samples} samples. This may take a while...")
         for sample_index, (sample, label) in enumerate(audit_loader):
             with torch.no_grad():
                 target_score, _ = self.victim_scoring_fn(sample, label, device=device)

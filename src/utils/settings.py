@@ -163,8 +163,8 @@ def gather_settings():
 def setup_configs_and_folder_from_settings(settings):
         for mode in ['victim', 'attacker', 'experiment']:
                 hash_code = get_hash_from_settings(settings, mode=mode)
-                print(f'{mode.capitalize()} hash: {hash_code}')
-                out_folder = settings.out_folder / f'{mode}s' / hash_code
+                print(f"{mode.capitalize()} hash: {hash_code}")
+                out_folder = settings.out_folder / f"{mode}s" / hash_code
                 if mode == 'experiment':
                         experiment_out_folder = out_folder
                 os.makedirs(out_folder, exist_ok=True)
@@ -172,6 +172,6 @@ def setup_configs_and_folder_from_settings(settings):
                 with open(settings_file, 'w') as f:
                         settings_dict = get_relevant_settings(settings, mode=mode)
                         json.dump(settings_dict, f, indent=4)
-                print(f'{mode.capitalize()} settings saved to {settings_file}')
+                print(f"{mode.capitalize()} settings saved to {settings_file}")
         experiment_configs = generate_configs_from_settings(settings)
         return experiment_configs, experiment_out_folder

@@ -209,7 +209,7 @@ for dataset in DATASETS:
             # for attacker_model in ATTACKER_MODEL:
             # Defining job name
             job_name = '{}_on_{}_with_vic_{}_and_att_{}'.format(attack, dataset, attacker_model, victim_model)
-            print(f'Generating sbatch file for job with name: {job_name}')
+            print(f"Generating sbatch file for job with name: {job_name}")
             # Define device usages
             text = "#!/bin/sh\n"
             text += f"\n#SBATCH --account={ACCOUNT} --qos={CLUSTER_MACHINE} --partition={REQUESTED_GPU}"

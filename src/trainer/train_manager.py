@@ -49,12 +49,12 @@ class TrainManager(Loggable):
 
     def setup_folders(self, train_configs: TrainConfigs):
         models_folder = os.path.join(train_configs.ckpts_folder, self.name)
-        self.logger.print_it(f'Setting up checkpoints folder to {models_folder}')
+        self.logger.print_it(f"Setting up checkpoints folder to {models_folder}")
         os.makedirs(models_folder, exist_ok=True)
         self.models_folder = models_folder
         self.ckpts_folder = train_configs.ckpts_folder
         resume_folder = os.path.join(train_configs.resume_ckpts_folder, self.name)
-        self.logger.print_it(f'Setting up resume folder to {resume_folder}')
+        self.logger.print_it(f"Setting up resume folder to {resume_folder}")
         os.makedirs(resume_folder, exist_ok=True)
         self.resume_folder = resume_folder
 
@@ -146,7 +146,7 @@ class TrainManager(Loggable):
         if metric_to_track is None:
             self.metric_to_track = 'loss'
         else:
-            assert metric_to_track in list(self.performance_metrics.keys()), f'Metric to track should be among tracked metrics. Found "{metric_to_track}" and {list(self.performance_metrics.keys())}!'
+            assert metric_to_track in list(self.performance_metrics.keys()), f"Metric to track should be among tracked metrics. Found '{metric_to_track}' and {list(self.performance_metrics.keys())}!"
             self.metric_to_track = metric_to_track
 
     def setup_optimizer(self, opt_cfg: OptimizerConfigs):
@@ -398,9 +398,9 @@ class TrainManager(Loggable):
         if is_rank0():
             if not self.profiler_epoch:
                 return
-            lines = [f'Profiling summary for epoch {self.epoch}:']
+            lines = [f"Profiling summary for epoch {self.epoch}:"]
             for k, v in sorted(self.profiler_epoch.items(), key=lambda x: -x[1]):
-                lines.append(f'  {k}: {v:.4f}s')
+                lines.append(f"  {k}: {v:.4f}s")
             self.logger.print_it('\n'.join(lines))
     
 
@@ -447,9 +447,9 @@ class TrainManager(Loggable):
             # Finalize epoch and checkpoint (rank-0)
             epoch_summary = self.epoch_stats_tracker.finalize_epoch(epoch=self.epoch)
             best_epoch, new_best = self.train_stats_tracker.update_history_and_best(epoch_summary=epoch_summary)
-            
-            self.logger.print_it(f'Best epoch so far is {best_epoch}: {'test' if self.run_test else 'train'} {self.metric_to_track} = {new_best:.4f}')
-            
+
+            self.logger.print_it(f"Best epoch so far is {best_epoch}: {'test' if self.run_test else 'train'} {self.metric_to_track} = {new_best:.4f}")
+
             if self.local_rank == 0:
                 ckpt = self.ckpts_manager.build_checkpoint(epoch=self.epoch,
                                                         train_stats=self.train_stats_tracker)
@@ -622,7 +622,7 @@ class TrainManager(Loggable):
 
     def print_message(self, index_batch, total_batches):
         t0 = time.time()
-        message = f'{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |'
+        message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
         bar_length = 10
         progress = float(index_batch) / float(total_batches)
         if progress >= 1.:
@@ -649,7 +649,7 @@ class TrainManager(Loggable):
             if isinstance(current_lr, (list, tuple)):
                 message += ' LR=[' + ','.join(f"{x:.2e}" for x in current_lr) + '] |'
             else:
-                message += f' LR={current_lr:.2e} |'
+                message += f" LR={current_lr:.2e} |"
         h,m,s = convert_to_hms(self.epoch_stats_tracker.get_current_running_time())
         message += ' Epoch time {}:{:02d}:{:02d} |'.format(h,m,s)
         h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())

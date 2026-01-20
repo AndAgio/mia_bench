@@ -52,7 +52,7 @@ class ShadowManager(Loggable):
                                     return_stats=False)
         self.shadow_models.update(index=id,
                                 model=model)
-        self.logger.print_it(f'Finished training shadow model with ID {id} on the corresponding dataset!')
+        self.logger.print_it(f"Finished training shadow model with ID {id} on the corresponding dataset!")
 
     def train_all(self, train_configs: TrainConfigs, labels_mode: str = 'original'):
         assert self.shadow_data.get_all_ids() == self.shadow_models.get_all_ids(), f"Shadow models and dataset indices do not correspond one to one!"

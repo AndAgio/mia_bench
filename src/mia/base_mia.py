@@ -77,7 +77,7 @@ class BaseMIA(Loggable):
             plt.ylabel('True Positive Rate')
             plt.title('Receiver Operating Characteristic')
             plt.legend(loc="lower right")
-            plt.savefig(f'ROC_MIA.png')
+            plt.savefig(f"ROC_MIA.png")
         return auc_score, tpr, fpr, roc
     
     def compute_auc(self, scores: np.array):

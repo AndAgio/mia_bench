@@ -208,9 +208,9 @@ class CheckpointManager:
         latest_ckpt = self.checkpoint_dir/'last.pth'
         if latest_ckpt.exists():
             epoch = torch.load(latest_ckpt, weights_only=False)["epoch"]
-            self.logger.print_it(f'[CheckpointManager] Found "last.pth" checkpoint for epoch {epoch}, loading it...')
+            self.logger.print_it(f"[CheckpointManager] Found 'last.pth' checkpoint for epoch {epoch}, loading it...")
             return (epoch, latest_ckpt)
-        self.logger.print_it('[CheckpointManager] No "last.pth" checkpoint found, trying to look for epochs_N.pth files...')
+        self.logger.print_it("[CheckpointManager] No 'last.pth' checkpoint found, trying to look for epochs_N.pth files...")
         for p in self.checkpoint_dir.iterdir():
             if p.is_file():
                 m = self.CKPT_REGEX.match(p.name)
@@ -222,7 +222,7 @@ class CheckpointManager:
                         continue
         items.sort(key=lambda t: t[0])  # ascending by epoch
         if len(items) > 0:
-            self.logger.print_it(f'[CheckpointManager] Found checkpoint at epoch {items[-1][0]} with file "{items[-1][1]}", loading it...')
+            self.logger.print_it(f"[CheckpointManager] Found checkpoint at epoch {items[-1][0]} in file {items[-1][1]}, loading it...")
             items[-1]
         else:
             self.logger.print_it('[CheckpointManager] No epochs_N.pth checkpoint files found. Loading nothing. Make sure that a checkpoint is available...')

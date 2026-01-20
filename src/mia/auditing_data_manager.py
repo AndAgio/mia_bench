@@ -33,7 +33,7 @@ class AuditingDatasetManager(Loggable):
         self._sample(n_samples_to_pick_from_train, n_samples_to_pick_from_test)
 
     def _sample(self, n_samples_to_pick_from_train: int, n_samples_to_pick_from_test: int):
-        self.logger.print_it(f'Sampling auditing dataset with {n_samples_to_pick_from_train} samples picked from train and {n_samples_to_pick_from_test} samples picked from test...')
+        self.logger.print_it(f"Sampling auditing dataset with {n_samples_to_pick_from_train} samples picked from train and {n_samples_to_pick_from_test} samples picked from test...")
         member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('train'))), 
                                         n_samples_to_pick_from_train,
                                         replace=False).tolist()
@@ -82,7 +82,7 @@ class AuditingDatasetManager(Loggable):
         return self.all_ids
     
     def get(self, labels: str = 'mia'):
-        self.logger.print_it(f'Getting auditing dataset with {labels} labels...')
+        self.logger.print_it(f"Getting auditing dataset with {labels} labels...")
         if labels == 'mia':
             return ConcatDataset([FixedLabelDataset(self.in_auditing_dataset,
                                                     fixed_label=1),

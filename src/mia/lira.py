@@ -18,7 +18,7 @@ class LiRA(BaseMIA):
                 victim_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
         super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
-        self.logger.print_it(f'Working with LiRA!')
+        self.logger.print_it(f"Working with LiRA!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('LiRA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
@@ -56,21 +56,21 @@ class LiRA(BaseMIA):
             trained_in_shadow_models_for_sample.append(in_models_indices)
             trained_out_shadow_models_for_sample.append(out_models_indices)
 
-        self.logger.print_it(f'Computing phis with in models...')
+        self.logger.print_it(f"Computing phis with in models...")
         phis_in = self.compute_phis(audit_dataset=audit_dataset,
                                         models_for_sample=trained_in_shadow_models_for_sample,
                                         device=device)
         shadow_in_means = np.mean(phis_in, axis=1)
         shadow_in_stds = np.std(phis_in, axis=1)
 
-        self.logger.print_it(f'Computing phis with out models...')
+        self.logger.print_it(f"Computing phis with out models...")
         phis_out = self.compute_phis(audit_dataset=audit_dataset,
                                         models_for_sample=trained_out_shadow_models_for_sample,
                                         device=device)
         shadow_out_means = np.mean(phis_out, axis=1)
         shadow_out_stds = np.std(phis_out, axis=1)
 
-        self.logger.print_it(f'Computing phis with victim model...')
+        self.logger.print_it(f"Computing phis with victim model...")
         phis_victim = self.compute_phis(audit_dataset=audit_dataset,
                                         models_for_sample=[[self.victim_model] for _ in range(len(audit_dataset))],
                                         device=device)
@@ -81,7 +81,7 @@ class LiRA(BaseMIA):
 
         scores = p_in/(p_out+1e-15)
 
-        self.logger.print_it(f'LiRA attacker: scores = {scores}')
+        self.logger.print_it(f"LiRA attacker: scores = {scores}")
 
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
@@ -96,7 +96,7 @@ class LiRA(BaseMIA):
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         phis = np.zeros((len(audit_dataset), len(models_for_sample[0])))
         s = time.time()
-        self.logger.print_it(f'Computing phi for all {tot_samples} samples. This may take a while...')
+        self.logger.print_it(f"Computing phi for all {tot_samples} samples. This may take a while...")
         for sample_index, (sample, label) in enumerate(audit_loader):
             models = models_for_sample[sample_index]
             for model_index, model in enumerate(models):
@@ -111,7 +111,7 @@ class LiRA(BaseMIA):
                                         target=label,
                                         device=device)
                 phis[sample_index, model_index] = phi
-        self.logger.print_it(f'Computed phis in {time.time() - s} seconds.')
+        self.logger.print_it(f"Computed phis in {time.time() - s} seconds.")
         return phis
 
     @staticmethod

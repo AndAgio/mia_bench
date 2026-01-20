@@ -262,7 +262,7 @@ class ExperimentConfigs:
 
 
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
-    assert mode in ['attacker', 'victim', 'experiment'], f'Mode "{mode}" to get relevant settings not recognized! Choose between "attacker", "victim" or "experiment".'
+    assert mode in ['attacker', 'victim', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'victim' or 'experiment'."
     if mode == 'attacker':
         attacker_settings = ['dataset', 'attacker_model', 'attack_mode', 
                             'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 

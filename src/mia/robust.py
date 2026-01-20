@@ -17,9 +17,9 @@ class RobustMIA(BaseMIA):
                 victim_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
         super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
-        assert self.shadow_configs.mode == self.attack_configs.mode, f'Whenever working with RobustMIA the mode for shadow datasets and attack should be the same!'
+        assert self.shadow_configs.mode == self.attack_configs.mode, f"Whenever working with RobustMIA the mode for shadow datasets and attack should be the same!"
         self.mode = self.attack_configs.mode
-        self.logger.print_it(f'Working with RobustMIA in {self.mode.upper()} mode!')
+        self.logger.print_it(f"Working with RobustMIA in {self.mode.upper()} mode!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('RobustMIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
@@ -52,10 +52,10 @@ class RobustMIA(BaseMIA):
             self.logger.print_it('Found alpha to be None for OFFLINE RobustMIA, which is not possible! Testing over all alphas...')
             alphas = np.arange(0, 1.05, 0.1)
         elif isinstance(alpha, list):
-            assert all([0 < al <= 1 for al in alpha]), f'All given alphas should be between 0 and 1!'
+            assert all([0 < al <= 1 for al in alpha]), f"All given alphas should be between 0 and 1!"
             alphas = alpha
         elif isinstance(alpha, float):
-            assert 0 < alpha <= 1, f'The given alpha should be between 0 and 1! Found alpha={alpha} instead!'
+            assert 0 < alpha <= 1, f"The given alpha should be between 0 and 1! Found alpha={alpha} instead!"
             alphas = [alpha]
         scores = {alpha: self.compute_with_alpha(random_pop_size=random_pop_size,
                                                 alpha=alpha,
@@ -67,10 +67,10 @@ class RobustMIA(BaseMIA):
 
 
     def compute_with_alpha(self, random_pop_size: int, alpha: float, gamma: float = 1, device: Union[torch.device, str] = 'cpu'):
-        # assert self.mode == 'offline', f'compute_with_given_alpha should be called only for OFFLINE mode!'
+        # assert self.mode == 'offline', f"compute_with_given_alpha should be called only for OFFLINE mode!"
         # Compute P(x|theta) for all samples in the auditing dataset
         if self.mode == 'offline':
-            assert 0 < alpha <= 1, f'The given alpha should be between 0 and 1! Found alpha={alpha} instead!'
+            assert 0 < alpha <= 1, f"The given alpha should be between 0 and 1! Found alpha={alpha} instead!"
             self.logger.print_it('Computing RobustMIA scores in OFFLINE mode with alpha={:.3f}'.format(alpha))
         elif self.mode == 'online':
             self.logger.print_it('Computing RobustMIA scores in ONLINE mode')
@@ -103,7 +103,7 @@ class RobustMIA(BaseMIA):
 
     def compute_p_x_theta_over_p_x(self, dataset: Dataset, dataset_indices:list[int], alpha: float = 0.5, device: Union[torch.device, str] = 'cpu'):
         if self.mode == 'offline':
-            assert 0 <= alpha <= 1, f'RobustMIA for OFFLINE mode should have a valid alpha! alpha={alpha} was given!'
+            assert 0 <= alpha <= 1, f"RobustMIA for OFFLINE mode should have a valid alpha! alpha={alpha} was given!"
             # Load indices for all shadow models and set them as offline models
             all_models_indices = self.shadow_manager.get_all_model_indeces()
             trained_out_shadow_models_for_sample = [all_models_indices for _ in range(len(dataset))]
@@ -119,14 +119,14 @@ class RobustMIA(BaseMIA):
                 out_models_indices = [index for index in all_models_indices if index not in in_models_indices]
                 trained_in_shadow_models_for_sample.append(in_models_indices)
                 trained_out_shadow_models_for_sample.append(out_models_indices)
-                # self.logger.print_it(f'For sample with index {index}, I found {len(in_models_indices)} online shadow models and {len(out_models_indices)} offline shadow models...')
+                # self.logger.print_it(f"For sample with index {index}, I found {len(in_models_indices)} online shadow models and {len(out_models_indices)} offline shadow models...")
 
         if self.mode == 'online':
-            self.logger.print_it(f'Computing p(x) with in models...')
+            self.logger.print_it(f"Computing p(x) with in models...")
             p_x_thetas_in = self.compute_p_x_theta(audit_dataset=dataset,
                                                     models_for_sample=trained_in_shadow_models_for_sample,
                                                     device=device)
-        self.logger.print_it(f'Computing p(x) with out models...')
+        self.logger.print_it(f"Computing p(x) with out models...")
         p_x_thetas_out = self.compute_p_x_theta(audit_dataset=dataset,
                                                     models_for_sample=trained_out_shadow_models_for_sample,
                                                     device=device)
@@ -139,7 +139,7 @@ class RobustMIA(BaseMIA):
             p_x_in = np.mean(p_x_thetas_in, axis=1)
             p_x = 0.5 * p_x_in +  0.5 * p_x_out
 
-        self.logger.print_it(f'Computing p(x|theta) with the victim model...')
+        self.logger.print_it(f"Computing p(x|theta) with the victim model...")
         p_x_thetas_victim = self.compute_p_x_theta(audit_dataset=dataset,
                                                 models_for_sample=[[self.victim_model] for _ in range(len(dataset))],
                                                 device=device)
@@ -152,13 +152,13 @@ class RobustMIA(BaseMIA):
     def compute_p_z_theta_over_p_z(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
         all_models_indices = self.shadow_manager.get_all_model_indeces()
         trained_shadow_models_for_sample = [all_models_indices for _ in range(len(dataset))]
-        self.logger.print_it(f'Computing p(z)...')
+        self.logger.print_it(f"Computing p(z)...")
         p_z_thetas = self.compute_p_x_theta(audit_dataset=dataset,
                                             models_for_sample=trained_shadow_models_for_sample,
                                             device=device)
         p_z = np.mean(p_z_thetas, axis=1)
 
-        self.logger.print_it(f'Computing p(z|theta) with victim model...')
+        self.logger.print_it(f"Computing p(z|theta) with victim model...")
         p_z_thetas_victim = self.compute_p_x_theta(audit_dataset=dataset,
                                                 models_for_sample=[[self.victim_model] for _ in range(len(dataset))],
                                                 device=device)
@@ -173,7 +173,7 @@ class RobustMIA(BaseMIA):
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         p_x_thetas = np.zeros((len(audit_dataset), len(models_for_sample[0])))
         s = time.time()
-        self.logger.print_it(f'Computing p(x|theta) for all {tot_samples} samples. This may take a while...')
+        self.logger.print_it(f"Computing p(x|theta) for all {tot_samples} samples. This may take a while...")
         for sample_index, (sample, label) in enumerate(audit_loader):
             models = models_for_sample[sample_index]
             for model_index, model in enumerate(models):
@@ -188,7 +188,7 @@ class RobustMIA(BaseMIA):
                                         target=label,
                                         device=device)
                 p_x_thetas[sample_index, model_index] = p_x_theta
-        self.logger.print_it(f'Computed all p(x|theta) in {time.time() - s} seconds.')
+        self.logger.print_it(f"Computed all p(x|theta) in {time.time() - s} seconds.")
         return p_x_thetas
 
     @staticmethod

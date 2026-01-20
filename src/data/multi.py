@@ -21,7 +21,7 @@ class MultiDatasets():
         if id in self.datasets.keys():
             return self.datasets[id]
         else:
-            raise ValueError(f'ID "{id}" not in datasets managed by {self}!')
+            raise ValueError(f"ID '{id}' not in datasets managed by {self}!")
         
     def n_splits(self):
         return len(self.datasets.keys())

@@ -21,7 +21,7 @@ class NeuralMIA(BaseMIA):
                 victim_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
         super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
-        self.logger.print_it(f'Working with Neural MIA!')
+        self.logger.print_it(f"Working with Neural MIA!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Neural MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
@@ -51,7 +51,7 @@ class NeuralMIA(BaseMIA):
         self.logger.print_it('Neural MIA attacker: building sample label map...')
         start_map = time.time()
         for enumerate_index, (_, _, sample_id) in enumerate(all_indexed_shadow_data):
-            # self.logger.print_it_same_line(f'Processing sample {enumerate_index}/{len(all_indexed_shadow_data)} for attacking model dataset construction...')
+            # self.logger.print_it_same_line(f"Processing sample {enumerate_index}/{len(all_indexed_shadow_data)} for attacking model dataset construction...")
             in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=sample_id,
                                                                                                 split='all')
             out_models_indices = [idx for idx in all_shadow_models_indices if idx not in in_models_indices]
@@ -60,7 +60,7 @@ class NeuralMIA(BaseMIA):
             for out_ids in out_models_indices:
                 sample_label_map[(sample_id, out_ids)] = 0 # non-member
         # self.logger.set_logger_newline()
-        self.logger.print_it(f'Neural MIA attacker: sample label map created in {time.time() - start_map:.2f} seconds!')
+        self.logger.print_it(f"Neural MIA attacker: sample label map created in {time.time() - start_map:.2f} seconds!")
             
         # Get feature shape by passing a dummy sample through one model
         dummy_data, _, _ = all_indexed_shadow_data[0]
@@ -72,7 +72,7 @@ class NeuralMIA(BaseMIA):
                                                 device=train_config.device,
                                                 mode=self.attack_configs.neural_input_mode)
         feature_shape = dummy_feature.shape[1]
-        self.logger.print_it(f'Neural MIA attacker: feature shape determined as {feature_shape}.')
+        self.logger.print_it(f"Neural MIA attacker: feature shape determined as {feature_shape}.")
 
         # Build dataset for training the attacking model
         self.logger.print_it('Neural MIA attacker: building training dataset for the attacking model...')
@@ -84,7 +84,7 @@ class NeuralMIA(BaseMIA):
             shadow_model = self.shadow_manager.get_model(index=model_index)
             dataloader = DataLoader(all_indexed_shadow_data, batch_size=PROCESSING_BATCH_SIZE, shuffle=False)
             for enumerate_index, (batch_data, _, batch_sample_ids) in enumerate(dataloader):
-                # self.logger.print_it_same_line(f'Processing batch {enumerate_index}/{len(dataloader)} of shadow model {model_index}/{len(all_shadow_models_indices)} for attacking model dataset construction...')
+                # self.logger.print_it_same_line(f"Processing batch {enumerate_index}/{len(dataloader)} of shadow model {model_index}/{len(all_shadow_models_indices)} for attacking model dataset construction...")
                 batch_size = batch_data.size(0)
                 batch_features = NeuralMIA.get_model_out(model=shadow_model,
                                                         data=batch_data,
@@ -95,7 +95,7 @@ class NeuralMIA(BaseMIA):
                     targets[current_index + i, 0] = sample_label_map[(batch_sample_ids[i].item(), model_index)]
                 current_index += batch_size
         # self.logger.set_logger_newline()
-        self.logger.print_it(f'Neural MIA attacker: training dataset built in {time.time() - start_build:.2f} seconds!')
+        self.logger.print_it(f"Neural MIA attacker: training dataset built in {time.time() - start_build:.2f} seconds!")
         # Build and train the attacking model
         dataset = TensorDataset(features, targets)
         train_loader = DataLoader(dataset, batch_size=PROCESSING_BATCH_SIZE, shuffle=True)
@@ -115,10 +115,10 @@ class NeuralMIA(BaseMIA):
         self.attack_model = attack_model
         stop = time.time()
         h, m, s = convert_to_hms(stop-start_training)
-        self.logger.print_it(f'Neural MIA attacker: training of the attacking model completed in {h}:{m:02d}:{s:02d}.')
+        self.logger.print_it(f"Neural MIA attacker: training of the attacking model completed in {h}:{m:02d}:{s:02d}.")
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
-        self.logger.print_it(f'Neural MIA attacker: optimization of the attack took {h}:{m:02d}:{s:02d}.')
+        self.logger.print_it(f"Neural MIA attacker: optimization of the attack took {h}:{m:02d}:{s:02d}.")
 
     def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
         # Compute scores on the auditing dataset
@@ -171,12 +171,12 @@ class NeuralMIA(BaseMIA):
                 optimizer.step()
 
                 run_loss += loss.item()
-            self.logger.print_it(f'Epoch {epoch+1}/{self.attack_configs.model_epochs}, Attack Loss: {run_loss/len(train_loader):.4f}')
+            self.logger.print_it(f"Epoch {epoch+1}/{self.attack_configs.model_epochs}, Attack Loss: {run_loss/len(train_loader):.4f}")
         return model
 
     @staticmethod
     def get_model_out(model: torch.nn.Module, data: torch.Tensor, device: Union[torch.device, str], mode: str = 'logit'):
-        assert mode in ['prob', 'logit', 'feat'], f'Mode {mode} not recognized. Available modes are prob, logit and feature!'
+        assert mode in ['prob', 'logit', 'feat'], f"Mode {mode} not recognized. Available modes are prob, logit and feature!"
 
         if isinstance(device, str):
             device = NeuralMIA.get_device(dev_str=device)

@@ -70,7 +70,7 @@ class FriendlySAM(torch.optim.Optimizer):
                 grad = p.grad
 
                 self.state[p]['old_p'] = p.clone()
-                self.state[f'old_grad_p_{i}']['old_grad_p'] = grad.clone()
+                self.state[f"old_grad_p_{i}"]['old_grad_p'] = grad.clone()
 
                 e_w = (torch.pow(p, 2) if group['adaptive'] else 1.0) * grad * scale.to(p)
 

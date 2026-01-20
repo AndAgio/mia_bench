@@ -125,10 +125,10 @@ class SmartLogger(logging.getLoggerClass()):
             try:
                 os.makedirs(self.log_dir)
             except:
-                print(f'{self.__class__.__name__}: Cannot create directory {self.log_dir}. ',
+                print(f"{self.__class__.__name__}: Cannot create directory {self.log_dir}. ",
                       end='', file=sys.stderr)
                 self.log_dir = '/tmp' if sys.platform.startswith('linux') else '.'
-                print(f'Defaulting to {self.log_dir}.', file=sys.stderr)
+                print(f"Defaulting to {self.log_dir}.", file=sys.stderr)
         log_file = self.get_log_file()
 
         # Create file handler for logging to a file (log all five levels)

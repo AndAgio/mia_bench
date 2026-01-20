@@ -112,4 +112,4 @@ def get_performance_metric_func(metric_name: str):
     elif metric_name in ['mace', 'mean_absolute_calibration_error']:
         return mean_absolute_calibration_error
     else:
-        raise ValueError(f'Performance metric "{metric_name}" not recognized as a valid option')
+        raise ValueError(f"Performance metric '{metric_name}' not recognized as a valid option")

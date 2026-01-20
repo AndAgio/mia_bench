@@ -37,7 +37,7 @@ class ShadowDatasetsManager(Loggable):
 
         if self.mode == 'online':
             if not shadow_configs.n_samples_per_dataset > len(self.auditing_indices):
-                self.logger.print_it(f'Number of samples per shadow dataset should be larger than number of auditing samples in online mode! Resetting n_samples_per_dataset to {len(self.auditing_indices)*2}...')
+                self.logger.print_it(f"Number of samples per shadow dataset should be larger than number of auditing samples in online mode! Resetting n_samples_per_dataset to {len(self.auditing_indices)*2}...")
                 shadow_configs.n_samples_per_dataset = len(self.auditing_indices) * 2
                 self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
 
@@ -58,7 +58,7 @@ class ShadowDatasetsManager(Loggable):
                             'all_ids': None}
         self.shadow_datasets_map = None
         start = time.time()
-        self.logger.print_it(f'Sampling, refining and checking {self.n_shadow_datasets} shadow datasets. This may take a while...')
+        self.logger.print_it(f"Sampling, refining and checking {self.n_shadow_datasets} shadow datasets. This may take a while...")
         self.sample()
         stop = time.time()
         self.logger.print_it('Sampling of {} shadow datasets completed in {:.3f} seconds'.format(self.n_shadow_datasets, stop-start))
@@ -66,20 +66,20 @@ class ShadowDatasetsManager(Loggable):
     def sample(self):
         # use self.attacker_hash to store/retrieve shadow datasets maps.
         shadow_data_dir = os.path.join(DEFAULT_SHADOW_DATASETS_FOLDER, self.attacker_hash)
-        shadow_datasets_path = os.path.join(shadow_data_dir, f'shadow_datasets_map.pt')
+        shadow_datasets_path = os.path.join(shadow_data_dir, f"shadow_datasets_map.pt")
         if os.path.exists(shadow_datasets_path):
-            self.logger.print_it(f'Loading previously stored shadow datasets map for attacker {self.attacker_hash}...')
+            self.logger.print_it(f"Loading previously stored shadow datasets map for attacker {self.attacker_hash}...")
             self.shadow_datasets_map = torch.load(shadow_datasets_path)
-            self.logger.print_it(f'Shadow datasets map loaded successfully!')
-            assert self.check_in_out_correctness(), f'Something went wrong with shadow dataset sampling!'
-            self.logger.print_it(f'Shadow datasets are OK for {self.mode} mode!')
+            self.logger.print_it(f"Shadow datasets map loaded successfully!")
+            assert self.check_in_out_correctness(), f"Something went wrong with shadow dataset sampling!"
+            self.logger.print_it(f"Shadow datasets are OK for {self.mode} mode!")
             return
         else:
-            self.logger.print_it(f'No previously stored shadow datasets map found for attacker {self.attacker_hash}, sampling new shadow datasets map...')
+            self.logger.print_it(f"No previously stored shadow datasets map found for attacker {self.attacker_hash}, sampling new shadow datasets map...")
             self._sample()
             os.makedirs(shadow_data_dir, exist_ok=True)
             torch.save(self.shadow_datasets_map, shadow_datasets_path)
-            self.logger.print_it(f'Shadow datasets map sampled and stored successfully to {shadow_datasets_path}!')
+            self.logger.print_it(f"Shadow datasets map sampled and stored successfully to {shadow_datasets_path}!")
 
     def _sample(self):
         train_data = self.original_datasets.get('train')
@@ -87,12 +87,12 @@ class ShadowDatasetsManager(Loggable):
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
         if self.mode == 'online':
             # Use a set for fast membership checks and avoid rebuilding 'ids' on every small change.
-            assert self.n_samples_per_dataset > len(self.auditing_indices), f'Number of samples per shadow dataset should be larger than number of auditing samples in online mode!'
+            assert self.n_samples_per_dataset > len(self.auditing_indices), f"Number of samples per shadow dataset should be larger than number of auditing samples in online mode!"
             in_indices_to_add = copy.deepcopy(self.auditing_indices)
             in_indices_set = set(in_indices_to_add)
             train_len = len(train_data)
             s = time.time()
-            self.logger.print_it(f'Refining online shadow datasets for all {len(in_indices_to_add)} samples. This may take a while...')
+            self.logger.print_it(f"Refining online shadow datasets for all {len(in_indices_to_add)} samples. This may take a while...")
             for _, index_to_add in enumerate(in_indices_to_add):
                 n_datasets_to_randomly_sample = math.floor(self.n_shadow_datasets / 2)
                 datasets_to_modify = self._rng.choice(np.arange(self.n_shadow_datasets), n_datasets_to_randomly_sample, replace=False).tolist()
@@ -113,14 +113,14 @@ class ShadowDatasetsManager(Loggable):
                     else:
                         shadow_datasets_indices[dataset_to_modify]['te_ids'].remove(index_to_substitute)
                         shadow_datasets_indices[dataset_to_modify]['te_ids'].append(index_to_add)
-            self.logger.print_it(f'Refinement executed in {time.time() - s} seconds.')
+            self.logger.print_it(f"Refinement executed in {time.time() - s} seconds.")
             # Rebuild combined ids once per dataset instead of on every modification
             for dataset_idx in range(self.n_shadow_datasets):
                 shadow_datasets_indices[dataset_idx]['ids'] = shadow_datasets_indices[dataset_idx]['tr_ids'] + shadow_datasets_indices[dataset_idx]['te_ids']
         elif self.mode == 'offline':
             pass
         else:
-            raise ValueError(f'Mode should be either online or offline! Found "{self.mode}" instead!')
+            raise ValueError(f"Mode should be either online or offline! Found '{self.mode}' instead!")
         # Copying correct indices to final map
         self.shadow_datasets_map = {i: copy.deepcopy(self.basic_dictionary) for i in range(self.n_shadow_datasets)}
         for index in range(self.n_shadow_datasets):
@@ -128,8 +128,8 @@ class ShadowDatasetsManager(Loggable):
             self.shadow_datasets_map[index]['test_ids'] = copy.deepcopy(shadow_datasets_indices[index]['te_ids'])
             self.shadow_datasets_map[index]['all_ids'] = copy.deepcopy(shadow_datasets_indices[index]['ids'])
         # Checking for correctness
-        assert self.check_in_out_correctness(), f'Something went wrong with shadow dataset sampling!'
-        self.logger.print_it(f'Shadow datasets are OK for {self.mode} mode!')
+        assert self.check_in_out_correctness(), f"Something went wrong with shadow dataset sampling!"
+        self.logger.print_it(f"Shadow datasets are OK for {self.mode} mode!")
 
     def sample_indices_for_offline_shadow_datasets(self):
         train_data = self.original_datasets.get('train')
@@ -141,7 +141,7 @@ class ShadowDatasetsManager(Loggable):
         n_samples_from_victim_test = self.n_samples_per_dataset - n_samples_from_victim_train
         shadow_datasets_indices = {i: {} for i in range(self.n_shadow_datasets)}
         s = time.time()
-        self.logger.print_it(f'Sampling all {self.n_shadow_datasets} shadow datasets...')
+        self.logger.print_it(f"Sampling all {self.n_shadow_datasets} shadow datasets...")
         for i in range(self.n_shadow_datasets):
             train_indexes = self._rng.choice(available_indices_train,
                                             n_samples_from_victim_train,
@@ -153,7 +153,7 @@ class ShadowDatasetsManager(Loggable):
             shadow_datasets_indices[i] = {'tr_ids': train_indexes,
                                         'te_ids': test_indexes,
                                         'ids': all_indexes}
-        self.logger.print_it(f'Sampling executed in {time.time() - s} seconds.')
+        self.logger.print_it(f"Sampling executed in {time.time() - s} seconds.")
         return shadow_datasets_indices
     
     def check_in_out_correctness(self):
@@ -164,11 +164,11 @@ class ShadowDatasetsManager(Loggable):
             expected_num_ins = 0
             expected_num_outs = self.n_shadow_datasets
         else:
-            raise ValueError(f'Mode should be either online or offline! Found "{self.mode}" instead!')
+            raise ValueError(f"Mode should be either online or offline! Found '{self.mode}' instead!")
         train_data = self.original_datasets.get('train')
         found_outcomes = []
         s = time.time()
-        self.logger.print_it(f'Checking correctness of shadow datasets in {self.mode} mode for all {len(self.auditing_indices)} samples. This may take a while...')
+        self.logger.print_it(f"Checking correctness of shadow datasets in {self.mode} mode for all {len(self.auditing_indices)} samples. This may take a while...")
         for k, index in enumerate(self.auditing_indices):
             n_ins_found = 0
             n_outs_found = 0
@@ -194,7 +194,7 @@ class ShadowDatasetsManager(Loggable):
                         n_ins_found_all == expected_num_ins,
                         n_outs_found_all == expected_num_outs]
             found_outcomes += outcome
-        self.logger.print_it(f'Checking executed in {time.time() - s} seconds with {"positive" if all(found_outcomes) else "negative"} outcome.')
+        self.logger.print_it(f"Checking executed in {time.time() - s} seconds with {"positive" if all(found_outcomes) else "negative"} outcome.")
         return all(found_outcomes)
 
     def sample_random_indices(self, num_data: int = 1000):
@@ -204,7 +204,7 @@ class ShadowDatasetsManager(Loggable):
         available_indices_train = [i for i in range(len(train_data)) if i not in indices_to_avoid]
         n_samples_from_victim_train = math.floor(num_data * (1 - self.test_perc))
         n_samples_from_victim_test = num_data - n_samples_from_victim_train
-        self.logger.print_it(f'Sampling random sample dataset...')
+        self.logger.print_it(f"Sampling random sample dataset...")
         train_indexes = self._rng.choice(available_indices_train,
                                         n_samples_from_victim_train,
                                         replace=False).tolist()
@@ -221,7 +221,7 @@ class ShadowDatasetsManager(Loggable):
         original_train_data = self.original_datasets.get('train')
         original_test_data = self.original_datasets.get('test')
         if indices is None:
-            assert 0 < num_data <= 1000, f'Number of data to sample random population should be between 1 and 1000, received {num_data} instead!'
+            assert 0 < num_data <= 1000, f"Number of data to sample random population should be between 1 and 1000, received {num_data} instead!"
             indices = self.sample_random_indices(num_data=num_data)
         if labels == 'mia':
             train_data = Subset(original_train_data, indices['train_ids'])

@@ -39,7 +39,7 @@ def load_pretrained_weights(
         if url:
             state_dict = model_zoo.load_url(url)
         else:
-            raise ValueError(f'Pretrained model for {model_name} has not yet been released')
+            raise ValueError(f"Pretrained model for {model_name} has not yet been released")
     else:
         state_dict = torch.load(weights_path)
 
