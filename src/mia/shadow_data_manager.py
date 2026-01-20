@@ -194,7 +194,8 @@ class ShadowDatasetsManager(Loggable):
                         n_ins_found_all == expected_num_ins,
                         n_outs_found_all == expected_num_outs]
             found_outcomes += outcome
-        self.logger.print_it(f"Checking executed in {time.time() - s} seconds with {"positive" if all(found_outcomes) else "negative"} outcome.")
+        final_outcome_str = 'positive' if all(found_outcomes) else 'negative'
+        self.logger.print_it(f"Checking executed in {time.time() - s} seconds with {final_outcome_str} outcome.")
         return all(found_outcomes)
 
     def sample_random_indices(self, num_data: int = 1000):
