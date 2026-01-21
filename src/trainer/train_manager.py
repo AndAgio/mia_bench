@@ -258,7 +258,7 @@ class TrainManager(Loggable):
             assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
             self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
         elif sched_cfg.name == 'multistep':
-            assert all(sched_cfg.extra['step_milestones'] < sched_cfg.epochs), f"All milestones should be before the final epoch in the multistep lr scheduler!"
+            assert all(milestone < sched_cfg.epochs for milestone in sched_cfg.extra['step_milestones']), f"All milestones should be before the final epoch in the multistep lr scheduler!"
             assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=sched_cfg.extra['step_milestones'], gamma=sched_cfg.extra['step_gamma'])
         elif sched_cfg.name == 'exp':
