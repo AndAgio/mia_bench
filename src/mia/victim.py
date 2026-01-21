@@ -36,6 +36,8 @@ class Victim(Loggable):
         train_manager.initialize_train(dataset=self.dataset,
                                         model=self.model,
                                         configs=train_configs)
+        # TODO: Refactor return of stats for victim and train manager.
+        # assignees: AndAgio
         if return_stats:
             self.model, train_stats = train_manager.train(return_best_model=True,
                                                         return_last_model=False,

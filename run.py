@@ -22,6 +22,8 @@ def main():
     attacker.measure_effectiveness(device=experiment_configs.attacker.train.device)
 
     best_auc_params, best_auc = attacker.get_best_result('auc', mode='max')
+    # TODO: Refactor stats tracking to make it easier to get victim training stats.
+    # assignees: AndAgio
     best_epoch, best_acc = victim_stats.get_best()
     print(f"Victim stats: best {victim_stats.stage_to_track_best} accuracy = {best_acc}")
     print('Best AUC was obtained for parameters: {} and was {}'.format(best_auc_params, best_auc))
