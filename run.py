@@ -12,7 +12,7 @@ def main():
     experiment_configs, exp_out_folder = setup_configs_and_folder_from_settings(settings)
 
     victim = Victim(victim_configs=experiment_configs.victim)
-    victim_model = victim.train_model(train_configs=experiment_configs.victim.train,)
+    victim_model, victim_stats = victim.train_model(train_configs=experiment_configs.victim.train, return_stats=True)
 
     attacker_class = get_attacker_class(settings.attack_mode)
     attacker = attacker_class(victim_model=victim_model,
@@ -22,6 +22,8 @@ def main():
     attacker.measure_effectiveness(device=experiment_configs.attacker.train.device)
 
     best_auc_params, best_auc = attacker.get_best_result('auc', mode='max')
+    best_epoch, best_acc = victim_stats.get_best()
+    print(f"Victim stats: best {victim_stats.stage_to_track_best} accuracy = {best_acc}")
     print('Best AUC was obtained for parameters: {} and was {}'.format(best_auc_params, best_auc))
     # print(attacker.summarize_results())
 
