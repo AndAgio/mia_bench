@@ -37,6 +37,7 @@ class Victim(Loggable):
                                         model=self.model,
                                         configs=train_configs)
         # TODO: Refactor return of stats for victim and train manager.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/21
         # assignees: AndAgio
         if return_stats:
             self.model, train_stats = train_manager.train(return_best_model=True,

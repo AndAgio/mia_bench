@@ -23,6 +23,7 @@ def main():
 
     best_auc_params, best_auc = attacker.get_best_result('auc', mode='max')
     # TODO: Refactor stats tracking to make it easier to get victim training stats.
+    # Issue URL: https://github.com/AndAgio/mia_bench/issues/20
     # assignees: AndAgio
     best_epoch, best_acc = victim_stats.get_best()
     print(f"Victim stats: best {victim_stats.stage_to_track_best} accuracy = {best_acc}")
