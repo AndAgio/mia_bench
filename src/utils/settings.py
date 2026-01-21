@@ -12,7 +12,7 @@ def gather_settings():
         
         # Dataset parameters
         parser.add_argument("--dataset", type=str, default="cifar100",
-                                choices=["cifar10", "cifar100", "svhn", "fmnist", "imagenet", "tinyimagenet"])
+                                choices=["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet"])
         
         # Model parameters
         parser.add_argument("--victim_model", default="resnet18",

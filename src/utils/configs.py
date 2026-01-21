@@ -170,6 +170,8 @@ def get_im_size_from_name(dataset: str):
         im_size = (32, 32)
     elif dataset == 'fmnist':
         im_size = (28, 28)
+    elif dataset == 'cinic10':
+        im_size = (32, 32)
     elif dataset == 'imagenet':
         im_size = (224, 224)
     elif dataset == 'tinyimagenet':
@@ -187,6 +189,8 @@ def get_im_channels_from_name(dataset: str):
         im_channels = 3
     elif dataset == 'fmnist':
         im_channels = 1
+    elif dataset == 'cinic10':
+        im_channels = 3
     elif dataset == 'imagenet':
         im_channels = 3
     elif dataset == 'tinyimagenet':
@@ -203,6 +207,8 @@ def get_num_classes_from_name(dataset: str):
     elif dataset == 'svhn':
         num_classes = 10
     elif dataset == 'fmnist':
+        num_classes = 10
+    elif dataset == 'cinic10':
         num_classes = 10
     elif dataset == 'imagenet':
         num_classes = 1000

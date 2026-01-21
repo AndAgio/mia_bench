@@ -17,7 +17,7 @@ MEM_PER_CPU = 50000
 
 
 # Rotating variable
-DATASETS = ['cifar10', 'cifar100', 'svhn', 'fmnist', 'tinyimagenet']
+DATASETS = ['cifar10', 'cifar100', 'svhn', 'fmnist', 'cinic10', 'tinyimagenet']
 VICTIM_MODELS = ['resnet18', 'resnet50', 'vgg16', 'mobile_small', 'mobile_large', 'wideresnet_16_8', 'wideresnet_28_10', 'wideresnet_50_2', "inception_v3"]
 ATTACKS = ['on_robust', 'off_robust', "lira", "quantile", "neural_feat", "neural_prob", "neural_logit", 'rmia_loss', 'rmia_confidence', 'rmia_entropy', 'pmia_loss', 'pmia_confidence', 'pmia_entropy']
 # ATTACKER_MODEL = ['resnet18']
