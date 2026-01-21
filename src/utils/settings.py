@@ -76,7 +76,7 @@ def gather_settings():
         
 
         # Shared MIA parameters
-        parser.add_argument("--attack_mode", default="robust",
+        parser.add_argument("--attack_mode", default="quantile",
                                 choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust', "lira", "quantile",
                                         "neural_feat", "neural_prob", "neural_logit", 
                                         'rmia_loss', 'rmia_confidence', 'rmia_entropy', 
