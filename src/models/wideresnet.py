@@ -102,7 +102,7 @@ class WideResNet_32x32(nn.Module):
             out = self.embedding_recorder(out)
         return self.fc(out)
     
-    def forward(self, x):
+    def feature(self, x):
         with torch.no_grad():
             out = self.conv1(x)
             out = self.block1(out)

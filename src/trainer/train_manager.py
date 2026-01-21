@@ -154,12 +154,14 @@ class TrainManager(Loggable):
         if opt_cfg.name == 'adam':
             self.optimizer = Adam(params=self.model.parameters(),
                                 lr=opt_cfg.lr)
+            self.criterion.reduction = 'mean'
         elif opt_cfg.name == 'sgd':
             self.optimizer = SGD(params=self.model.parameters(),
                                 lr=opt_cfg.lr,
                                 momentum=opt_cfg.momentum,
                                 nesterov=opt_cfg.nesterov,
                                 weight_decay=opt_cfg.weight_decay)
+            self.criterion.reduction = 'mean'
         elif opt_cfg.name.split('_')[-1] == 'sam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = SAM(params=self.model.parameters(),
@@ -550,7 +552,6 @@ class TrainManager(Loggable):
             self.optimizer.zero_grad()
             outputs = self.model(inputs)
             loss = self.criterion(outputs, targets)
-            loss = loss.mean()
             loss.backward()
             self.optimizer.step()
         t_comp1 = time.time()
