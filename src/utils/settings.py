@@ -41,7 +41,26 @@ def gather_settings():
         parser.add_argument('--victim_lr', type=float, required=False, default=0.01,
                                 help='learning rate')
         parser.add_argument('--victim_lr_sched', type=str, required=False, default='cosine',
-                                help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+                                help='lr scheduler', choices=['const', 'step', 'multistep', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+        parser.add_argument('--victim_lr_step_size', type=int, required=False, default=50,
+                                help='step size in epochs for the step, warmup step lr schedulers')
+        parser.add_argument('--victim_lr_step_gamma', type=float, required=False, default=0.1,
+                                help='decrease multiplying factor for the step, warmup step lr schedulers')
+        parser.add_argument('--victim_lr_warmup_multiplier', type=float, required=False, default=1,
+                                help='multiplicative factor for the warmup phase of warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_warmup_epochs', type=int, required=False, default=10,
+                                help='number of epochs to use as warmup in warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_exp_gamma', type=float, required=False, default=0.98,
+                                help='decrease multiplying factor for the exp, warmup exp lr schedulers')
+        parser.add_argument('--victim_lr_cycle_step', type=int, required=False, default=40,
+                                help='number of epochs in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_cycle_gamma', type=float, required=False, default=1,
+                                help='dacaying factor to be applied in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_cosine_min', type=float, required=False, default=0.0001,
+                                help='minmum learning rate to use in warmup cosine and cosine lr schedulers')
+        parser.add_argument('--victim_lr_step_milestones', nargs="+", type=int, default=[60, 120],
+                                help='Set of milestones to be used to decay lr in multistep lr scheduler')
+
         parser.add_argument('--victim_weight_decay', type=float, required=False, default=5e-4,
                                 help='weight decay')
         parser.add_argument('--victim_momentum', type=float, required=False, default=0.9,
@@ -146,6 +165,25 @@ def gather_settings():
                                 help='learning rate')
         parser.add_argument('--att_lr_sched', type=str, required=False, default='cosine',
                                 help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+        parser.add_argument('--att_lr_step_size', type=int, required=False, default=50,
+                                help='step size in epochs for the step, warmup step lr schedulers')
+        parser.add_argument('--att_lr_step_gamma', type=float, required=False, default=0.1,
+                                help='decrease multiplying factor for the step, warmup step lr schedulers')
+        parser.add_argument('--att_lr_warmup_multiplier', type=float, required=False, default=1,
+                                help='multiplicative factor for the warmup phase of warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_warmup_epochs', type=int, required=False, default=10,
+                                help='number of epochs to use as warmup in warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_exp_gamma', type=float, required=False, default=0.98,
+                                help='decrease multiplying factor for the exp, warmup exp lr schedulers')
+        parser.add_argument('--att_lr_cycle_step', type=int, required=False, default=40,
+                                help='number of epochs in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_cycle_gamma', type=float, required=False, default=1,
+                                help='dacaying factor to be applied in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_cosine_min', type=float, required=False, default=0.0001,
+                                help='minmum learning rate to use in warmup cosine and cosine lr schedulers')
+        parser.add_argument('--att_lr_step_milestones', nargs="+", type=int, default=[60, 120],
+                                help='Set of milestones to be used to decay lr in multistep lr scheduler')
+
         parser.add_argument('--att_weight_decay', type=float, required=False, default=5e-4,
                                 help='weight decay')
         parser.add_argument('--att_momentum', type=float, required=False, default=0.9,

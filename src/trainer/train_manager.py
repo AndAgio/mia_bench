@@ -231,32 +231,44 @@ class TrainManager(Loggable):
             self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1)
         elif sched_cfg.name == 'warmup_step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(sched_cfg.epochs/3), gamma=0.1)
-            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(sched_cfg.epochs/40), after_scheduler=scheduler)
+            assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
+            assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
+            assert sched_cfg.extra['warmup_epochs'] < sched_cfg.epochs - sched_cfg.extra['step_size'], f"Invalid configuration for the number of warmup epochs, as it would not allow for step decay afterward! Warmup epochs: {sched_cfg.extra['warmup_epochs']}, step size: {sched_cfg.extra['step_size']} and total epochs: {sched_cfg.epochs}"
+            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=sched_cfg.extra['warmup_multiplier'], total_epoch=sched_cfg.extra['warmup_epochs'], after_scheduler=scheduler)
             self.scheduler.step()
         elif sched_cfg.name == 'warmup_exp':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
-            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(sched_cfg.epochs/40), after_scheduler=scheduler)
+            assert sched_cfg.extra['warmup_epochs'] < sched_cfg.epochs, f"Invalid configuration for the number of warmup epochs! Warmup epochs (found {sched_cfg.extra['warmup_epochs']}) should be less than the total total epochs (found {sched_cfg.epochs})"
+            assert 0 < sched_cfg.extra['exp_gamma'] < 1, f"Exponential decay should be between 0 and 1, found {sched_cfg.extra['exp_gamma']} instead!"
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=sched_cfg.extra['exp_gamma'])
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=sched_cfg.extra['warmup_multiplier'], total_epoch=sched_cfg.extra['warmup_epochs'], after_scheduler=scheduler)
             self.scheduler.step()
         elif sched_cfg.name == 'warmup_cosine':
-            assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            assert sched_cfg.lr is not None and 0 < sched_cfg.lr < 1
-            cycle_steps = math.ceil(sched_cfg.epochs/5)
-            warmup_steps = math.ceil(cycle_steps/10)
-            max_lr=sched_cfg.lr
-            min_lr=max_lr/100
-            self.scheduler = CosineAnnealingWarmupRestarts(self.optimizer, first_cycle_steps=cycle_steps, cycle_mult=1.0, max_lr=max_lr, min_lr=min_lr, warmup_steps=warmup_steps, gamma=0.5)
+            assert sched_cfg.extra['cycle_step'] < sched_cfg.epochs, f"The number of epochs per cycle in warmup cosine scheduler should be less than the total number of epochs!"
+            assert sched_cfg.extra['cycle_gamma'] <= 1, f"The decaying factor per cycle in warmup cosine scheduler should be less than or equal to 1 to avoid lr becoming too large!"
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
+                                                                                T_0=sched_cfg.extra['cycle_step'],
+                                                                                T_mult=sched_cfg.extra['cycle_gamma'],
+                                                                                eta_min=sched_cfg.extra['cosine_min'],
+                                                                                last_epoch=sched_cfg.epochs)
         elif sched_cfg.name == 'step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(sched_cfg.epochs/3), gamma=0.1)
+            assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
+            assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
+        elif sched_cfg.name == 'multistep':
+            assert all(sched_cfg.extra['step_milestones'] < sched_cfg.epochs), f"All milestones should be before the final epoch in the multistep lr scheduler!"
+            assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
+            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=sched_cfg.extra['step_milestones'], gamma=sched_cfg.extra['step_gamma'])
         elif sched_cfg.name == 'exp':
-            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
+            assert 0 < sched_cfg.extra['exp_gamma'] < 1, f"Exponential decay should be between 0 and 1, found {sched_cfg.extra['exp_gamma']} instead!"
+            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=sched_cfg.extra['exp_gamma'])
         elif sched_cfg.name == 'cosine':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, sched_cfg.epochs)
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=sched_cfg.epochs, eta_min=sched_cfg.extra['cosine_min'])
         else:
-            raise ValueError('Learning rate scheduler "{}" not available!'.format(sched_cfg.name))
+            raise ValueError(f"Learning rate scheduler '{sched_cfg.name}' not available!")
 
     def setup_training(self):
         self.logger.print_it('Setting up training...')

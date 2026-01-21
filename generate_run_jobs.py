@@ -27,165 +27,197 @@ SGD_HYPERPARAMS = {
 
     "cifar10": {
 
-        "default": dict(
-            lr=0.1,
-            epochs=200,
-            weight_decay=5e-4,
-            scheduler=dict(
-                type="step",
-                milestones=[100, 150],
-                gamma=0.1
+        "default": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.1,
+                weight_decay=5e-4,
+                momentum=0.9,
+                nesterov=True,
             ),
-            nesterov=True
-        ),
+            "training": dict(
+                epochs=200,
+                batch_size=128,
+            ),
+            "scheduler": dict(
+                name="multistep",
+                epochs=200,
+                extra=dict(
+                    step_milestones=[100, 150],
+                    step_gamma=0.1,
+                ),
+            ),
+        },
 
-        "wideresnet_16_8": dict(
-            lr=0.1,
-            epochs=200,
-            weight_decay=5e-4,
-            scheduler=dict(
-                type="step",
-                milestones=[100, 150],
-                gamma=0.2
+        "wideresnet_28_10": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.1,
+                weight_decay=5e-4,
+                momentum=0.9,
+                nesterov=True,
             ),
-            nesterov=True
-        ),
-
-        "wideresnet_28_10": dict(
-            lr=0.1,
-            epochs=200,
-            weight_decay=5e-4,
-            scheduler=dict(
-                type="step",
-                milestones=[60, 120, 160],
-                gamma=0.2
+            "training": dict(
+                epochs=200,
+                batch_size=128,
             ),
-            nesterov=True
-        )
+            "scheduler": dict(
+                name="warmup_step",
+                epochs=200,
+                extra=dict(
+                    warmup_epochs=10,
+                    warmup_multiplier=1.0,
+                    step_size=60,
+                    step_gamma=0.2,
+                ),
+            ),
+        },
     },
 
     "cifar100": {
 
-        "default": dict(
-            lr=0.1,
-            epochs=200,
-            weight_decay=5e-4,
-            scheduler=dict(
-                type="step",
-                milestones=[100, 150],
-                gamma=0.1
+        "default": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.1,
+                weight_decay=5e-4,
+                momentum=0.9,
+                nesterov=True,
             ),
-            nesterov=True
-        ),
+            "training": dict(
+                epochs=200,
+                batch_size=128,
+            ),
+            "scheduler": dict(
+                name="multistep",
+                epochs=200,
+                extra=dict(
+                    step_milestones=[100, 150],
+                    step_gamma=0.1,
+                ),
+            ),
+        },
 
-        "resnet50": dict(
-            lr=0.1,
-            epochs=200,
-            weight_decay=1e-4,
-            scheduler=dict(
-                type="cosine"
+        "resnet50": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.1,
+                weight_decay=1e-4,
+                momentum=0.9,
+                nesterov=True,
             ),
-            nesterov=True
-        ),
-
-        "vgg16": dict(
-            lr=0.05,
-            epochs=200,
-            weight_decay=5e-4,
-            scheduler=dict(
-                type="step",
-                milestones=[100, 150],
-                gamma=0.1
+            "training": dict(
+                epochs=200,
+                batch_size=128,
             ),
-            nesterov=False
-        )
+            "scheduler": dict(
+                name="cosine",
+                epochs=200,
+                extra=dict(
+                    cosine_min=1e-5,
+                ),
+            ),
+        },
     },
 
     "svhn": {
 
-        "default": dict(
-            lr=0.05,
-            epochs=120,
-            weight_decay=5e-4,
-            scheduler=dict(
-                type="step",
-                milestones=[60, 90],
-                gamma=0.1
+        "default": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.05,
+                weight_decay=5e-4,
+                momentum=0.9,
+                nesterov=True,
             ),
-            nesterov=True
-        ),
-
-        "wideresnet_28_10": dict(
-            lr=0.05,
-            epochs=120,
-            weight_decay=5e-4,
-            scheduler=dict(
-                type="step",
-                milestones=[60, 90],
-                gamma=0.2
+            "training": dict(
+                epochs=120,
+                batch_size=128,
             ),
-            nesterov=True
-        )
+            "scheduler": dict(
+                name="step",
+                epochs=120,
+                extra=dict(
+                    step_size=60,
+                    step_gamma=0.1,
+                ),
+            ),
+        },
     },
 
     "fmnist": {
 
-        "default": dict(
-            lr=0.01,
-            epochs=100,
-            weight_decay=1e-4,
-            scheduler=dict(
-                type="step",
-                step_size=40,
-                gamma=0.1
+        "default": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.01,
+                weight_decay=1e-4,
+                momentum=0.9,
+                nesterov=False,
             ),
-            nesterov=False
-        ),
-
-        "resnet18": dict(
-            lr=0.02,
-            epochs=100,
-            weight_decay=1e-4,
-            scheduler=dict(
-                type="cosine"
+            "training": dict(
+                epochs=100,
+                batch_size=128,
             ),
-            nesterov=True
-        )
+            "scheduler": dict(
+                name="step",
+                epochs=100,
+                extra=dict(
+                    step_size=40,
+                    step_gamma=0.1,
+                ),
+            ),
+        },
     },
 
     "tinyimagenet": {
 
-        "default": dict(
-            lr=0.1,
-            epochs=180,
-            weight_decay=1e-4,
-            scheduler=dict(
-                type="cosine"
+        "default": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.1,
+                weight_decay=1e-4,
+                momentum=0.9,
+                nesterov=True,
             ),
-            nesterov=True
-        ),
+            "training": dict(
+                epochs=180,
+                batch_size=256,
+            ),
+            "scheduler": dict(
+                name="cosine",
+                epochs=180,
+                extra=dict(
+                    cosine_min=1e-5,
+                ),
+            ),
+        },
 
-        "resnet50": dict(
-            lr=0.1,
-            epochs=180,
-            weight_decay=1e-4,
-            scheduler=dict(
-                type="cosine"
+        "inception_v3": {
+            "optimizer": dict(
+                name="sgd",
+                lr=0.045,
+                weight_decay=4e-5,
+                momentum=0.9,
+                nesterov=True,
             ),
-            nesterov=True
-        ),
-
-        "inception_v3": dict(
-            lr=0.045,
-            epochs=180,
-            weight_decay=4e-5,
-            scheduler=dict(
-                type="cosine"
+            "training": dict(
+                epochs=180,
+                batch_size=256,
             ),
-            nesterov=True
-        )
-    }
+            "scheduler": dict(
+                name="warmup_cosine",
+                epochs=180,
+                extra=dict(
+                    cycle_step=30,
+                    cycle_gamma=1.0,
+                    cosine_min=1e-5,
+                ),
+            ),
+        },
+    },
 }
+
 
 
 
@@ -224,9 +256,21 @@ if MODE == 'train_victim':
             cfg = cfg.get(victim_model, cfg["default"])
 
             # Define python script to launch
-            text += f"\n\npython train_victim.py --dataset={dataset} "\
-                    f"--victim_model={victim_model} --victim_epochs={cfg['epochs']} --victim_lr={cfg['lr']} --victim_weight_decay={cfg['weight_decay']} --victim_lr_sched={cfg['scheduler']['type']} {'--victim_nesterov' if cfg['nesterov'] else ''} "\
-                    f"--device=0 "
+            text += f"\n\npython train_victim.py --dataset={dataset} --victim_model={victim_model} "\
+                    f"--victim_epochs={cfg['training']['epochs']} --victim_batch_size={cfg['training']['batch_size']} "\
+                    f"--victim_optimizer={cfg['optimizer']['name']} --victim_lr={cfg['optimizer']['lr']} --victim_weight_decay={cfg['optimizer']['weight_decay']} --victim_momentum={cfg['optimizer']['momentum']} {'--victim_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
+                    f"--victim_lr_sched={cfg['scheduler']['name']} "
+            for key, value in cfg['scheduler']['extra'].items():
+                if not isinstance(value, list):
+                    text += f"--victim_lr_{key}={value} " 
+                else:
+                    for ind, val in enumerate(value):
+                        if ind == 0:
+                            text += f"--victim_lr_{key} {val} "
+                        else:
+                            text += f"{val} "
+            text += f" --device=0 "
+
             # Write file
             with open(os.path.join(jobs_dir, '{}.sbatch'.format(job_name)), 'w') as f:
                 f.write(text)
@@ -256,10 +300,33 @@ elif MODE == 'run_attack':
                 cfg = cfg.get(victim_model, cfg["default"])
 
                 # Define python script to launch
-                text += f"\n\npython run.py --dataset={dataset} "\
-                        f"--victim_model={victim_model} --victim_epochs={cfg['epochs']} --victim_lr={cfg['lr']} --victim_weight_decay={cfg['weight_decay']} --victim_lr_sched={cfg['scheduler']['type']} {'--victim_nesterov' if cfg['nesterov'] else ''} "\
-                        f"--att_model={attacker_model} --att_epochs={int(cfg['epochs']/2)} --att_lr={cfg['lr']} --att_weight_decay={cfg['weight_decay']} --att_lr_sched={cfg['scheduler']['type']} {'--att_nesterov' if cfg['nesterov'] else ''} "\
-                        f"--attack_mode={attack} "\
+                text += f"\n\npython run.py --dataset={dataset} --victim_model={victim_model} "\
+                        f"--victim_epochs={cfg['training']['epochs']} --victim_batch_size={cfg['training']['batch_size']} "\
+                        f"--victim_optimizer={cfg['optimizer']['name']} --victim_lr={cfg['optimizer']['lr']} --victim_weight_decay={cfg['optimizer']['weight_decay']} --victim_momentum={cfg['optimizer']['momentum']} {'--victim_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
+                        f"--victim_lr_sched={cfg['scheduler']['name']} "
+                for key, value in cfg['scheduler']['extra'].items():
+                    if not isinstance(value, list):
+                        text += f"--victim_lr_{key}={value} " 
+                    else:
+                        for ind, val in enumerate(value):
+                            if ind == 0:
+                                text += f"--victim_lr_{key} {val} "
+                            else:
+                                text += f"{val} "
+                text += f"--att_model={victim_model} "\
+                        f"--att_epochs={cfg['training']['epochs']} --att_batch_size={cfg['training']['batch_size']} "\
+                        f"--att_optimizer={cfg['optimizer']['name']} --att_lr={cfg['optimizer']['lr']} --att_weight_decay={cfg['optimizer']['weight_decay']} --att_momentum={cfg['optimizer']['momentum']} {'--att_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
+                        f"--att_lr_sched={cfg['scheduler']['name']} "
+                for key, value in cfg['scheduler']['extra'].items():
+                    if not isinstance(value, list):
+                        text += f"--att_lr_{key}={value} " 
+                    else:
+                        for ind, val in enumerate(value):
+                            if ind == 0:
+                                text += f"--att_lr_{key} {val} "
+                            else:
+                                text += f"{val} "
+                text += f"--attack_mode={attack} "\
                         f"--n_shadows={1 if 'pmia' in attack or 'quantile' in attack else N_SHADOWS} "\
                         f"--n_samples_per_shadow_dataset={5000  if 'pmia' in attack else SAMPLES_SHADOW} "\
                         f"--n_auditing_samples={SAMPLES_AUDIT} "\
@@ -272,20 +339,20 @@ elif MODE == 'run_attack':
 else:
     raise ValueError(f"Unknown MODE '{MODE}' specified!")
 
-# SUBMIT
-files = glob.glob(os.path.join(jobs_dir, '*.sbatch'))
-skeemed_files = []
-for file in files:
-    with open(file) as f:
-        content = f.readlines()
-        if CLUSTER_MACHINE in content[2]:
-            skeemed_files.append(file)
+# # SUBMIT
+# files = glob.glob(os.path.join(jobs_dir, '*.sbatch'))
+# skeemed_files = []
+# for file in files:
+#     with open(file) as f:
+#         content = f.readlines()
+#         if CLUSTER_MACHINE in content[2]:
+#             skeemed_files.append(file)
 
-print('Skeemed files: {}'.format(skeemed_files))
+# print('Skeemed files: {}'.format(skeemed_files))
 
-commands = ['cd {}\nsbatch {}'.format(jobs_dir, filename.split('/')[-1]) for filename in skeemed_files]
-procs = [subprocess.Popen(commands[j], shell=True) for j in range(len(commands))]
-for p in procs:
-    p.wait()
+# commands = ['cd {}\nsbatch {}'.format(jobs_dir, filename.split('/')[-1]) for filename in skeemed_files]
+# procs = [subprocess.Popen(commands[j], shell=True) for j in range(len(commands))]
+# for p in procs:
+#     p.wait()
 
 

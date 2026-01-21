@@ -25,10 +25,43 @@ class OptimizerConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SchedulerConfigs:
     name: str = 'cosine'
-    lr: float = 0.01
     epochs: int = 100
     extra: Dict[str, Any] = field(default_factory=dict)
     
+def build_scheduler_configs_from_settings(settings: Any, mode: str = 'victim') -> SchedulerConfigs:
+    assert mode in ['victim', 'attacker'], f"Mode '{mode}' not available to build LR scheduler configurations!"
+    name = settings.victim_lr_sched if mode == 'victim' else settings.att_lr_sched
+    total_epochs = settings.victim_epochs if mode == 'victim' else settings.att_epochs
+    extra = {}
+    if name == 'warmup_step':
+        extra['step_size'] = settings.victim_lr_step_size  if mode == 'victim' else settings.att_lr_step_size
+        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+        extra['warmup_multiplier'] = settings.victim_lr_warmup_multiplier if mode == 'victim' else settings.att_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.victim_lr_warmup_epochs if mode == 'victim' else settings.att_lr_warmup_epochs
+    elif name == 'warmup_exp':
+        extra['exp_gamma'] = settings.victim_lr_exp_gamma if mode == 'victim' else settings.att_lr_exp_gamma
+        extra['warmup_multiplier'] = settings.victim_lr_warmup_multiplier if mode == 'victim' else settings.att_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.victim_lr_warmup_epochs if mode == 'victim' else settings.att_lr_warmup_epochs
+    elif name == 'warmup_cosine':
+        extra['cycle_step'] = settings.victim_lr_cycle_step if mode == 'victim' else settings.att_lr_cycle_step
+        extra['cycle_gamma'] = settings.victim_lr_cycle_gamma if mode == 'victim' else settings.att_lr_cycle_gamma
+        extra['cosine_min'] = settings.victim_lr_cosine_min if mode == 'victim' else settings.att_lr_cosine_min
+    elif name == 'step':
+        extra['step_size'] = settings.victim_lr_step_size  if mode == 'victim' else settings.att_lr_step_size
+        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+    elif name == 'multistep':
+        extra['step_milestones'] = settings.victim_lr_step_milestones  if mode == 'victim' else settings.victim_lr_step_milestones
+        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+    elif name == 'exp':
+        extra['exp_gamma'] = settings.victim_lr_exp_gamma if mode == 'victim' else settings.att_lr_exp_gamma
+    elif name == 'cosine':
+        extra['cosine_min'] = settings.victim_lr_cosine_min if mode == 'victim' else settings.att_lr_cosine_min
+    else:
+        raise ValueError(f"Learning rate scheduler '{name}' not available!")
+    return SchedulerConfigs(name=name,
+                            epochs=total_epochs,
+                            extra=extra)
+
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class TrainConfigs:
@@ -309,9 +342,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                 weight_decay=settings.victim_weight_decay,
                                                 momentum=settings.victim_momentum,
                                                 nesterov=settings.victim_nesterov,)
-    victim_scheduler_configs = SchedulerConfigs(name=settings.victim_lr_sched,
-                                                lr=settings.victim_lr,
-                                                epochs=settings.victim_epochs)
+    victim_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='victim')
     victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_configs,
                                         scheduler_config=victim_scheduler_configs,
                                         batch_size=settings.victim_batch_size,
@@ -342,9 +373,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     weight_decay=settings.att_weight_decay,
                                                     momentum=settings.att_momentum,
                                                     nesterov=settings.att_nesterov,)
-    attacker_scheduler_configs = SchedulerConfigs(name=settings.att_lr_sched,
-                                                    lr=settings.att_lr,
-                                                    epochs=settings.att_epochs)
+    attacker_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='attacker')
     attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
                                             scheduler_config=attacker_scheduler_configs,
                                             batch_size=settings.att_batch_size,
