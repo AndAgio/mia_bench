@@ -339,20 +339,20 @@ elif MODE == 'run_attack':
 else:
     raise ValueError(f"Unknown MODE '{MODE}' specified!")
 
-# # SUBMIT
-# files = glob.glob(os.path.join(jobs_dir, '*.sbatch'))
-# skeemed_files = []
-# for file in files:
-#     with open(file) as f:
-#         content = f.readlines()
-#         if CLUSTER_MACHINE in content[2]:
-#             skeemed_files.append(file)
+# SUBMIT
+files = glob.glob(os.path.join(jobs_dir, '*.sbatch'))
+skeemed_files = []
+for file in files:
+    with open(file) as f:
+        content = f.readlines()
+        if CLUSTER_MACHINE in content[2]:
+            skeemed_files.append(file)
 
-# print('Skeemed files: {}'.format(skeemed_files))
+print('Skeemed files: {}'.format(skeemed_files))
 
-# commands = ['cd {}\nsbatch {}'.format(jobs_dir, filename.split('/')[-1]) for filename in skeemed_files]
-# procs = [subprocess.Popen(commands[j], shell=True) for j in range(len(commands))]
-# for p in procs:
-#     p.wait()
+commands = ['cd {}\nsbatch {}'.format(jobs_dir, filename.split('/')[-1]) for filename in skeemed_files]
+procs = [subprocess.Popen(commands[j], shell=True) for j in range(len(commands))]
+for p in procs:
+    p.wait()
 
 
