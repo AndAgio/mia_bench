@@ -69,6 +69,17 @@ def gather_settings():
                                 help='nesterov')
         parser.add_argument('--victim_seed', type=int, default=12345,
                                 help='random seed (default:12345)')
+        # Differential Privacy parameters for victim model
+        parser.add_argument("--victim_use_dp", action="store_true", default=False,
+                                help="enable Differential Privacy for victim model training",)
+        parser.add_argument('--victim_dp_noise_multiplier', type=float, default=1.0,
+                                help='Noise multiplier for DP-SGD')
+        parser.add_argument('--victim_dp_max_grad_norm', type=float, default=1.0,
+                                help='Max grad norm for DP-SGD')
+        parser.add_argument("--victim_dp_clip_per_layer", action="store_true", default=False,
+                                help="whether to use per layer clipping in DP-SGD",)
+        parser.add_argument("--victim_dp_grad_sample_mode", type=str, default="ghost")
+        
         
         # Hardware related settings
         parser.add_argument("--device", default='0',
@@ -192,6 +203,16 @@ def gather_settings():
                                 help='nesterov')
         parser.add_argument('--att_seed', type=int, default=12345,
                                 help='random seed (default:12345)')
+        # Differential Privacy parameters for attacker model
+        parser.add_argument("--att_use_dp", action="store_true", default=False,
+                                help="enable Differential Privacy for attacker model training",)
+        parser.add_argument('--att_dp_noise_multiplier', type=float, default=1.0,
+                                help='Noise multiplier for DP-SGD')
+        parser.add_argument('--att_dp_max_grad_norm', type=float, default=1.0,
+                                help='Max grad norm for DP-SGD')
+        parser.add_argument("--att_dp_clip_per_layer", action="store_true", default=False,
+                                help="whether to use per layer clipping in DP-SGD",)
+        parser.add_argument("--att_dp_grad_sample_mode", type=str, default="ghost")
         
 
         settings = parser.parse_args()

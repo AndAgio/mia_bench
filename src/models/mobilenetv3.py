@@ -30,7 +30,7 @@ def _make_divisible(v, divisor, min_value=None):
 
 
 class h_sigmoid(nn.Module):
-    def __init__(self, inplace=True):
+    def __init__(self, inplace=False):
         super(h_sigmoid, self).__init__()
         self.relu = nn.ReLU6(inplace=inplace)
 
@@ -39,7 +39,7 @@ class h_sigmoid(nn.Module):
 
 
 class h_swish(nn.Module):
-    def __init__(self, inplace=True):
+    def __init__(self, inplace=False):
         super(h_swish, self).__init__()
         self.sigmoid = h_sigmoid(inplace=inplace)
 
@@ -53,7 +53,7 @@ class SELayer(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, _make_divisible(channel // reduction, 8)),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Linear(_make_divisible(channel // reduction, 8), channel),
             h_sigmoid()
         )
@@ -93,7 +93,7 @@ class InvertedResidual(nn.Module):
                 # dw
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
-                h_swish() if use_hs else nn.ReLU(inplace=True),
+                h_swish() if use_hs else nn.ReLU(inplace=False),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 # pw-linear
@@ -105,13 +105,13 @@ class InvertedResidual(nn.Module):
                 # pw
                 nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(hidden_dim),
-                h_swish() if use_hs else nn.ReLU(inplace=True),
+                h_swish() if use_hs else nn.ReLU(inplace=False),
                 # dw
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
-                h_swish() if use_hs else nn.ReLU(inplace=True),
+                h_swish() if use_hs else nn.ReLU(inplace=False),
                 # pw-linear
                 nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),

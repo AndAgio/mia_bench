@@ -23,6 +23,15 @@ class OptimizerConfigs:
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class DPConfigs:
+    use_dp: bool = False
+    noise_multiplier: float = 1.0
+    max_grad_norm: float = 1.0
+    clip_per_layer: bool = False
+    grad_sample_mode: str = 'hook'
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SchedulerConfigs:
     name: str = 'cosine'
     epochs: int = 100
@@ -69,6 +78,7 @@ class TrainConfigs:
     optimizer_config: Union[OptimizerConfigs, Dict[str, Any]]
     scheduler_config: Union[SchedulerConfigs, Dict[str, Any]]
     # Optional arguments with default values
+    dp_config: DPConfigs = field(default_factory=DPConfigs)
     batch_size: Optional[int] = 256
     loss: Optional[Loss] = 'crossentropy'
     metrics: Optional[Tuple[Union[str, Callable[..., Any]], ...]] = ('multi_class_accuracy',)
@@ -336,6 +346,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     victim_resume_ckpts_folder = settings.out_folder/'victims'/victim_hash/'resume_ckpts'
     attacker_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'ckpts'
     attacker_resume_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'resume_ckpts'
+    victim_dp_config = DPConfigs(use_dp=settings.victim_use_dp,
+                                noise_multiplier=settings.victim_dp_noise_multiplier,
+                                max_grad_norm=settings.victim_dp_max_grad_norm,
+                                clip_per_layer=settings.victim_dp_clip_per_layer,
+                                grad_sample_mode=settings.victim_dp_grad_sample_mode)
     victim_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation)
@@ -351,6 +366,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     victim_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='victim')
     victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_configs,
                                         scheduler_config=victim_scheduler_configs,
+                                        dp_config=victim_dp_config,
                                         batch_size=settings.victim_batch_size,
                                         device=settings.device,
                                         distributed=settings.distributed,
@@ -367,6 +383,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                     model=victim_model_configs,
                                     train=victim_train_configs)
 
+    attacker_dp_config = DPConfigs(use_dp=settings.att_use_dp,
+                                noise_multiplier=settings.att_dp_noise_multiplier,
+                                max_grad_norm=settings.att_dp_max_grad_norm,
+                                clip_per_layer=settings.att_dp_clip_per_layer,
+                                grad_sample_mode=settings.att_dp_grad_sample_mode)
     attacker_log_configs = LogConfigs(name='attacker',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
@@ -382,6 +403,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     attacker_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='attacker')
     attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
                                             scheduler_config=attacker_scheduler_configs,
+                                            dp_config=attacker_dp_config,
                                             batch_size=settings.att_batch_size,
                                             loss=settings.att_loss,
                                             metrics=settings.perf_metrics,
