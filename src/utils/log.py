@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import datetime
 from typing import Union
 from src.utils.variables import DEFAULT_LOG_FOLDER
 from src.utils.configs import LogConfigs
@@ -34,23 +35,50 @@ class DumbLogger:
         self.name = name
 
     @staticmethod
-    def print_it(msg, *args, **kwargs):
+    def print_it(msg, *args, console_only=False, file_only=False, **kwargs):
         """Logging method for the MIA level. The `msg` gets logged both to stdout and to file
-        (if a file handler is present), irrespective of verbosity settings."""
-        return print(msg, *args, **kwargs)
+        (if a file handler is present), irrespective of verbosity settings.
+        If console_only=True, prints only to console, never to log file.
+        If file_only=True, logs only to file, never to console."""
+        if console_only and file_only:
+            raise ValueError("Cannot set both console_only and file_only")
+        if console_only:
+            return print(msg, *args, **kwargs)
+        else:
+            # For DumbLogger, file_only doesn't make sense since there's no file logging
+            return print(msg, *args, **kwargs)
 
     @staticmethod
-    def print_it_same_line(msg, *args, **kwargs):
+    def print_it_same_line(msg, *args, console_only=False, file_only=False, **kwargs):
         """Logging method for the MIA level. The `msg` gets logged both to stdout and to file
-        (if a file handler is present), irrespective of verbosity settings."""
-        return print(msg, end='\r', *args, **kwargs)
+        (if a file handler is present), irrespective of verbosity settings.
+        If console_only=True, prints only to console on same line, never to log file.
+        If file_only=True, logs only to file on same line, never to console."""
+        if console_only and file_only:
+            raise ValueError("Cannot set both console_only and file_only")
+        if console_only:
+            return print(msg, end='\r', *args, **kwargs)
+        else:
+            # For DumbLogger, file_only doesn't make sense since there's no file logging
+            return print(msg, end='\r', *args, **kwargs)
 
-    @staticmethod
-    def set_logger_newline():
+    def set_logger_newline(self, console_only: bool = False):
         print()
 
-    def get_name(self):
-        return self.name
+    @staticmethod
+    def print_error_to_console(msg, *args, **kwargs):
+        """Print error messages to stderr."""
+        return print(msg, *args, file=sys.stderr, **kwargs)
+
+    @staticmethod
+    def error(msg, *args, **kwargs):
+        """Print error messages to stderr (console only for DumbLogger)."""
+        return print(msg, *args, file=sys.stderr, **kwargs)
+
+    @staticmethod
+    def critical(msg, *args, **kwargs):
+        """Print critical error messages to stderr (console only for DumbLogger)."""
+        return print(msg, *args, file=sys.stderr, **kwargs)
     
     def get_folder(self):
         return None
@@ -126,7 +154,7 @@ class SmartLogger(logging.getLoggerClass()):
                 os.makedirs(self.log_dir)
             except:
                 print(f"{self.__class__.__name__}: Cannot create directory {self.log_dir}. ",
-                      end='', file=sys.stderr)
+                        end='', file=sys.stderr)
                 self.log_dir = '/tmp' if sys.platform.startswith('linux') else '.'
                 print(f"Defaulting to {self.log_dir}.", file=sys.stderr)
         log_file = self.get_log_file()
@@ -172,26 +200,94 @@ class SmartLogger(logging.getLoggerClass()):
     def set_logger_inline(self):
         self.stdout_handler.terminator = '\r'
 
-    def set_logger_newline(self):
-        self.print_it('\n')
+    def set_logger_newline(self, console_only: bool = False):
+        self.print_it('', console_only=console_only)
         self.stdout_handler.terminator = '\n'
 
     def print_it_log_file_only(self, msg, *args, **kwargs):
+        """Log only to file, never to console. Deprecated: use print_it(file_only=True) instead."""
         previous_verbosity = self.verbose
         self.verbose = False
         self._custom_log(super().info, msg, *args, **kwargs)
         self.verbose = previous_verbosity
 
-    def print_it(self, msg, *args, **kwargs):
-        """Logging method for the EneA_FL level. The `msg` gets logged both to stdout and to file
-        (if a file handler is present), irrespective of verbosity settings."""
-        return super().info(msg, *args, **kwargs)
+    def print_it(self, msg, *args, console_only=False, file_only=False, **kwargs):
+        """Logging method for the MIA level. The `msg` gets logged both to stdout and to file
+        (if a file handler is present), irrespective of verbosity settings.
+        If console_only=True, prints only to console, never to log file.
+        If file_only=True, logs only to file, never to console."""
+        if console_only and file_only:
+            raise ValueError("Cannot set both console_only and file_only")
+        elif console_only:
+            # Temporarily disable file output if it exists
+            had_file = self.has_file_handler()
+            if had_file:
+                self.disable_file_output()
+            # Print to console only, format the message like a normal INFO log message but print only to console
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+            level_name = 'MIA {}'.format(self.name)
+            formatted_msg = f'{timestamp} | {level_name:9s} | {msg}'
+            print(formatted_msg, *args, **kwargs)
+            # Re-enable file output
+            if had_file:
+                self.enable_file_output()
+        elif file_only:
+            # Temporarily set verbose to False to ensure file-only logging
+            previous_verbosity = self.verbose
+            self.verbose = False
+            result = self._custom_log(super().info, msg, *args, **kwargs)
+            self.verbose = previous_verbosity
+            return result
+        else:
+            return super().info(msg, *args, **kwargs)
 
-    def print_it_same_line(self, msg, *args, **kwargs):
-        """Logging method for the EneA_FL level. The `msg` gets logged both to stdout and to file
-        (if a file handler is present), irrespective of verbosity settings."""
-        self.set_logger_inline()
-        return super().info(msg, *args, **kwargs)
+    def print_it_same_line(self, msg, *args, console_only=False, file_only=False, **kwargs):
+        """Logging method for the MIA level. The `msg` gets logged both to stdout and to file
+        (if a file handler is present), irrespective of verbosity settings.
+        If console_only=True, prints only to console on same line, never to log file.
+        If file_only=True, logs only to file, never to console."""
+        if console_only and file_only:
+            raise ValueError("Cannot set both console_only and file_only")
+        elif console_only:
+            # Temporarily disable file output if it exists
+            had_file = self.has_file_handler()
+            if had_file:
+                self.disable_file_output()
+            # Print to console only
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+            level_name = 'MIA {}'.format(self.name)
+            formatted_msg = f'{timestamp} | {level_name:9s} | {msg}'
+            print(formatted_msg, end='\r', *args, **kwargs)
+            # Re-enable file output
+            if had_file:
+                self.enable_file_output()
+        elif file_only:
+            # Temporarily set verbose to False to ensure file-only logging
+            previous_verbosity = self.verbose
+            self.verbose = False
+            result = self._custom_log(super().info, msg, *args, **kwargs)
+            self.verbose = previous_verbosity
+            return result
+        else:
+            # For file logging, we need to log normally since same line doesn't make sense in files
+            return super().info(msg, *args, **kwargs)
+
+    def print_error_to_console(self, msg, *args, **kwargs):
+        """Print error messages to stderr (console) and also to log file.
+        Note: This method is equivalent to logger.error() for SmartLogger."""
+        # Print to stderr for immediate visibility
+        print(msg, *args, file=sys.stderr, **kwargs)
+        # Also log to file using standard logging mechanism
+        if self.has_file_handler():
+            # Temporarily set console handler level to prevent duplicate output
+            if self.has_console_handler():
+                old_level = self.stdout_handler.level
+                self.stdout_handler.setLevel(logging.CRITICAL + 1)
+            # Call parent's error method which will log to file
+            super().error(msg, *args, **kwargs)
+            # Restore console handler level
+            if self.has_console_handler():
+                self.stdout_handler.setLevel(old_level)
 
     def _custom_log(self, func, msg, *args, **kwargs):
         """Helper method for logging DEBUG through CRITICAL messages by calling the appropriate
@@ -220,10 +316,36 @@ class SmartLogger(logging.getLoggerClass()):
         self._custom_log(super().warning, msg, *args, **kwargs)
 
     def error(self, msg, *args, **kwargs):
-        self._custom_log(super().error, msg, *args, **kwargs)
+        """Print error messages to stderr (console) and also log to file."""
+        # Log to file using standard logging mechanism
+        if self.has_file_handler():
+            # Temporarily set console handler level to prevent duplicate output
+            if self.has_console_handler():
+                old_level = self.stdout_handler.level
+                self.stdout_handler.setLevel(logging.CRITICAL + 1)
+            # Call parent's error method which will log to file
+            super().error(msg, *args, **kwargs)
+            # Restore console handler level
+            if self.has_console_handler():
+                self.stdout_handler.setLevel(old_level)
+        # Also print to stderr for immediate visibility
+        print(msg, *args, file=sys.stderr, **kwargs)
 
     def critical(self, msg, *args, **kwargs):
-        self._custom_log(super().critical, msg, *args, **kwargs)
+        """Print critical error messages to stderr (console) and also log to file."""
+        # Log to file using standard logging mechanism
+        if self.has_file_handler():
+            # Temporarily set console handler level to prevent duplicate output
+            if self.has_console_handler():
+                old_level = self.stdout_handler.level
+                self.stdout_handler.setLevel(logging.CRITICAL + 1)
+            # Call parent's critical method which will log to file
+            super().critical(msg, *args, **kwargs)
+            # Restore console handler level
+            if self.has_console_handler():
+                self.stdout_handler.setLevel(old_level)
+        # Also print to stderr for immediate visibility
+        print(msg, *args, file=sys.stderr, **kwargs)
 
 
 class Loggable():

@@ -20,10 +20,10 @@ from src.data.multi import MultiDatasets
 from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
-from src.optimizers.schedulers import GradualWarmupScheduler, CosineAnnealingWarmupRestarts
+from src.optimizers.schedulers import GradualWarmupScheduler
 from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs, DPConfigs
 from src.utils import convert_to_hms
-from src.trainer.stats_tracker import TrainStats, EpochStats
+from src.trainer.stats_tracker import TrainStats, EpochStats, StageSummary
 from src.trainer.checkpoints import CheckpointManager
 from src.trainer.metrics import get_performance_metric_func
 from src.trainer.distributed import maybe_init_ddp, is_rank0, ddp_barrier, maybe_cleanup_ddp
@@ -553,26 +553,23 @@ class TrainManager(Loggable):
             self.train_loader.sampler.set_epoch(self.epoch)
         for batch_idx, (inputs, targets) in enumerate(self.train_loader):
             self.train_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
-        self.logger.set_logger_newline()
+        self.logger.set_logger_newline(console_only=True)
         
-        t_ddp_red0 = time.time()
         self.epoch_stats_tracker.ddp_reduce_current_stage()
-        t_ddp_red1 = time.time()
         train_summary = self.epoch_stats_tracker.stage_end()
-        t_ddp_red2 = time.time()
+
+        message = self.build_message_for_stage_end(stage_summary=train_summary)
+        self.logger.print_it(f"{message}", file_only=True)
 
         return train_summary
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
         # Map to available device (profile this)
-        t0 = time.time()
         inputs = inputs.to(self.device, non_blocking=True)
         targets = targets.to(self.device, non_blocking=True)
-        t1 = time.time()
 
         self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
-        t_comp0 = time.time()
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
             def closure(inputs, targets, mean=True, backward=True, run_stats=True):
@@ -595,18 +592,20 @@ class TrainManager(Loggable):
             self.optimizer.zero_grad()
             outputs = self.model(inputs)
             loss = self.criterion(outputs, targets)
-            loss.backward()
+            try:
+                loss = loss.backward()
+            except RuntimeError:
+                loss = loss.mean()
+                loss.backward()
             self.optimizer.step()
-        t_comp1 = time.time()
 
-        t_up0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
-        t_up1 = time.time()
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
-        t_up2 = time.time()
-
+        
         # Print message on console (the print itself is profiled inside print_message)
-        self.print_message(index_batch=batch_idx+1, total_batches=total_batches)
+        message = self.build_message_for_batch_end(index_batch=batch_idx+1,
+                                                total_batches=total_batches)
+        self.logger.print_it_same_line(message, console_only=True)
 
 
     def test_epoch(self):
@@ -618,74 +617,30 @@ class TrainManager(Loggable):
         with torch.no_grad():
             for batch_idx, (inputs, targets) in enumerate(self.test_loader):
                 self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.test_loader))
-        self.logger.set_logger_newline()
+        self.logger.set_logger_newline(console_only=True)
 
-        t_ddp_red0 = time.time()
         self.epoch_stats_tracker.ddp_reduce_current_stage()
-        t_ddp_red1 = time.time()
         test_summary = self.epoch_stats_tracker.stage_end()
-        t_ddp_red2 = time.time()
+        message = self.build_message_for_stage_end(stage_summary=test_summary)
+        self.logger.print_it(f"{message}", file_only=True)
         return test_summary
 
     
     def test_step(self, inputs, targets, batch_idx=0, total_batches=0):
         self.epoch_stats_tracker.batch_start()
         # Map to available device (profile)
-        t0 = time.time()
         inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
-        t1 = time.time()
 
-        t_c0 = time.time()
         # Forward propagation, compute loss, get predictions
         outputs = self.model(inputs)
-        loss = self.criterion(outputs, targets)
-        loss = loss.mean()
-        t_c1 = time.time()
 
-        t_u0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets)
-        t_u1 = time.time()
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
-        t_u2 = time.time()
 
         # Print message on console (profiled inside print_message)
-        self.print_message(index_batch=batch_idx+1,
-                            total_batches=total_batches)
-
-    def print_message(self, index_batch, total_batches):
-        message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
-        bar_length = 10
-        progress = float(index_batch) / float(total_batches)
-        if progress >= 1.:
-            progress = 1
-        block = int(round(bar_length * progress))
-        message += '[{}]'.format('=' * block + ' ' * (bar_length - block))
-        message += '| {}: '.format(self.epoch_stats_tracker.get_stage().upper())
-        if is_rank0():
-            metrics = self.epoch_stats_tracker._require_active_stage().current_avgs()
-        if metrics is not None:
-            train_metrics_message = ''
-            index = 0
-            for metric_name, metric_value in metrics.items():
-                if metric_name in ['batch_time_sec', 'samples_per_sec']:
-                    index += 1
-                    continue
-                train_metrics_message += '{}={:.5f}{} '.format(metric_name, metric_value,
-                                                            ',' if index < len(metrics.keys()) - 1 else '')
-                index += 1
-            message += train_metrics_message
-        message += '|'
-        current_lr = self.get_current_lr()
-        if current_lr is not None:
-            if isinstance(current_lr, (list, tuple)):
-                message += ' LR=[' + ','.join(f"{x:.2e}" for x in current_lr) + '] |'
-            else:
-                message += f" LR={current_lr:.2e} |"
-        h,m,s = convert_to_hms(self.epoch_stats_tracker.get_current_running_time())
-        message += ' Epoch time {}:{:02d}:{:02d} |'.format(h,m,s)
-        h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())
-        message += ' Total time {}:{:02d}:{:02d} |'.format(h,m,s)
-        self.logger.print_it_same_line(message)
+        message = self.build_message_for_batch_end(index_batch=batch_idx+1,
+                                            total_batches=total_batches)
+        self.logger.print_it_same_line(message, console_only=True)
     
     def get_current_lr(self):
         # Append current learning rate(s)
@@ -708,3 +663,61 @@ class TrainManager(Loggable):
         except Exception:
             current_lr = None
         return current_lr
+    
+    def build_message_for_stage_end(self, stage_summary: StageSummary) -> str:
+        message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
+        message += ' {}: '.format(stage_summary.stage.upper())
+        if is_rank0():
+            metrics = stage_summary.metrics
+        message = self.append_metrics(message, metrics)
+        message = self.append_lr(message)
+        message = self.append_times(message)
+        return message
+    
+    def build_message_for_batch_end(self, index_batch, total_batches) -> str:
+        message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
+        bar_length = 10
+        progress = float(index_batch) / float(total_batches)
+        if progress >= 1.:
+            progress = 1
+        block = int(round(bar_length * progress))
+        message += '[{}]'.format('=' * block + ' ' * (bar_length - block))
+        message += '| {}: '.format(self.epoch_stats_tracker.get_stage().upper())
+        if is_rank0():
+            metrics = self.epoch_stats_tracker._require_active_stage().current_avgs()
+        message = self.append_metrics(message, metrics)
+        message = self.append_lr(message)
+        message = self.append_times(message)
+        return message
+    
+    @staticmethod
+    def append_metrics(message: str, metrics: dict[str, float]) -> str:
+        if metrics is not None:
+            metrics_message = ''
+            index = 0
+            for metric_name, metric_value in metrics.items():
+                if metric_name in ['batch_time_sec', 'samples_per_sec']:
+                    index += 1
+                    continue
+                metrics_message += '{}={:.5f}{} '.format(metric_name, metric_value,
+                                                            ',' if index < len(metrics.keys()) - 1 else '')
+                index += 1
+            message += metrics_message
+        message += '|'
+        return message
+    
+    def append_lr(self, message: str) -> str:
+        current_lr = self.get_current_lr()
+        if current_lr is not None:
+            if isinstance(current_lr, (list, tuple)):
+                message += ' LR=[' + ','.join(f"{x:.2e}" for x in current_lr) + '] |'
+            else:
+                message += f" LR={current_lr:.2e} |"
+        return message
+    
+    def append_times(self, message: str) -> str:
+        h,m,s = convert_to_hms(self.epoch_stats_tracker.get_current_running_time())
+        message += ' Epoch time {}:{:02d}:{:02d} |'.format(h,m,s)
+        h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())
+        message += ' Total time {}:{:02d}:{:02d} |'.format(h,m,s)
+        return message
