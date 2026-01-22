@@ -592,11 +592,8 @@ class TrainManager(Loggable):
             self.optimizer.zero_grad()
             outputs = self.model(inputs)
             loss = self.criterion(outputs, targets)
-            try:
-                loss = loss.backward()
-            except RuntimeError:
-                loss = loss.mean()
-                loss.backward()
+            loss = loss.mean() if loss.numel() > 1 else loss
+            loss.backward()
             self.optimizer.step()
 
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
