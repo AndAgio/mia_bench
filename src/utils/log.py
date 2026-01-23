@@ -25,6 +25,18 @@ def get_logger(name: str, log_folder: str, mode: str = 'smart'):
 
 
 def get_logger_from_configs(configs: LogConfigs):
+    """Create and return a logger instance from a `LogConfigs` object.
+
+    Parameters
+    ----------
+    configs : LogConfigs
+        Configuration dataclass containing `name`, `log_folder` and `log_mode`.
+
+    Returns
+    -------
+    SmartLogger | DumbLogger
+        Logger instance configured according to `configs`.
+    """
     return get_logger(name=configs.name,
                     log_folder=configs.log_folder,
                     mode=configs.log_mode)
@@ -32,6 +44,14 @@ def get_logger_from_configs(configs: LogConfigs):
 
 class DumbLogger:
     def __init__(self, name: str):
+        """A minimal console-only logger used as default when no file logging is required.
+
+        The `DumbLogger` implements a small subset of the `SmartLogger` API that
+        is sufficient for libraries and simple scripts (methods like
+        `print_it`, `print_error_to_console`, `error`, `critical`, and
+        `set_logger_newline`). It is intentionally lightweight and does not
+        create log files.
+        """
         self.name = name
 
     @staticmethod

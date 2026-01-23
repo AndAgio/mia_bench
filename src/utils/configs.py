@@ -74,6 +74,16 @@ def build_scheduler_configs_from_settings(settings: Any, mode: str = 'victim') -
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class TrainConfigs:
+    """Configuration container for training runs.
+
+    This dataclass is intended to hold all settings that control training
+    behavior: optimizer and scheduler specs, differential privacy options,
+    batch size, device and checkpoint folders, random seed, and more.
+
+    The `optimizer_config` and `scheduler_config` fields accept either
+    nested config dataclasses (`OptimizerConfigs`, `SchedulerConfigs`) or
+    plain dictionaries that will be coerced in `__post_init__`.
+    """
     # Mandatory arguments (accept either dict or OptimizerConfigs/SchedulerConfigs)
     optimizer_config: Union[OptimizerConfigs, Dict[str, Any]]
     scheduler_config: Union[SchedulerConfigs, Dict[str, Any]]
@@ -285,6 +295,21 @@ class AttackConfigs:
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class VictimConfigs:
+    """Configuration bundle describing a Victim instance.
+
+    Fields
+    ------
+    hash : str
+        Short hash identifying the experiment/victim settings.
+    dataset : DatasetConfigs
+        Dataclass describing dataset name, paths and preprocessing.
+    log : LogConfigs
+        Logging configuration used to initialize the logger for the victim.
+    model : ModelConfigs
+        Model architecture and I/O size configuration.
+    train : TrainConfigs
+        Training configuration for the victim (optimizer, scheduler, DP, etc.).
+    """
     hash: str
     dataset: DatasetConfigs
     log: LogConfigs
@@ -305,6 +330,12 @@ class AttackerConfigs:
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class ExperimentConfigs:
+    """Top-level dataclass that aggregates victim and attacker configurations.
+
+    The `ExperimentConfigs` object contains all configuration needed to
+    reproduce a full experiment: unique hash, `VictimConfigs` and
+    `AttackerConfigs`.
+    """
     hash: str
     victim: VictimConfigs
     attacker: AttackerConfigs

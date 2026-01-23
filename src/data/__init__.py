@@ -22,6 +22,41 @@ from src.utils.configs import get_dataset_info_from_name
 
 
 def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, augment: bool = False, logger: callable = None):
+    """Load and return a prepared dataset wrapper for the named dataset.
+
+    This helper constructs standard torchvision datasets (or custom dataset
+    classes) and applies recommended preprocessing and optional augmentation
+    to the training split. The returned object is a `MultiDatasets` wrapper
+    that contains at least the 'train' and 'test' splits and standardized
+    dataset information.
+
+    Parameters
+    ----------
+    dataset : str
+        Name of the dataset to load. Supported names include
+        `'cifar10'`, `'cifar100'`, `'svhn'`, `'fmnist'`, `'cinic10'`,
+        `'imagenet'`, `'imagenet1k'`, and `'tinyimagenet'`.
+    datasets_folder : str
+        Base folder where datasets are stored or from which they will be
+        downloaded if needed.
+    augment : bool
+        Whether to apply standard training-time augmentations (random crop,
+        horizontal flip, small rotations) to the training split.
+    logger : callable or None
+        Optional logger implementing `print_it`. If `None`, Python's
+        `print` is used for informational messages.
+
+    Returns
+    -------
+    MultiDatasets
+        A wrapper object that provides access to at least the 'train' and
+        'test' dataset splits and includes dataset metadata via `add_info()`.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported `dataset` name is provided.
+    """
     printer_func = print if logger is None else logger.print_it
     printer_func('Gathering dataset "{}". This may take a while...'.format(dataset))
     # Image Preprocessing

@@ -31,7 +31,32 @@ from src.utils.log import Loggable, SmartLogger, DumbLogger
 
 
 class TrainManager(Loggable):
+    """High-level helper that encapsulates the training lifecycle for a model.
+
+    `TrainManager` centralizes model setup, dataloader construction, optimizer
+    and scheduler configuration, optional differential privacy (Opacus)
+    integration, checkpointing, and the main training loop.
+
+    Typical usage
+    -------------
+    manager = TrainManager(train_configs, name='victim', logger=logger)
+    manager.initialize_train(dataset=my_dataset, model=my_model, configs=train_configs)
+    best_model = manager.train(return_best_model=True)
+
+    """
     def __init__(self, train_configs: TrainConfigs, name: str, logger: Union[SmartLogger, DumbLogger] = None):
+        """Create a `TrainManager` bound to a set of training configurations.
+
+        Parameters
+        ----------
+        train_configs : TrainConfigs
+            Configuration object describing optimizer, scheduler, DP settings,
+            batch size, device and checkpoint folders.
+        name : str
+            Name used to create/save checkpoints and for logger identification.
+        logger : SmartLogger | DumbLogger | None
+            Optional logger instance; when omitted a default DumbLogger is used.
+        """
         super().__init__(logger=logger)
         self.train_configs = train_configs
         self.name = name
@@ -412,6 +437,29 @@ class TrainManager(Loggable):
                         model: Union[ModelConfigs,nn.Module],
                         configs: TrainConfigs,
                         ):
+        """Prepare the manager to run training with a given dataset and model.
+
+        This method performs the following steps:
+        - Resets internal training configurations if different from current
+        - Builds dataloaders for the provided dataset
+        - Sets/creates the model (either from a `ModelConfigs` or existing
+          `nn.Module` instance)
+        - Validates the model for differential privacy (if enabled)
+        - Configures loss, metrics, optimizer and LR scheduler
+        - Wraps model/optimizer/loaders for DP if requested
+
+        Parameters
+        ----------
+        dataset : MultiDatasets or torch.utils.data.Dataset
+            The dataset to be used for training. When `MultiDatasets` is
+            passed, it must contain at least a 'train' split.
+        model : ModelConfigs or torch.nn.Module
+            A model description (ModelConfigs) or an already constructed
+            PyTorch module.
+        configs : TrainConfigs
+            Training configuration object that may override the manager's
+            current `train_configs`.
+        """
         self.logger.print_it('Initializing training...')
 
         if not configs.__eq__(self.train_configs):
@@ -456,7 +504,41 @@ class TrainManager(Loggable):
                                             sync_mps=True)
 
     def train(self, extra_configs: dict[str, Any] = None, return_best_model: bool = True, return_last_model: bool = False, return_stats: bool = False):
-        self.extra_configs = extra_configs
+        """Execute the full training loop until the configured number of epochs.
+
+        The method manages checkpointing, training and optional testing per
+        epoch, scheduler stepping, distributed synchronization, and final
+        checkpoint loading.
+
+        Parameters
+        ----------
+        extra_configs : dict, optional
+            Arbitrary extra information to be forwarded to the statistics
+            tracker (e.g. to collect experiment metadata).
+        return_best_model : bool
+            If True will return the checkpointed best model (loaded from disk)
+            as part of the function return value.
+        return_last_model : bool
+            If True will also return the last in-memory model after training.
+        return_stats : bool
+            If True will return `TrainStats` object with run statistics.
+
+        Returns
+        -------
+        Depending on flags, returns one of:
+        - best_model
+        - (best_model, last_model)
+        - (best_model, TrainStats)
+        - (last_model, TrainStats)
+        - TrainStats
+        - None
+
+        Notes
+        -----
+        The exact return tuple shape depends on the boolean flags. When using
+        DDP, only the rank-0 process will save/load checkpoints and print
+        summary messages.
+        """
         
 
         # Checkpoint manager works in both single and DDP

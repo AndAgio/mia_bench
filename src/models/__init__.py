@@ -8,6 +8,36 @@ from typing import Tuple
 
 
 def get_model(model_name: str, im_channels: int = 3, num_classes: int = 10, im_size: Tuple[int, ...] = (32,32), logger: callable = None):
+    """Factory helper to instantiate a model by name with the requested I/O sizes.
+
+    Supported model names include `'resnet18'`, `'resnet34'`, `'resnet50'`,
+    `'vgg11'`, `'vgg13'`, `'vgg16'`, `'vgg19'`, wide resnet variants, MobileNetV3,
+    `'inception_v3'` and `'vit'`.
+
+    Parameters
+    ----------
+    model_name : str
+        Key identifying which model architecture to instantiate.
+    im_channels : int
+        Number of input channels expected by the model (e.g. 3 for RGB images).
+    num_classes : int
+        Number of output classes for the final classification layer.
+    im_size : tuple of int
+        Input image height and width used for architectures that depend on
+        a specific input resolution (e.g. Inception, ViT).
+    logger : callable or None
+        Optional logger providing `print_it`. If `None`, Python `print` is used.
+
+    Returns
+    -------
+    torch.nn.Module
+        Instantiated model ready to be moved to device and trained/evaluated.
+
+    Raises
+    ------
+    None explicitly, but if `model_name` is not recognized an informational
+    message is printed and the function returns the last set value of `model`.
+    """
     printer_func = print if logger is None else logger.print_it
     printer_func('Setting up model "{}"...'.format(model_name))
     # Setup model
