@@ -5,21 +5,21 @@ import numpy as np
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 from src.data.multi import MultiDatasets
-from .auditing_data_manager import AuditingDatasetManager
-from .results_manager import ResultManager
+from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
+from src.mia.helpers.results_manager import ResultManager
 from src.utils.configs import AttackerConfigs
 from src.utils.log import Loggable, get_logger_from_configs
 
 
 class BaseMIA(Loggable):
-    def __init__(self, victim_model: torch.nn.Module, victim_dataset: MultiDatasets, attacker_configs: AttackerConfigs):
+    def __init__(self, defender_model: torch.nn.Module, defender_dataset: MultiDatasets, attacker_configs: AttackerConfigs):
         logger = get_logger_from_configs(attacker_configs.log)
         super().__init__(logger=logger)
         self.logger.print_it('Setting up and MIA attacker. First thing to do is sampling the auditing dataset...')
-        self.victim_model = victim_model
-        self.victim_dataset = victim_dataset
+        self.defender_model = defender_model
+        self.defender_dataset = defender_dataset
         self.seed = attacker_configs.audit.seed
-        self.audit_manager = AuditingDatasetManager(original_datasets=victim_dataset,
+        self.audit_manager = AuditingDatasetManager(original_datasets=defender_dataset,
                                                     configs=attacker_configs.audit,
                                                     logger=logger)
         self.results_manager = ResultManager()

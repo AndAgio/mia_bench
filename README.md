@@ -1,15 +1,15 @@
 
 # 🛡️ Membership Inference Attacks Benchmarking Framework
 
-This repository provides a **modular, scalable, and state‑of‑the‑art framework for evaluating Membership Inference Attacks (MIAs)** against neural network models. It supports realistic attacker/victim threat models, flexible datasets and architectures, and modern optimizer backends. This repository is a  research-focused framework supporting the quick definition and implementation of novel attack strategies by wrapping attacker steps into two main methods (attack optimization and its deployment).
+This repository provides a **modular, scalable, and state‑of‑the‑art framework for evaluating Membership Inference Attacks (MIAs)** against neural network models. It supports realistic attacker/defender threat models, flexible datasets and architectures, and modern optimizer backends. This repository is a  research-focused framework supporting the quick definition and implementation of novel attack strategies by wrapping attacker steps into two main methods (attack optimization and its deployment).
 
 
 ## ✨ Key Features
 
 - **Model & dataset flexibility**: easily add new architectures and datasets
-- **Explicit attacker/victim modeling** with realistic knowledge assumptions
+- **Explicit attacker/defender modeling** with realistic knowledge assumptions
 - **Support for modern optimizers**, including SAM, ASAM, GSAM
-- **Highly modular attack design** through attacker, victim, and shadow managers
+- **Highly modular attack design** through attacker, defender, and shadow managers
 - **Fast experimentation** with optimized shadow‑model training
 - **Distributed training and Apple Silicon support**
 - **Easy experiment resuming and organized outputs**
@@ -19,14 +19,14 @@ This repository provides a **modular, scalable, and state‑of‑the‑art frame
 ## 📁 Repository Structure
 
 ```
-models/        # Model definitions (victim and attacker)
+models/        # Model definitions (defender and attacker)
 data/          # Dataset wrappers
 mia/           # MIA implementations
 optimizers/    # SAM, ASAM, GSAM, ...
-trainer/       # Module containing code to train victim and attacker models
+trainer/       # Module containing code to train defender and attacker models
 utils/         # Helper functions and classes
 outs/          # Outputs
-run.py         # Main file to train victim model and run the MIA
+run.py         # Main file to train defender model and run the MIA
 ```
 
 
@@ -43,8 +43,8 @@ run.py         # Main file to train victim model and run the MIA
 
 
 ### Quick overview
-- Training entrypoint: `train_victim.py` — trains only the victim model and saves checkpoints.
-- End-to-end pipeline: `run.py` — trains victim, (optionally) shadow models, runs attacker optimization, and saves results.
+- Training entrypoint: `train_defender.py` — trains only the defender model and saves checkpoints.
+- End-to-end pipeline: `run.py` — trains defender, (optionally) shadow models, runs attacker optimization, and saves results.
 - Helpers: `download_all_datasets.py`, `generate_run_jobs.py` (SLURM job generator).
 - Configuration and CLI flags are defined in `src/utils/settings.py`.
 
@@ -69,34 +69,34 @@ export PYTORCH_ENABLE_MPS_FALLBACK=1
 - Default outputs folder: `outs/` (experiment results, attacker outputs, checkpoints).
 - Use `python download_all_datasets.py` to download supported datasets to the default `datas/` folder.
 
-### Training victims (and checkpointing for reuse)
-Use `train_victim.py` when you only want to train the victim model and persist checkpoints for later reuse across multiple attacks. This is the recommended workflow for large experiments: train a victim once with stable settings, then run several attacks reusing that checkpoint.
+### Training defenders (and checkpointing for reuse)
+Use `train_defender.py` when you only want to train the defender model and persist checkpoints for later reuse across multiple attacks. This is the recommended workflow for large experiments: train a defender once with stable settings, then run several attacks reusing that checkpoint.
 
-Example — train a victim and store checkpoints:
+Example — train a defender and store checkpoints:
 
 ```bash
-# Train only the victim with standard SGD and no defense
-python train_victim.py \
+# Train only the defender with standard SGD and no defense
+python train_defender.py \
 	--dataset cifar10 \
-	--victim_model resnet18 \
-	--victim_epochs 100 \
-	--victim_batch_size 128 \
+	--defender_model resnet18 \
+	--defender_epochs 100 \
+	--defender_batch_size 128 \
 	--device 0
 ```
 
-The repository also supports training a victim model with Differential Privacy (DP) by enabling `--victim_use_dp` and the related DP flags which instruct the training pipeline to use the configured DP mechanism (see `src/utils/configs.py` where `DPConfigs` are assembled). Example:
+The repository also supports training a defender model with Differential Privacy (DP) by enabling `--defender_use_dp` and the related DP flags which instruct the training pipeline to use the configured DP mechanism (see `src/utils/configs.py` where `DPConfigs` are assembled). Example:
 
 ```bash
-# Train only the victim with DP-SGD enabled
-python train_victim.py \
+# Train only the defender with DP-SGD enabled
+python train_defender.py \
 	--dataset cifar10 \
-	--victim_model resnet18 \
-	--victim_epochs 50 \
-	--victim_batch_size 128 \
-	--victim_use_dp \
-	--victim_dp_noise_multiplier 1.2 \
-	--victim_dp_max_grad_norm 1.0 \
-	--victim_dp_clip_per_layer \
+	--defender_model resnet18 \
+	--defender_epochs 50 \
+	--defender_batch_size 128 \
+	--defender_use_dp \
+	--defender_dp_noise_multiplier 1.2 \
+	--defender_dp_max_grad_norm 1.0 \
+	--defender_dp_clip_per_layer \
 	--device 0
 ```
 
@@ -104,11 +104,11 @@ python train_victim.py \
 
 #### Notes on checkpointing and `--resume`:
 - When you run any command the repository computes deterministic hashes from the *relevant* CLI settings and saves settings and checkpoints under `outs/` using these hashes (see `src/utils/configs.py`).
-- Victim checkpoints are stored under `outs/victims/<victim_hash>/ckpts` and attacker checkpoints under `outs/attackers/<attacker_hash>/ckpts`.
+- Victim checkpoints are stored under `outs/defenders/<defender_hash>/ckpts` and attacker checkpoints under `outs/attackers/<attacker_hash>/ckpts`.
 - The hash is computed by `get_hash_from_settings(...)`, which first filters settings with `get_relevant_settings(...)` and then hashes the JSON representation (sorted keys) — so the hash changes if any relevant setting changes.
 - `--resume` will only reuse checkpoints whose settings produce the exact same hash (i.e. identical relevant settings). If settings differ, training starts from scratch and new folders are created.
 
-Refer to [src/utils/configs.py](src/utils/configs.py) and [src/utils/settings.py](src/utils/settings.py) for the exact rules used to compute which flags are considered "relevant" for victim/attacker/experiment hashes.
+Refer to [src/utils/configs.py](src/utils/configs.py) and [src/utils/settings.py](src/utils/settings.py) for the exact rules used to compute which flags are considered "relevant" for defender/attacker/experiment hashes.
 
 ### Two concrete Quick-Start examples
 
@@ -120,18 +120,8 @@ Example A — Quantile attack on CIFAR-10 (fast, minimal shadows)
 # download data (one-time)
 python download_all_datasets.py
 
-# run a short end-to-end experiment: victim + attack (quantile)
-python run.py \
-	--attack_mode quantile \
-	--dataset cifar10 \
-	--victim_model resnet18 \
-	--att_model resnet18 \
-	--victim_epochs 10 \
-	--att_epochs 5 \
-	--n_shadows 1 \
-	--n_samples_per_shadow_dataset 2000 \
-	--n_auditing_samples 1000 \
-	--device 0
+# run a short end-to-end experiment: defender + attack (quantile)
+python run.py --attack_mode quantile --dataset cifar10 --defender_model resnet18 --att_model resnet18 --defender_epochs 10 --att_epochs 5 --n_shadows 1 --n_samples_per_shadow_dataset 2000 --n_auditing_samples 1000 --device 0
 ```
 
 Example B — LiRA attack on TinyImageNet (larger experiment)
@@ -141,14 +131,14 @@ Example B — LiRA attack on TinyImageNet (larger experiment)
 python run.py \
 	--attack_mode lira \
 	--dataset tinyimagenet \
-	--victim_model resnet50 \
+	--defender_model resnet50 \
 	--att_model resnet50 \
-	--victim_epochs 90 \
+	--defender_epochs 90 \
 	--att_epochs 30 \
 	--n_shadows 50 \
 	--n_samples_per_shadow_dataset 10000 \
 	--n_auditing_samples 5000 \
-	--victim_batch_size 256 \
+	--defender_batch_size 256 \
 	--att_batch_size 256 \
 	--device 0
 ```
@@ -164,10 +154,10 @@ The full CLI options and defaults can be found in [src/utils/settings.py](src/ut
 Below are the most commonly used flags. See `src/utils/settings.py` for the full authoritative list and exact defaults.
 
 - `--dataset`: dataset name (cifar10, cifar100, svhn, fmnist, cinic10, imagenet, tinyimagenet)
-- `--victim_model`: victim architecture (resnet18, resnet50, vgg16, mobile_small, etc.)
-- `--victim_epochs`, `--victim_batch_size`: victim training schedule and batch size
-- `--victim_lr`, `--victim_lr_sched`: victim learning rate and scheduler
-- `--victim_use_dp`, `--victim_dp_noise_multiplier`, `--victim_dp_max_grad_norm`, `--victim_dp_clip_per_layer`: differential privacy training options for the victim
+- `--defender_model`: defender architecture (resnet18, resnet50, vgg16, mobile_small, etc.)
+- `--defender_epochs`, `--defender_batch_size`: defender training schedule and batch size
+- `--defender_lr`, `--defender_lr_sched`: defender learning rate and scheduler
+- `--defender_use_dp`, `--defender_dp_noise_multiplier`, `--defender_dp_max_grad_norm`, `--defender_dp_clip_per_layer`: differential privacy training options for the defender
 - `--att_model`, `--att_epochs`, `--att_batch_size`, `--att_lr`: attacker model and training settings
 - `--attack_mode`: attack strategy (`quantile`, `lira`, `neural_feat`, `rmia_loss`, `pmia_confidence`, ...)
 - `--n_shadows`, `--n_samples_per_shadow_dataset`: number of shadow datasets/models and their size (some attacks override these defaults)

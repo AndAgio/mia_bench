@@ -4,11 +4,11 @@ import numpy as np
 from torch.utils.data import Subset, ConcatDataset, Dataset
 from src.data.multi import MultiDatasets
 from src.utils.configs import AuditingDataConfigs
-from src.utils.log import Loggable, SmartLogger, DumbLogger
+from src.utils.log import Loggable, MyLogger
 
 
 class AuditingDatasetManager(Loggable):
-    def __init__(self, original_datasets: MultiDatasets, configs: AuditingDataConfigs, logger: Union[SmartLogger, DumbLogger] = None): 
+    def __init__(self, original_datasets: MultiDatasets, configs: AuditingDataConfigs, logger: MyLogger = None): 
         super().__init__(logger=logger)
         assert original_datasets is not None
         assert original_datasets.n_splits() >= 2

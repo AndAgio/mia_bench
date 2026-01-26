@@ -3,8 +3,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from src.data.multi import MultiDatasets
-from src.mia.base_mia import BaseMIA
-from src.mia.shadow_manager import ShadowManager
+from src.mia.attacks.base_mia import BaseMIA
+from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils.log import get_logger
 from src.utils import convert_to_hms
@@ -16,10 +16,10 @@ from src.trainer.train_manager import TrainManager
 class QuantileMIA(BaseMIA):
     # Implementation of Scalable membership inference attacks via quantile regression (https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html).
     def __init__(self, 
-                victim_model: torch.nn.Module,
-                victim_dataset: MultiDatasets,
+                defender_model: torch.nn.Module,
+                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Quantile MIA!")
         
         # TODO: add silent check for n_shadow_datasets == 1 and avoid raising an error, but rather modify configurations on the fly.
@@ -29,7 +29,7 @@ class QuantileMIA(BaseMIA):
         assert self.shadow_configs.n_shadow_datasets == 1, f"When using quantile MIA, only 1 shadow dataset must be used!"
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
+        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
@@ -56,7 +56,7 @@ class QuantileMIA(BaseMIA):
         train_config.loss = self.quantile_loss_fn
 
         self.logger.print_it('Quantile MIA attacker: constructing quantile dataset...')
-        self.victim_model.eval()
+        self.defender_model.eval()
         features = []
         target_scores = []
         shadow_dataset = self.shadow_manager.get_dataset(index=0,
@@ -65,7 +65,7 @@ class QuantileMIA(BaseMIA):
         with torch.no_grad():
             for data, target in shadow_loader:
                 features.append(data)
-                target_score, _ = self.victim_scoring_fn(data, target, device=train_config.device)
+                target_score, _ = self.defender_scoring_fn(data, target, device=train_config.device)
                 target_scores.append(target_score)
         features = torch.cat(features)
         target_scores = torch.cat(target_scores)
@@ -94,12 +94,12 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it('Quantile MIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
 
-    def victim_scoring_fn(self, data: torch.Tensor, target: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+    def defender_scoring_fn(self, data: torch.Tensor, target: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
             device = QuantileMIA.get_device(dev_str=device)
-        self.victim_model.eval()
+        self.defender_model.eval()
         with torch.no_grad():
-            logits = self.victim_model(data.to(device)).detach().cpu()
+            logits = self.defender_model(data.to(device)).detach().cpu()
             onehot_label = torch.nn.functional.one_hot(target, num_classes=logits.shape[-1]).bool()
             score = logits[onehot_label]
             # Mask out the true label before taking max over incorrect labels
@@ -114,7 +114,7 @@ class QuantileMIA(BaseMIA):
             device = QuantileMIA.get_device(dev_str=device)
         quantile_model = self.shadow_manager.get_model(index=0).to(device)
         quantile_model.eval()
-        self.victim_model.eval()
+        self.defender_model.eval()
         audit_dataset = self.audit_manager.get(labels='original')
         self.reset_logger()
         tot_samples = len(audit_dataset)
@@ -123,7 +123,7 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it(f"Computing scores for all {tot_samples} samples. This may take a while...")
         for sample_index, (sample, label) in enumerate(audit_loader):
             with torch.no_grad():
-                target_score, _ = self.victim_scoring_fn(sample, label, device=device)
+                target_score, _ = self.defender_scoring_fn(sample, label, device=device)
                 predicted_scores = quantile_model(sample.to(device))
                 
                 if self.attack_configs.use_gaussian:

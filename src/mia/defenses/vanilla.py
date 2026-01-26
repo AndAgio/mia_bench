@@ -2,17 +2,18 @@ from typing import Union
 from src.data import get_dataset
 from src.models import get_model
 from src.trainer.train_manager import TrainManager
-from src.utils.configs import ExperimentConfigs, TrainConfigs, VictimConfigs
+from src.utils.configs import TrainConfigs, DefenderConfigs, NoDefenseConfigs
 from src.utils.log import Loggable, get_logger_from_configs
 
 
-class Victim(Loggable):
-    def __init__(self, victim_configs: VictimConfigs):
-        logger=get_logger_from_configs(victim_configs.log)
+class VanillaVictim(Loggable):
+    def __init__(self, defender_configs: DefenderConfigs):
+        assert isinstance(defender_configs.defense, NoDefenseConfigs), f"VanillaVictim can only be used with NoDefenseConfigs, got {type(defender_configs.defense)}"
+        logger=get_logger_from_configs(defender_configs.log)
         super().__init__(logger=logger)
-        self.victim_hash = victim_configs.hash
-        self.dataset_configs = victim_configs.dataset
-        self.model_configs = victim_configs.model
+        self.defender_hash = defender_configs.hash
+        self.dataset_configs = defender_configs.dataset
+        self.model_configs = defender_configs.model
         self.dataset = get_dataset(dataset=self.dataset_configs.name,
                                 datasets_folder=self.dataset_configs.data_folder,
                                 augment=self.dataset_configs.data_augmentation,
@@ -29,9 +30,9 @@ class Victim(Loggable):
     def get_model(self):
         return self.model
     
-    def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
+    def optimize(self, train_configs: TrainConfigs, return_stats: bool = False):
         train_manager = TrainManager(train_configs=train_configs,
-                                    name='victim',
+                                    name='vanilla_defender',
                                     logger=self.logger)
         train_manager.initialize_train(dataset=self.dataset,
                                         model=self.model,

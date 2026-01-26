@@ -1,12 +1,12 @@
 import torch
 from typing import Union
 from src.models import get_model
-from src.utils.log import Loggable, SmartLogger, DumbLogger
+from src.utils.log import Loggable, MyLogger
 from src.utils.configs import ModelConfigs
 from typing import Union
 
 class ShadowModelsManager(Loggable):
-    def __init__(self, n_models: int, model_configs: ModelConfigs, logger: Union[SmartLogger, DumbLogger] = None):
+    def __init__(self, n_models: int, model_configs: ModelConfigs, logger: MyLogger = None):
         super().__init__(logger=logger)
         assert 0 < n_models < 101, f"Invalid number of models should be between 1 and 100: {n_models}"
         self.n_models = n_models

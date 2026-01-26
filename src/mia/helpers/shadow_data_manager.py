@@ -7,9 +7,9 @@ import torch
 from typing import Union
 from torch.utils.data import Subset, ConcatDataset
 from src.data.multi import MultiDatasets
-from src.mia.auditing_data_manager import AuditingDatasetManager, FixedLabelDataset
+from src.mia.helpers.auditing_data_manager import AuditingDatasetManager, FixedLabelDataset
 from src.utils.configs import ShadowDataConfigs
-from src.utils.log import Loggable, SmartLogger, DumbLogger
+from src.utils.log import Loggable, MyLogger
 from src.utils.variables import DEFAULT_SHADOW_DATASETS_FOLDER
 
 MAX_SHADOW_DATASETS = 100
@@ -21,7 +21,7 @@ class ShadowDatasetsManager(Loggable):
                 auditing_dataset: AuditingDatasetManager,
                 shadow_configs: ShadowDataConfigs,
                 attacker_hash: str,
-                logger: Union[SmartLogger, DumbLogger] = None):
+                logger: MyLogger = None):
         super().__init__(logger=logger)
         assert original_datasets is not None
         assert original_datasets.n_splits() >= 2

@@ -2,8 +2,8 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 from src.data.multi import MultiDatasets
-from src.mia.base_mia import BaseMIA
-from src.mia.shadow_manager import ShadowManager
+from src.mia.attacks.base_mia import BaseMIA
+from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
 from typing import Union
@@ -13,16 +13,16 @@ import time
 class RobustMIA(BaseMIA):
     # Implementation of Low-Cost High-Power Membership Inference Attacks (https://arxiv.org/pdf/2312.03262)
     def __init__(self, 
-                victim_model: torch.nn.Module,
-                victim_dataset: MultiDatasets,
+                defender_model: torch.nn.Module,
+                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
         assert self.shadow_configs.mode == self.attack_configs.mode, f"Whenever working with RobustMIA the mode for shadow datasets and attack should be the same!"
         self.mode = self.attack_configs.mode
         self.logger.print_it(f"Working with RobustMIA in {self.mode.upper()} mode!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('RobustMIA attacker: sampling of shadow datasets...')
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
+        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
@@ -139,13 +139,13 @@ class RobustMIA(BaseMIA):
             p_x_in = np.mean(p_x_thetas_in, axis=1)
             p_x = 0.5 * p_x_in +  0.5 * p_x_out
 
-        self.logger.print_it(f"Computing p(x|theta) with the victim model...")
-        p_x_thetas_victim = self.compute_p_x_theta(audit_dataset=dataset,
-                                                models_for_sample=[[self.victim_model] for _ in range(len(dataset))],
+        self.logger.print_it(f"Computing p(x|theta) with the defender model...")
+        p_x_thetas_defender = self.compute_p_x_theta(audit_dataset=dataset,
+                                                models_for_sample=[[self.defender_model] for _ in range(len(dataset))],
                                                 device=device)
-        p_x_thetas_victim = p_x_thetas_victim.squeeze()
+        p_x_thetas_defender = p_x_thetas_defender.squeeze()
 
-        ratio = p_x_thetas_victim/(p_x + 1e-15)
+        ratio = p_x_thetas_defender/(p_x + 1e-15)
         return ratio
     
 
@@ -158,13 +158,13 @@ class RobustMIA(BaseMIA):
                                             device=device)
         p_z = np.mean(p_z_thetas, axis=1)
 
-        self.logger.print_it(f"Computing p(z|theta) with victim model...")
-        p_z_thetas_victim = self.compute_p_x_theta(audit_dataset=dataset,
-                                                models_for_sample=[[self.victim_model] for _ in range(len(dataset))],
+        self.logger.print_it(f"Computing p(z|theta) with defender model...")
+        p_z_thetas_defender = self.compute_p_x_theta(audit_dataset=dataset,
+                                                models_for_sample=[[self.defender_model] for _ in range(len(dataset))],
                                                 device=device)
-        p_z_thetas_victim = p_z_thetas_victim.squeeze()
+        p_z_thetas_defender = p_z_thetas_defender.squeeze()
 
-        ratio = p_z_thetas_victim/(p_z + 1e-15)
+        ratio = p_z_thetas_defender/(p_z + 1e-15)
         return ratio
         
         

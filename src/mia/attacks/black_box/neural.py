@@ -6,8 +6,8 @@ import torch.nn as nn
 import torch.optim as optim
 import time
 from src.data.multi import MultiDatasets
-from src.mia.base_mia import BaseMIA
-from src.mia.shadow_manager import ShadowManager
+from src.mia.attacks.base_mia import BaseMIA
+from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
 from src.utils.configs import AttackerConfigs, TrainConfigs
 
@@ -17,14 +17,14 @@ PROCESSING_BATCH_SIZE = 256
 class NeuralMIA(BaseMIA):
     # Implementation of Neural Network-based MIA (https://ieeexplore.ieee.org/document/7958568)
     def __init__(self, 
-                victim_model: torch.nn.Module,
-                victim_dataset: MultiDatasets,
+                defender_model: torch.nn.Module,
+                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Neural MIA!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Neural MIA attacker: sampling of shadow datasets...')
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
+        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
@@ -128,13 +128,13 @@ class NeuralMIA(BaseMIA):
         if isinstance(device, str):
             device = NeuralMIA.get_device(dev_str=device)
         self.attack_model.to(device)
-        self.victim_model.to(device)
+        self.defender_model.to(device)
         self.attack_model.eval()
-        self.victim_model.eval()
+        self.defender_model.eval()
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         scores = np.zeros((len(audit_dataset), ))
         for sample_index, (sample, _) in enumerate(audit_loader):
-            feature = NeuralMIA.get_model_out(model=self.victim_model,
+            feature = NeuralMIA.get_model_out(model=self.defender_model,
                                                 data=sample,
                                                 device=device,
                                                 mode=self.attack_configs.neural_input_mode)

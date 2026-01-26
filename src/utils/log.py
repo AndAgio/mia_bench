@@ -348,8 +348,10 @@ class SmartLogger(logging.getLoggerClass()):
         print(msg, *args, file=sys.stderr, **kwargs)
 
 
+MyLogger = Union[SmartLogger, DumbLogger]
+
 class Loggable():
-    def __init__(self, logger: Union[DumbLogger, SmartLogger] = None):
+    def __init__(self, logger: MyLogger = None):
         if logger is None:
             self.logger = get_logger(name='log', log_folder=DEFAULT_LOG_FOLDER, mode='dumb')
         else:

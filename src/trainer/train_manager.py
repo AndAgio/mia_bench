@@ -1,37 +1,29 @@
 import os
-import pathlib
-import sys
-import math
-import time
 import copy
 from typing import Tuple, Union, Callable, Any
 import random
 import torch
 import torch.nn as nn
-import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 import numpy as np
-from opacus import PrivacyEngine
-from opacus.validators import ModuleValidator
-from opacus.distributed import DifferentiallyPrivateDistributedDataParallel as DPDDP
 from src.data.multi import MultiDatasets
 from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
 from src.optimizers.schedulers import GradualWarmupScheduler
-from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs, DPConfigs
+from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs
 from src.utils import convert_to_hms
 from src.trainer.stats_tracker import TrainStats, EpochStats, StageSummary
 from src.trainer.checkpoints import CheckpointManager
 from src.trainer.metrics import get_performance_metric_func
 from src.trainer.distributed import maybe_init_ddp, is_rank0, ddp_barrier, maybe_cleanup_ddp
-from src.utils.log import Loggable, SmartLogger, DumbLogger
+from src.utils.log import Loggable, MyLogger
 
 
 class TrainManager(Loggable):
-    def __init__(self, train_configs: TrainConfigs, name: str, logger: Union[SmartLogger, DumbLogger] = None):
+    def __init__(self, train_configs: TrainConfigs, name: str, logger: MyLogger = None):
         super().__init__(logger=logger)
         self.train_configs = train_configs
         self.name = name
@@ -353,60 +345,6 @@ class TrainManager(Loggable):
                                                         batch_size=batch_size,
                                                         split=False)
 
-    def check_and_set_dp(self, dp_config: DPConfigs):
-        if dp_config.use_dp:
-            self.logger.print_it('Differential Privacy with Opacus: updating model, optimizer and data loaders accordingly...')
-            
-            if dp_config.clip_per_layer:
-                # Each layer has the same clipping threshold. The total grad norm is still bounded by `args.max_grad_norm`.
-                n_layers = len(
-                    [(n, p) for n, p in self.model.named_parameters() if p.requires_grad]
-                )
-                max_grad_norm = [
-                    dp_config.max_grad_norm / np.sqrt(n_layers)
-                ] * n_layers
-            else:
-                max_grad_norm = dp_config.max_grad_norm
-
-            if self.distributed and dp_config.clip_per_layer:
-                self.model = DPDDP(self.model)
-
-            privacy_engine = PrivacyEngine()
-            clipping = "per_layer" if dp_config.clip_per_layer else "flat"
-            if dp_config.grad_sample_mode in ['ghost']:
-                self.model, self.optimizer, self.criterion, self.train_loader = privacy_engine.make_private(
-                    module=self.model,
-                    optimizer=self.optimizer,
-                    data_loader=self.train_loader,
-                    noise_multiplier=dp_config.noise_multiplier,
-                    max_grad_norm=max_grad_norm,
-                    clipping=clipping,
-                    grad_sample_mode=dp_config.grad_sample_mode,
-                )
-            elif dp_config.grad_sample_mode in ['hook']:
-                self.model, self.optimizer, self.train_loader = privacy_engine.make_private(
-                    module=self.model,
-                    optimizer=self.optimizer,
-                    data_loader=self.train_loader,
-                    noise_multiplier=dp_config.noise_multiplier,
-                    max_grad_norm=max_grad_norm,
-                    clipping=clipping,
-                    grad_sample_mode=dp_config.grad_sample_mode,
-                )
-            else:
-                raise ValueError("Unsupported mode '{dp_config.grad_sample_mode}' for dp_config.grad_sample_mode when using DP!")
-            self.logger.print_it('Differential Privacy setup completed!')
-            self.model = self.model.to(self.device)
-        else:
-            pass
-
-    def validate_and_fix_model_for_dp(self, dp_config: DPConfigs):
-        if dp_config.use_dp:
-            self.logger.print_it('Differential Privacy with Opacus: validating model and fixing it if necessary...')
-            if not ModuleValidator.is_valid(self.model):
-                self.model = ModuleValidator.fix(self.model)
-            self.model = self.model.to(self.device)
-
     def initialize_train(self, 
                         dataset: Union[MultiDatasets, Dataset],
                         model: Union[ModelConfigs,nn.Module],
@@ -426,10 +364,10 @@ class TrainManager(Loggable):
             self.setup_model_from_configs(model_configs=model)
         else:
             raise ValueError('Not recognizing model given!')
-        self.validate_and_fix_model_for_dp(dp_config=configs.dp_config)
+        # self.validate_and_fix_model_for_dp(dp_config=configs.dp_config)
         self.setup_training()
         # Modifying model, optimizer and loaders for differential privacy if needed
-        self.check_and_set_dp(dp_config=configs.dp_config)
+        # self.check_and_set_dp(dp_config=configs.dp_config)
         self.logger.print_it('Training initialization completed!')
 
 
@@ -592,7 +530,8 @@ class TrainManager(Loggable):
             self.optimizer.zero_grad()
             outputs = self.model(inputs)
             loss = self.criterion(outputs, targets)
-            loss = loss.mean() if loss.numel() > 1 else loss
+            # loss = loss.mean() if loss.numel() > 1 else loss
+            loss = loss.mean() if self.to_be_averaged_loss(loss) else loss
             loss.backward()
             self.optimizer.step()
 
@@ -604,6 +543,11 @@ class TrainManager(Loggable):
                                                 total_batches=total_batches)
         self.logger.print_it_same_line(message, console_only=True)
 
+    def to_be_averaged_loss(self, loss: torch.Tensor) -> bool:
+        try:
+            return loss.numel() > 1
+        except Exception:
+            return isinstance(self.criterion, torch.nn.modules.loss._Loss) and self.criterion.reduction == 'none'
 
     def test_epoch(self):
         # reset per-epoch profiler for test stage as well (keeps same epoch bucket)

@@ -1,13 +1,14 @@
 from src.utils.settings import gather_settings, setup_configs_and_folder_from_settings
-from src.mia.victim import Victim
+from src.mia.defenses import get_defender_class
 
 
 def main():
     settings = gather_settings()
-    experiment_configs, _ = setup_configs_and_folder_from_settings(settings)
+    experiment_configs, exp_out_folder = setup_configs_and_folder_from_settings(settings)
 
-    victim = Victim(victim_configs=experiment_configs.victim)
-    _ = victim.train_model(train_configs=experiment_configs.victim.train,)
+    defender_class = get_defender_class(settings.defense_mode)
+    defender = defender_class(defender_configs=experiment_configs.defender)
+    defender_model, defender_stats = defender.optimize(train_configs=experiment_configs.defender.train, return_stats=True)
 
 
 if __name__ == '__main__':

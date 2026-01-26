@@ -4,7 +4,7 @@ import glob
 import subprocess
 from src.utils.yaml import load_secrets_yaml
 
-MODE = 'train_victim'  # 'train_victim' or 'run_attack'
+MODE = 'train_defender'  # 'train_defender' or 'run_attack'
 
 TIMEOUT = load_secrets_yaml()['cluster']['server_timeout']
 CLUSTER_MACHINE = load_secrets_yaml()['cluster']['server_qos']
@@ -234,11 +234,11 @@ if os.path.exists(jobs_dir) and os.path.isdir(jobs_dir):
     shutil.rmtree(jobs_dir)
 os.makedirs(jobs_dir, exist_ok=True)
 
-if MODE == 'train_victim':
+if MODE == 'train_defender':
     for dataset in DATASETS:
-        for victim_model in VICTIM_MODELS:
+        for defender_model in VICTIM_MODELS:
             # Defining job name
-            job_name = 'train_victim_{}_with_{}'.format(dataset, victim_model)
+            job_name = 'train_defender_{}_with_{}'.format(dataset, defender_model)
             print(f"Generating sbatch file for job with name: {job_name}")
             # Define device usages
             text = "#!/bin/sh\n"
@@ -253,20 +253,20 @@ if MODE == 'train_victim':
             text += "\ncd .."
 
             cfg = SGD_HYPERPARAMS[dataset]
-            cfg = cfg.get(victim_model, cfg["default"])
+            cfg = cfg.get(defender_model, cfg["default"])
 
             # Define python script to launch
-            text += f"\n\npython train_victim.py --dataset={dataset} --victim_model={victim_model} "\
-                    f"--victim_epochs={cfg['training']['epochs']} --victim_batch_size={cfg['training']['batch_size']} "\
-                    f"--victim_optimizer={cfg['optimizer']['name']} --victim_lr={cfg['optimizer']['lr']} --victim_weight_decay={cfg['optimizer']['weight_decay']} --victim_momentum={cfg['optimizer']['momentum']} {'--victim_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
-                    f"--victim_lr_sched={cfg['scheduler']['name']} "
+            text += f"\n\npython train_defender.py --dataset={dataset} --defender_model={defender_model} "\
+                    f"--defender_epochs={cfg['training']['epochs']} --defender_batch_size={cfg['training']['batch_size']} "\
+                    f"--defender_optimizer={cfg['optimizer']['name']} --defender_lr={cfg['optimizer']['lr']} --defender_weight_decay={cfg['optimizer']['weight_decay']} --defender_momentum={cfg['optimizer']['momentum']} {'--defender_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
+                    f"--defender_lr_sched={cfg['scheduler']['name']} "
             for key, value in cfg['scheduler']['extra'].items():
                 if not isinstance(value, list):
-                    text += f"--victim_lr_{key}={value} " 
+                    text += f"--defender_lr_{key}={value} " 
                 else:
                     for ind, val in enumerate(value):
                         if ind == 0:
-                            text += f"--victim_lr_{key} {val} "
+                            text += f"--defender_lr_{key} {val} "
                         else:
                             text += f"{val} "
             text += f" --device=0 "
@@ -278,11 +278,11 @@ if MODE == 'train_victim':
 elif MODE == 'run_attack':
     for dataset in DATASETS:
         for attack in ATTACKS:
-            for victim_model in VICTIM_MODELS:
-                attacker_model = victim_model
+            for defender_model in VICTIM_MODELS:
+                attacker_model = defender_model
                 # for attacker_model in ATTACKER_MODEL:
                 # Defining job name
-                job_name = '{}_on_{}_with_vic_{}_and_att_{}'.format(attack, dataset, attacker_model, victim_model)
+                job_name = '{}_on_{}_with_vic_{}_and_att_{}'.format(attack, dataset, attacker_model, defender_model)
                 print(f"Generating sbatch file for job with name: {job_name}")
                 # Define device usages
                 text = "#!/bin/sh\n"
@@ -297,23 +297,23 @@ elif MODE == 'run_attack':
                 text += "\ncd .."
 
                 cfg = SGD_HYPERPARAMS[dataset]
-                cfg = cfg.get(victim_model, cfg["default"])
+                cfg = cfg.get(defender_model, cfg["default"])
 
                 # Define python script to launch
-                text += f"\n\npython run.py --dataset={dataset} --victim_model={victim_model} "\
-                        f"--victim_epochs={cfg['training']['epochs']} --victim_batch_size={cfg['training']['batch_size']} "\
-                        f"--victim_optimizer={cfg['optimizer']['name']} --victim_lr={cfg['optimizer']['lr']} --victim_weight_decay={cfg['optimizer']['weight_decay']} --victim_momentum={cfg['optimizer']['momentum']} {'--victim_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
-                        f"--victim_lr_sched={cfg['scheduler']['name']} "
+                text += f"\n\npython run.py --dataset={dataset} --defender_model={defender_model} "\
+                        f"--defender_epochs={cfg['training']['epochs']} --defender_batch_size={cfg['training']['batch_size']} "\
+                        f"--defender_optimizer={cfg['optimizer']['name']} --defender_lr={cfg['optimizer']['lr']} --defender_weight_decay={cfg['optimizer']['weight_decay']} --defender_momentum={cfg['optimizer']['momentum']} {'--defender_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
+                        f"--defender_lr_sched={cfg['scheduler']['name']} "
                 for key, value in cfg['scheduler']['extra'].items():
                     if not isinstance(value, list):
-                        text += f"--victim_lr_{key}={value} " 
+                        text += f"--defender_lr_{key}={value} " 
                     else:
                         for ind, val in enumerate(value):
                             if ind == 0:
-                                text += f"--victim_lr_{key} {val} "
+                                text += f"--defender_lr_{key} {val} "
                             else:
                                 text += f"{val} "
-                text += f"--att_model={victim_model} "\
+                text += f"--att_model={defender_model} "\
                         f"--att_epochs={cfg['training']['epochs']} --att_batch_size={cfg['training']['batch_size']} "\
                         f"--att_optimizer={cfg['optimizer']['name']} --att_lr={cfg['optimizer']['lr']} --att_weight_decay={cfg['optimizer']['weight_decay']} --att_momentum={cfg['optimizer']['momentum']} {'--att_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
                         f"--att_lr_sched={cfg['scheduler']['name']} "

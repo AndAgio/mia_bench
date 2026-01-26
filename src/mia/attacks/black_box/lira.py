@@ -3,8 +3,8 @@ from torch.utils.data import DataLoader, Dataset
 import numpy as np
 from scipy.stats import norm
 from src.data.multi import MultiDatasets
-from src.mia.base_mia import BaseMIA
-from src.mia.shadow_manager import ShadowManager
+from src.mia.attacks.base_mia import BaseMIA
+from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import TrainConfigs, AttackerConfigs
 from src.utils import convert_to_hms
 from typing import Union
@@ -14,14 +14,14 @@ import time
 class LiRA(BaseMIA):
     # Implementation of Membership inference attacks from first principles (https://ieeexplore.ieee.org/abstract/document/9833649).
     def __init__(self, 
-                victim_model: torch.nn.Module,
-                victim_dataset: MultiDatasets,
+                defender_model: torch.nn.Module,
+                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(victim_model=victim_model, victim_dataset=victim_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with LiRA!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('LiRA attacker: sampling of shadow datasets...')
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.victim_dataset,
+        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
@@ -70,14 +70,14 @@ class LiRA(BaseMIA):
         shadow_out_means = np.mean(phis_out, axis=1)
         shadow_out_stds = np.std(phis_out, axis=1)
 
-        self.logger.print_it(f"Computing phis with victim model...")
-        phis_victim = self.compute_phis(audit_dataset=audit_dataset,
-                                        models_for_sample=[[self.victim_model] for _ in range(len(audit_dataset))],
+        self.logger.print_it(f"Computing phis with defender model...")
+        phis_defender = self.compute_phis(audit_dataset=audit_dataset,
+                                        models_for_sample=[[self.defender_model] for _ in range(len(audit_dataset))],
                                         device=device)
-        phis_victim = phis_victim.squeeze()
+        phis_defender = phis_defender.squeeze()
 
-        p_in = norm.pdf(phis_victim, loc=shadow_in_means, scale=shadow_in_stds)
-        p_out = norm.pdf(phis_victim, loc=shadow_out_means, scale=shadow_out_stds)
+        p_in = norm.pdf(phis_defender, loc=shadow_in_means, scale=shadow_in_stds)
+        p_out = norm.pdf(phis_defender, loc=shadow_out_means, scale=shadow_out_stds)
 
         scores = p_in/(p_out+1e-15)
 

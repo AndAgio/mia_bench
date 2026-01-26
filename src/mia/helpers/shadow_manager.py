@@ -1,16 +1,16 @@
 import torch
 from typing import Union
 from src.trainer.train_manager import TrainManager
-from src.mia.shadow_data_manager import ShadowDatasetsManager
-from src.mia.shadow_models_manager import ShadowModelsManager
+from src.mia.helpers.shadow_data_manager import ShadowDatasetsManager
+from src.mia.helpers.shadow_models_manager import ShadowModelsManager
 from src.data.multi import MultiDatasets
-from src.mia.auditing_data_manager import AuditingDatasetManager
+from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
 from src.utils.configs import ShadowDataConfigs, TrainConfigs, ModelConfigs
-from src.utils.log import Loggable, SmartLogger, DumbLogger, get_logger
+from src.utils.log import Loggable, MyLogger, get_logger
 
 
 class ShadowManager(Loggable):
-    def __init__(self, shadow_data: ShadowDatasetsManager = None, shadow_models: ShadowModelsManager = None, logger: Union[SmartLogger, DumbLogger] = None):
+    def __init__(self, shadow_data: ShadowDatasetsManager = None, shadow_models: ShadowModelsManager = None, logger: MyLogger = None):
         super().__init__(logger=logger)
         if shadow_data is not None and shadow_models is not None:
             assert shadow_data.get_num_dataset() == shadow_models.get_num_models(), f"The number of shadow datasets and models should be the same!"

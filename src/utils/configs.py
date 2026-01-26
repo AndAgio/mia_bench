@@ -5,8 +5,9 @@ import json
 from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
 from dataclasses import field
 from pydantic.dataclasses import dataclass
-from pydantic import ConfigDict
-from typing import Optional, Tuple, Union, Callable, List, Dict, Any
+from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
+from typing import Optional, Tuple, Union, Callable, List, Dict, Any, Annotated, Literal
+
 import torch
 
 Loss = Union[str, Callable[..., Any], torch.nn.Module]
@@ -23,48 +24,39 @@ class OptimizerConfigs:
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
-class DPConfigs:
-    use_dp: bool = False
-    noise_multiplier: float = 1.0
-    max_grad_norm: float = 1.0
-    clip_per_layer: bool = False
-    grad_sample_mode: str = 'hook'
-
-
-@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SchedulerConfigs:
     name: str = 'cosine'
     epochs: int = 100
     extra: Dict[str, Any] = field(default_factory=dict)
     
-def build_scheduler_configs_from_settings(settings: Any, mode: str = 'victim') -> SchedulerConfigs:
-    assert mode in ['victim', 'attacker'], f"Mode '{mode}' not available to build LR scheduler configurations!"
-    name = settings.victim_lr_sched if mode == 'victim' else settings.att_lr_sched
-    total_epochs = settings.victim_epochs if mode == 'victim' else settings.att_epochs
+def build_scheduler_configs_from_settings(settings: Any, mode: str = 'defender') -> SchedulerConfigs:
+    assert mode in ['defender', 'attacker'], f"Mode '{mode}' not available to build LR scheduler configurations!"
+    name = settings.defender_lr_sched if mode == 'defender' else settings.att_lr_sched
+    total_epochs = settings.defender_epochs if mode == 'defender' else settings.att_epochs
     extra = {}
     if name == 'warmup_step':
-        extra['step_size'] = settings.victim_lr_step_size  if mode == 'victim' else settings.att_lr_step_size
-        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
-        extra['warmup_multiplier'] = settings.victim_lr_warmup_multiplier if mode == 'victim' else settings.att_lr_warmup_multiplier
-        extra['warmup_epochs'] = settings.victim_lr_warmup_epochs if mode == 'victim' else settings.att_lr_warmup_epochs
+        extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.att_lr_step_size
+        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.att_lr_step_gamma
+        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.att_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.att_lr_warmup_epochs
     elif name == 'warmup_exp':
-        extra['exp_gamma'] = settings.victim_lr_exp_gamma if mode == 'victim' else settings.att_lr_exp_gamma
-        extra['warmup_multiplier'] = settings.victim_lr_warmup_multiplier if mode == 'victim' else settings.att_lr_warmup_multiplier
-        extra['warmup_epochs'] = settings.victim_lr_warmup_epochs if mode == 'victim' else settings.att_lr_warmup_epochs
+        extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.att_lr_exp_gamma
+        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.att_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.att_lr_warmup_epochs
     elif name == 'warmup_cosine':
-        extra['cycle_step'] = settings.victim_lr_cycle_step if mode == 'victim' else settings.att_lr_cycle_step
-        extra['cycle_gamma'] = settings.victim_lr_cycle_gamma if mode == 'victim' else settings.att_lr_cycle_gamma
-        extra['cosine_min'] = settings.victim_lr_cosine_min if mode == 'victim' else settings.att_lr_cosine_min
+        extra['cycle_step'] = settings.defender_lr_cycle_step if mode == 'defender' else settings.att_lr_cycle_step
+        extra['cycle_gamma'] = settings.defender_lr_cycle_gamma if mode == 'defender' else settings.att_lr_cycle_gamma
+        extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.att_lr_cosine_min
     elif name == 'step':
-        extra['step_size'] = settings.victim_lr_step_size  if mode == 'victim' else settings.att_lr_step_size
-        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+        extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.att_lr_step_size
+        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.att_lr_step_gamma
     elif name == 'multistep':
-        extra['step_milestones'] = settings.victim_lr_step_milestones  if mode == 'victim' else settings.victim_lr_step_milestones
-        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+        extra['step_milestones'] = settings.defender_lr_step_milestones  if mode == 'defender' else settings.defender_lr_step_milestones
+        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.att_lr_step_gamma
     elif name == 'exp':
-        extra['exp_gamma'] = settings.victim_lr_exp_gamma if mode == 'victim' else settings.att_lr_exp_gamma
+        extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.att_lr_exp_gamma
     elif name == 'cosine':
-        extra['cosine_min'] = settings.victim_lr_cosine_min if mode == 'victim' else settings.att_lr_cosine_min
+        extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.att_lr_cosine_min
     else:
         raise ValueError(f"Learning rate scheduler '{name}' not available!")
     return SchedulerConfigs(name=name,
@@ -78,7 +70,7 @@ class TrainConfigs:
     optimizer_config: Union[OptimizerConfigs, Dict[str, Any]]
     scheduler_config: Union[SchedulerConfigs, Dict[str, Any]]
     # Optional arguments with default values
-    dp_config: DPConfigs = field(default_factory=DPConfigs)
+    # dp_config: DPConfigs = field(default_factory=DPConfigs)
     batch_size: Optional[int] = 256
     loss: Optional[Loss] = 'crossentropy'
     metrics: Optional[Tuple[Union[str, Callable[..., Any]], ...]] = ('multi_class_accuracy',)
@@ -249,18 +241,58 @@ class ShadowDataConfigs:
     seed: Optional[int] = 12345
 
 
-@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
-class AttackConfigs:
-    # Shared arguments
-    mode: str = 'offline'
+# @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+# class AttackConfigs:
+#     # Shared arguments
+#     mode: str = 'offline'
 
-    # RobustMIA
+#     # RobustMIA
+#     alpha: Union[float, list[float]] = 0.5
+#     gamma: float = 1
+#     random_pop_size: int = 1000
+#     # LiRA
+
+#     # Quantile MIA
+#     n_quantile: int = 100
+#     low_quantile: float = 0.01
+#     high_quantile: float = 0.99 
+#     use_logscale: bool = False
+#     use_gaussian: bool = False
+#     quantile_alpha: float = 0.05
+
+#     # Neural MIA
+#     neural_input_mode: str = 'logit'
+#     model_layers: list[int] = field(default_factory=lambda: [64, 32])
+#     model_epochs: int = 10
+#     model_lr: float = 0.01
+
+#     # Attack-R MIA
+#     r_alpha: float = 0.05
+#     r_score_type: str = 'loss'  # options: loss, confidence, entropy
+
+#     # Attack-P MIA
+#     p_alpha: float = 0.05
+#     p_score_type: str = 'loss'  # options: loss, confidence, entropy
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class RobustMiaConfigs:
+    strategy: Literal["robust"] = "robust"
+    mode: str = 'offline'
     alpha: Union[float, list[float]] = 0.5
     gamma: float = 1
     random_pop_size: int = 1000
-    # LiRA
 
-    # Quantile MIA
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class LiraMiaConfigs:
+    strategy: Literal["lira"] = "lira"
+    mode: str = 'online'
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class QuantileMiaConfigs:
+    strategy: Literal["quantile"] = "quantile"
+    mode: str = 'offline'
     n_quantile: int = 100
     low_quantile: float = 0.01
     high_quantile: float = 0.99 
@@ -268,28 +300,67 @@ class AttackConfigs:
     use_gaussian: bool = False
     quantile_alpha: float = 0.05
 
-    # Neural MIA
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class NeuralMiaConfigs:
+    strategy: Literal["neural"] = "neural"
+    mode: str = 'offline'
     neural_input_mode: str = 'logit'
     model_layers: list[int] = field(default_factory=lambda: [64, 32])
     model_epochs: int = 10
     model_lr: float = 0.01
 
-    # Attack-R MIA
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class AttackRMiaConfigs:
+    strategy: Literal["attack_r"] = "attack_r"
+    mode: str = 'offline'
     r_alpha: float = 0.05
     r_score_type: str = 'loss'  # options: loss, confidence, entropy
 
-    # Attack-P MIA
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class AttackPMiaConfigs:
+    strategy: Literal["attack_p"] = "attack_p"
+    mode: str = 'offline'
     p_alpha: float = 0.05
     p_score_type: str = 'loss'  # options: loss, confidence, entropy
 
 
+AttackConfigs = Annotated[
+    Union[RobustMiaConfigs, LiraMiaConfigs, QuantileMiaConfigs, NeuralMiaConfigs, AttackRMiaConfigs, AttackPMiaConfigs],
+    Field(discriminator="strategy")
+]
+
+
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
-class VictimConfigs:
+class NoDefenseConfigs:
+    """No-op defense."""
+    strategy: Literal["none"] = "none"
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class DPDefenseConfigs:
+    strategy: Literal["dp"] = "dp"
+    noise_multiplier: float = 1.0
+    max_grad_norm: float = 1.0
+    clip_per_layer: bool = False
+    grad_sample_mode: str = 'hook'
+
+
+# One-of: only the selected strategy's fields are validated/available
+DefenseConfigs = Annotated[
+    Union[NoDefenseConfigs, DPDefenseConfigs],
+    Field(discriminator="strategy")
+]
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class DefenderConfigs:
     hash: str
     dataset: DatasetConfigs
     log: LogConfigs
     model: ModelConfigs
     train: TrainConfigs
+    defense: DefenseConfigs
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -306,12 +377,12 @@ class AttackerConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class ExperimentConfigs:
     hash: str
-    victim: VictimConfigs
+    defender: DefenderConfigs
     attacker: AttackerConfigs
 
 
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
-    assert mode in ['attacker', 'victim', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'victim' or 'experiment'."
+    assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
         attacker_settings = ['dataset', 'attacker_model', 'attack_mode', 
                             'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
@@ -320,9 +391,9 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
                             'neural_model_layers', 'neural_model_epochs', 'neural_model_lr',
                             'r_alpha']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
-    elif mode == 'victim':
-        victim_settings = ['dataset', 'victim_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
-        relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('victim_') or k in victim_settings}
+    elif mode == 'defender':
+        defender_settings = ['dataset', 'defender_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
+        relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('defender_') or k in defender_settings}
     else:
         exclude_keys = ["resume", "device"]
         relevant_settings = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
@@ -339,62 +410,73 @@ def get_hash_from_settings(settings: Any, mode: str = 'attacker') -> str:
 
 def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     exp_hash = get_hash_from_settings(settings, mode='experiment')
-    victim_hash = get_hash_from_settings(settings, mode='victim')
+    defender_hash = get_hash_from_settings(settings, mode='defender')
     attacker_hash = get_hash_from_settings(settings, mode='attacker')
     exp_log_folder = settings.out_folder/'experiments'/exp_hash/'logs'
-    victim_ckpts_folder = settings.out_folder/'victims'/victim_hash/'ckpts'
-    victim_resume_ckpts_folder = settings.out_folder/'victims'/victim_hash/'resume_ckpts'
+    defender_ckpts_folder = settings.out_folder/'defenders'/defender_hash/'ckpts'
+    defender_resume_ckpts_folder = settings.out_folder/'defenders'/defender_hash/'resume_ckpts'
     attacker_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'ckpts'
     attacker_resume_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'resume_ckpts'
-    victim_dp_config = DPConfigs(use_dp=settings.victim_use_dp,
-                                noise_multiplier=settings.victim_dp_noise_multiplier,
-                                max_grad_norm=settings.victim_dp_max_grad_norm,
-                                clip_per_layer=settings.victim_dp_clip_per_layer,
-                                grad_sample_mode=settings.victim_dp_grad_sample_mode)
-    victim_dataset_configs = DatasetConfigs(name=settings.dataset,
+    # defender_dp_config = DPConfigs(use_dp=settings.defender_use_dp,
+    #                             noise_multiplier=settings.defender_dp_noise_multiplier,
+    #                             max_grad_norm=settings.defender_dp_max_grad_norm,
+    #                             clip_per_layer=settings.defender_dp_clip_per_layer,
+    #                             grad_sample_mode=settings.defender_dp_grad_sample_mode)
+    defender_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation)
-    victim_model_configs = ModelConfigs(model_name=settings.victim_model,
-                                        im_channels=victim_dataset_configs.im_channels,
-                                        num_classes=victim_dataset_configs.num_classes,
-                                        im_size=victim_dataset_configs.im_size)
-    victim_optimizer_configs = OptimizerConfigs(name=settings.victim_optimizer,
-                                                lr=settings.victim_lr,
-                                                weight_decay=settings.victim_weight_decay,
-                                                momentum=settings.victim_momentum,
-                                                nesterov=settings.victim_nesterov,)
-    victim_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='victim')
-    victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_configs,
-                                        scheduler_config=victim_scheduler_configs,
-                                        dp_config=victim_dp_config,
-                                        batch_size=settings.victim_batch_size,
+    defender_model_configs = ModelConfigs(model_name=settings.defender_model,
+                                        im_channels=defender_dataset_configs.im_channels,
+                                        num_classes=defender_dataset_configs.num_classes,
+                                        im_size=defender_dataset_configs.im_size)
+    defender_optimizer_configs = OptimizerConfigs(name=settings.defender_optimizer,
+                                                lr=settings.defender_lr,
+                                                weight_decay=settings.defender_weight_decay,
+                                                momentum=settings.defender_momentum,
+                                                nesterov=settings.defender_nesterov,)
+    defender_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='defender')
+    defender_train_configs = TrainConfigs(optimizer_config=defender_optimizer_configs,
+                                        scheduler_config=defender_scheduler_configs,
+                                        # dp_config=defender_dp_config,
+                                        batch_size=settings.defender_batch_size,
                                         device=settings.device,
                                         distributed=settings.distributed,
-                                        seed=settings.victim_seed,
+                                        seed=settings.defender_seed,
                                         resume=settings.resume,
-                                        ckpts_folder=victim_ckpts_folder,
-                                        resume_ckpts_folder=victim_resume_ckpts_folder)
-    victim_log_configs = LogConfigs(name='victim',
+                                        ckpts_folder=defender_ckpts_folder,
+                                        resume_ckpts_folder=defender_resume_ckpts_folder)
+    defender_log_configs = LogConfigs(name='defender',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
-    victim_configs = VictimConfigs(hash=victim_hash,
-                                    dataset=victim_dataset_configs,
-                                    log=victim_log_configs,
-                                    model=victim_model_configs,
-                                    train=victim_train_configs)
 
-    attacker_dp_config = DPConfigs(use_dp=settings.att_use_dp,
-                                noise_multiplier=settings.att_dp_noise_multiplier,
-                                max_grad_norm=settings.att_dp_max_grad_norm,
-                                clip_per_layer=settings.att_dp_clip_per_layer,
-                                grad_sample_mode=settings.att_dp_grad_sample_mode)
+    if settings.defense_mode in ['no', 'none', 'vanilla']:
+        defender_defense_configs = NoDefenseConfigs()
+    elif settings.defense_mode == 'dp':
+        defender_defense_configs = DPDefenseConfigs(noise_multiplier=settings.defender_dp_noise_multiplier,
+                                                    max_grad_norm=settings.defender_dp_max_grad_norm,
+                                                    clip_per_layer=settings.defender_dp_clip_per_layer,
+                                                    grad_sample_mode=settings.defender_dp_grad_sample_mode)
+    else:
+        raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
+    defender_configs = DefenderConfigs(hash=defender_hash,
+                                    dataset=defender_dataset_configs,
+                                    log=defender_log_configs,
+                                    model=defender_model_configs,
+                                    train=defender_train_configs,
+                                    defense=defender_defense_configs)
+
+    # attacker_dp_config = DPConfigs(use_dp=settings.att_use_dp,
+    #                             noise_multiplier=settings.att_dp_noise_multiplier,
+    #                             max_grad_norm=settings.att_dp_max_grad_norm,
+    #                             clip_per_layer=settings.att_dp_clip_per_layer,
+    #                             grad_sample_mode=settings.att_dp_grad_sample_mode)
     attacker_log_configs = LogConfigs(name='attacker',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
     attacker_model_configs = ModelConfigs(model_name=settings.att_model,
-                                            im_channels=victim_dataset_configs.im_channels,
-                                            num_classes=victim_dataset_configs.num_classes,
-                                            im_size=victim_dataset_configs.im_size)
+                                            im_channels=defender_dataset_configs.im_channels,
+                                            num_classes=defender_dataset_configs.num_classes,
+                                            im_size=defender_dataset_configs.im_size)
     attacker_optimizer_configs = OptimizerConfigs(name=settings.att_optimizer,
                                                     lr=settings.att_lr,
                                                     weight_decay=settings.att_weight_decay,
@@ -403,7 +485,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     attacker_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='attacker')
     attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
                                             scheduler_config=attacker_scheduler_configs,
-                                            dp_config=attacker_dp_config,
+                                            # dp_config=attacker_dp_config,
                                             batch_size=settings.att_batch_size,
                                             loss=settings.att_loss,
                                             metrics=settings.perf_metrics,
@@ -425,40 +507,40 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
 
     if settings.attack_mode in ['online_robust', 'offline_robust', 'on_robust', 'off_robust']:
         robust_mode = 'online' if settings.attack_mode in ['online_robust', 'on_robust'] else 'offline'
-        attack_configs = AttackConfigs(mode=robust_mode,
+        attack_configs = RobustMiaConfigs(mode=robust_mode,
                                         alpha=settings.robust_alphas,
                                         gamma=settings.robust_gamma,
                                         random_pop_size=settings.random_population_size)
         attacker_shadow_configs.mode = robust_mode
     elif settings.attack_mode == 'lira':
-        attack_configs = AttackConfigs(mode='online')
+        attack_configs = LiraMiaConfigs(mode='online')
     elif settings.attack_mode == 'quantile':
         attacker_train_configs.metric_to_track = "quantile_coverage"
         attacker_train_configs.metrics = ["quantile_coverage"]
-        attack_configs = AttackConfigs(mode='offline',
-                                        n_quantile=settings.n_quantile,
-                                        low_quantile=settings.low_quantile,
-                                        high_quantile=settings.high_quantile,
-                                        use_logscale=settings.quantile_use_logscale,
-                                        use_gaussian=settings.quantile_use_gaussian,
-                                        quantile_alpha=settings.quantile_alpha)
+        attack_configs = QuantileMiaConfigs(mode='offline',
+                                            n_quantile=settings.n_quantile,
+                                            low_quantile=settings.low_quantile,
+                                            high_quantile=settings.high_quantile,
+                                            use_logscale=settings.quantile_use_logscale,
+                                            use_gaussian=settings.quantile_use_gaussian,
+                                            quantile_alpha=settings.quantile_alpha)
         attacker_shadow_configs.mode = 'offline'
     elif settings.attack_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
         neural_input_mode = settings.attack_mode.split('_')[-1]
-        attack_configs = AttackConfigs(mode='online',
+        attack_configs = NeuralMiaConfigs(mode='online',
                                         neural_input_mode=neural_input_mode,
                                         model_layers=settings.neural_model_layers,
                                         model_epochs=settings.neural_model_epochs,
                                         model_lr=settings.neural_model_lr)
     elif settings.attack_mode in ['rmia_loss', 'rmia_confidence', 'rmia_entropy']:
         score_type = settings.attack_mode.split('_')[-1]
-        attack_configs = AttackConfigs(mode='offline',
+        attack_configs = AttackRMiaConfigs(mode='offline',
                                         r_alpha=settings.r_alpha,
                                         r_score_type=score_type)
         attacker_shadow_configs.mode = 'offline'
     elif settings.attack_mode in ['pmia_loss', 'pmia_confidence', 'pmia_entropy']:
         score_type = settings.attack_mode.split('_')[-1]
-        attack_configs = AttackConfigs(mode='offline',
+        attack_configs = AttackPMiaConfigs(mode='offline',
                                         p_alpha=settings.p_alpha,
                                         p_score_type=score_type)
         attacker_shadow_configs.n_shadow_datasets = 1
@@ -473,7 +555,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         audit=attacker_auditing_configs,
                                         shadow=attacker_shadow_configs,
                                         attack=attack_configs)
+    
     experiment_configs = ExperimentConfigs(hash=exp_hash,
-                                            victim=victim_configs,
+                                            defender=defender_configs,
                                             attacker=attacker_configs)
     return experiment_configs
