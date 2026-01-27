@@ -75,6 +75,7 @@ def gather_settings():
                                 choices=['none', 'no', 'vanilla',
                                         "dp", "differential_privacy", "differential-privacy", 
                                         'mem_guard', 'memguard', 'mem-guard',
+                                        'relax_loss', 'relaxloss', 'relax-loss',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -95,6 +96,9 @@ def gather_settings():
                                 help='Number of epochs to train the shadow attacker model in MemGuard defense')
         parser.add_argument('--defender_mem_guard_shadow_model_lr', type=float, default=0.01,
                                 help='Learning rate to train the shadow attacker model in MemGuard defense')
+        # Relax Loss parameters for defender model
+        parser.add_argument('--defender_relax_loss_alpha', type=float, default=0.5,
+                                help='Alpha parameter for Relax Loss defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

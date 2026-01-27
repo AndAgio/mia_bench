@@ -2,7 +2,7 @@ from typing import Union
 import torch
 from torch.utils.data import TensorDataset, DataLoader, ConcatDataset
 from src.data.helpers import FixedLabelDataset
-from src.utils.configs import DefenderConfigs, MemGuardConfigs
+from src.utils.configs import DefenderConfigs, MemGuardDefenseConfigs
 from src.mia.defenses.base import BaseDefender
 
 
@@ -12,7 +12,7 @@ BATCH_SIZE = 256
 class MemGuardDefender(BaseDefender):
     # Implementation of MemGuard defense from "MemGuard: Defending Against Black-Box Membership Inference Attacks via Adversarial Examples" (https://dl.acm.org/doi/pdf/10.1145/3319535.3363201).
     def __init__(self, defender_configs: DefenderConfigs):
-        assert isinstance(defender_configs.defense, MemGuardConfigs), f"MemGuardDefender can only be used with MemGuardConfigs, got {type(defender_configs.defense)}"
+        assert isinstance(defender_configs.defense, MemGuardDefenseConfigs), f"MemGuardDefender can only be used with MemGuardDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'mem_guard_defender'
         self.mem_guard_configs = defender_configs.defense
