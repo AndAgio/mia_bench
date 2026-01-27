@@ -76,6 +76,7 @@ def gather_settings():
                                         "dp", "differential_privacy", "differential-privacy", 
                                         'mem_guard', 'memguard', 'mem-guard',
                                         'relax_loss', 'relaxloss', 'relax-loss',
+                                        'adv_reg', 'advreg', 'adv-reg',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -99,6 +100,13 @@ def gather_settings():
         # Relax Loss parameters for defender model
         parser.add_argument('--defender_relax_loss_alpha', type=float, default=0.5,
                                 help='Alpha parameter for Relax Loss defense')
+        # Adversarial Regularization parameters for defender model
+        parser.add_argument('--defender_adv_reg_lambda', type=float, default=1.0,
+                                help='Lambda parameter for Adversarial Regularization defense')
+        parser.add_argument('--defender_adv_reg_shadow_attacker_model_layers', type=int, nargs="+", default=[64, 32],
+                                help='List of hidden layer sizes for the shadow attacker model in Adversarial Regularization defense')
+        parser.add_argument('--defender_adv_reg_shadow_attacker_k', type=int, default=1,
+                                help='Number of shadow attacker steps per defender step in Adversarial Regularization defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

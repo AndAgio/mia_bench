@@ -358,9 +358,16 @@ class RelaxLossDefenseConfigs:
     strategy: Literal["relax_loss"] = "relax_loss"
     relax_alpha: float = 0.5
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class AdvRegDefenseConfigs:
+    strategy: Literal["adv_reg"] = "adv_reg"
+    shadow_attacker_model_layers: list[int] = field(default_factory=lambda: [64, 32])
+    adv_lambda: float = 1.0
+    shadow_attacker_k: int = 1
+
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -469,9 +476,16 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     clip_per_layer=settings.defender_dp_clip_per_layer,
                                                     grad_sample_mode=settings.defender_dp_grad_sample_mode)
     elif settings.defense_mode in ['mem_guard', 'memguard', 'mem-guard']:
-        defender_defense_configs = MemGuardDefenseConfigs(budget=settings.defender_mem_guard_budget)
+        defender_defense_configs = MemGuardDefenseConfigs(shadow_attacker_model_layers=settings.defender_mem_guard_shadow_attacker_model_layers,
+                                                        shadow_attacker_model_epochs=settings.defender_mem_guard_shadow_attacker_model_epochs,
+                                                        shadow_attacker_model_lr=settings.defender_mem_guard_shadow_attacker_model_lr,
+                                                        budget=settings.defender_mem_guard_budget)
     elif settings.defense_mode in ['relax_loss', 'relaxloss', 'relax-loss']:
         defender_defense_configs = RelaxLossDefenseConfigs(relax_alpha=settings.defender_relax_loss_alpha)
+    elif settings.defense_mode in ['adv_reg', 'advreg', 'adv-reg']:
+        defender_defense_configs = AdvRegDefenseConfigs(shadow_attacker_model_layers=settings.defender_adv_reg_shadow_attacker_model_layers,
+                                                        adv_lambda=settings.defender_adv_reg_lambda,
+                                                        shadow_attacker_k=settings.defender_adv_reg_shadow_attacker_k)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
