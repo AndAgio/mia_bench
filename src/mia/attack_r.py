@@ -93,7 +93,7 @@ class AttackRMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
         metrics = self.compute_stats(scores)
-        self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics["auc"]}")
+        self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
         return metrics
 
     def compute_batch_scores(self, model: torch.nn.Module, data: torch.Tensor, label: torch.Tensor):

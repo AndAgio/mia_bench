@@ -8,6 +8,10 @@ from typing import Tuple, Union, Callable, Any
 import random
 import torch
 import torch.nn as nn
+from typing import Dict, Set
+from torch.utils.data import Subset
+from src.trainer.prop_noise_obfs import *
+from src.trainer.prop_noise_obfs import _snapshot_layer_grads, _print_grad_changes, metric_privacy_obfuscation,_select_trainable_layer
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
@@ -25,6 +29,69 @@ from src.trainer.checkpoints import CheckpointManager
 from src.trainer.metrics import get_performance_metric_func
 from src.trainer.distributed import maybe_init_ddp, is_rank0, ddp_barrier, maybe_cleanup_ddp
 from src.utils.log import Loggable, SmartLogger, DumbLogger
+import torch.nn.functional as F
+
+
+REF_RATIO = 0.1
+SEED_SPLIT = 42
+
+def _param_ids_in_module(module: torch.nn.Module) -> Set[int]:
+    """Returns Python ids of parameter objects in `module` (including submodules)."""
+    return {id(p) for p in module.parameters()}
+
+
+@torch.no_grad()
+def _grad_checksum_excluding(
+    model: torch.nn.Module,
+    exclude_param_ids: Set[int],
+) -> Dict[str, float]:
+    """
+    Returns a lightweight 'checksum' per parameter grad tensor in model,
+    excluding parameters whose id is in exclude_param_ids.
+
+    The checksum is (sum, sum_abs, max_abs, numel) combined into one float tuple-like,
+    but stored as a float for quick compare; you can make it a tuple if you prefer.
+    """
+    ck = {}
+    for name, p in model.named_parameters():
+        if id(p) in exclude_param_ids:
+            continue
+        if p.grad is None:
+            continue
+
+        g = p.grad.detach()
+        # robust-ish fingerprint (still cheap)
+        s = float(g.sum().item())
+        a = float(g.abs().sum().item())
+        m = float(g.abs().max().item())
+        n = int(g.numel())
+        ck[name] = (s, a, m, n)
+    return ck
+
+
+def _compare_checksums(before: Dict[str, tuple], after: Dict[str, tuple]):
+    """
+    Prints differences. Returns True if identical.
+    """
+    ok = True
+    bkeys = set(before.keys())
+    akeys = set(after.keys())
+
+    if bkeys != akeys:
+        ok = False
+        print("[DEFENSE CHECK] ❌ Different set of grad tensors present pre/post.")
+        print("  only-before:", sorted(bkeys - akeys)[:10])
+        print("  only-after :", sorted(akeys - bkeys)[:10])
+
+    for k in sorted(bkeys & akeys):
+        if before[k] != after[k]:
+            ok = False
+            print(f"[DEFENSE CHECK] ❌ Non-target layer grad changed: {k}")
+            print(f"  before={before[k]}")
+            print(f"  after ={after[k]}")
+            # don't spam: show first few
+            # break
+    return ok
 
 
 class TrainManager(Loggable):
@@ -32,7 +99,14 @@ class TrainManager(Loggable):
         super().__init__(logger=logger)
         self.train_configs = train_configs
         self.name = name
-
+        self.frozen_model = None
+        self.ref_loader = None
+        self.risk_ema = None          # EMA accumulator tensor (layer-shaped)
+        self.risk_beta = 0.95         # EMA smoothing
+        self.risk_frac = 0.001        # top 0.1% coords in chosen layer
+        self.risk_lam = 0.7           # lambda in (1-lam)*CE + lam*KL
+        self.risk_temp = 1.0          # temperature for KL softmax
+        self.ref_iter = None
         self.setup_folders(train_configs=self.train_configs)
         self.set_devices_and_seed(train_configs=self.train_configs)
         # Simple time-based profiler (uses time.time)
@@ -49,12 +123,12 @@ class TrainManager(Loggable):
 
     def setup_folders(self, train_configs: TrainConfigs):
         models_folder = os.path.join(train_configs.ckpts_folder, self.name)
-        self.logger.print_it(f"Setting up checkpoints folder to {models_folder}")
+        self.logger.print_it(f'Setting up checkpoints folder to {models_folder}')
         os.makedirs(models_folder, exist_ok=True)
         self.models_folder = models_folder
         self.ckpts_folder = train_configs.ckpts_folder
         resume_folder = os.path.join(train_configs.resume_ckpts_folder, self.name)
-        self.logger.print_it(f"Setting up resume folder to {resume_folder}")
+        self.logger.print_it(f'Setting up resume folder to {resume_folder}')
         os.makedirs(resume_folder, exist_ok=True)
         self.resume_folder = resume_folder
 
@@ -146,7 +220,7 @@ class TrainManager(Loggable):
         if metric_to_track is None:
             self.metric_to_track = 'loss'
         else:
-            assert metric_to_track in list(self.performance_metrics.keys()), f"Metric to track should be among tracked metrics. Found '{metric_to_track}' and {list(self.performance_metrics.keys())}!"
+            assert metric_to_track in list(self.performance_metrics.keys()), f'Metric to track should be among tracked metrics. Found "{metric_to_track}" and {list(self.performance_metrics.keys())}!'
             self.metric_to_track = metric_to_track
 
     def setup_optimizer(self, opt_cfg: OptimizerConfigs):
@@ -223,6 +297,7 @@ class TrainManager(Loggable):
         else:
             raise ValueError('Specified optimizer "{}" not supported. Options are: adam and sgd and sam'.format(opt_cfg.name))
 
+
     def setup_lr_scheduler(self, sched_cfg: SchedulerConfigs):
         self.logger.print_it('Setting up "{}" learning rate scheduler...'.format(sched_cfg.name))
         if sched_cfg.name == 'const':
@@ -264,8 +339,24 @@ class TrainManager(Loggable):
         self.setup_optimizer(opt_cfg=self.train_configs.optimizer_config)
         self.setup_lr_scheduler(sched_cfg=self.train_configs.scheduler_config)
         self.logger.print_it('Training setup done!')
+    
+    def _split_train_and_ref(self, dataset, ref_ratio=0.1, seed=42):
+        n = len(dataset)
+        rng = np.random.default_rng(seed)
+        indices = rng.permutation(n)
+
+        n_ref = int(n * ref_ratio)
+        ref_idx = indices[:n_ref]
+        train_idx = indices[n_ref:]
+
+        train_set = Subset(dataset, train_idx)
+        ref_set = Subset(dataset, ref_idx)
+
+        return train_set, ref_set
+
 
     def setup_dataloaders_from_multidatasets(self, dataset: MultiDatasets, batch_size: int = 128):
+        global SEED_SPLIT, REF_RATIO
         try:
             train_dataset = dataset.get('train')
             self.run_train = True
@@ -297,9 +388,54 @@ class TrainManager(Loggable):
             if self.run_test:
                 self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+        if self.name.startswith("shadow_"): #if it is shadow dont take the same seed as the initial one, resulting in exactly the same split
+            actual_seed = SEED_SPLIT + 10
+        else:
+            actual_seed = SEED_SPLIT
+        full_train_dataset = train_dataset
+        train_set, ref_set = self._split_train_and_ref(
+        full_train_dataset,
+        ref_ratio=REF_RATIO,
+        seed=SEED_SPLIT
+        )
+
+        self.train_loader = DataLoader(
+            train_set,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=True,
+            drop_last=True,
+        )
+
+        self.ref_loader = DataLoader(
+            ref_set,
+            batch_size=batch_size,   # can be smaller if you want
+            shuffle=True,                 # shuffle is OK
+            pin_memory=True,
+            drop_last=True,
+        )
+
+    def _init_ref_iter(self):
+        self.ref_iter = iter(self.ref_loader)
+
+
+    def _next_ref_x(self):
+        if not hasattr(self, "ref_iter") or self.ref_iter is None:
+            self.ref_iter = iter(self.ref_loader)
+
+        try:
+            x, _ = next(self.ref_iter)
+        except StopIteration:
+            self.ref_iter = iter(self.ref_loader)
+            x, _ = next(self.ref_iter)
+        return x.to(self.device, non_blocking=True)
+    def on_epoch_start(self):
+        self._init_ref_iter()
 
     def setup_dataloaders_from_torch_dataset(self, dataset: Dataset, batch_size: int = 128, split: bool = False):
         self.run_train = True
+        global REF_RATIO, SEED_SPLIT
+
         if split:
             train_dataset, test_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
             if self.distributed:
@@ -320,6 +456,7 @@ class TrainManager(Loggable):
                 self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
             self.run_test = True
         else:
+            train_dataset = dataset
             self.run_test = False
             if self.distributed:
                 self.train_loader = DataLoader(dataset, batch_size=batch_size,
@@ -330,6 +467,32 @@ class TrainManager(Loggable):
                                                                             shuffle=True))
             else:
                 self.train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        full_train_dataset = train_dataset
+        if self.name.startswith("shadow_"): #if it is shadow dont take the same seed as the initial one, resulting in exactly the same split
+            actual_seed = SEED_SPLIT + 10
+        else:
+            actual_seed = SEED_SPLIT
+        train_set, ref_set = self._split_train_and_ref(
+        full_train_dataset,
+        ref_ratio=REF_RATIO,
+        seed=actual_seed
+        )
+
+        self.train_loader = DataLoader(
+            train_set,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=True,
+            drop_last=True,
+        )
+
+        self.ref_loader = DataLoader(
+            ref_set,
+            batch_size=batch_size,   # can be smaller if you want
+            shuffle=True,                 # shuffle is OK
+            pin_memory=True,
+            drop_last=True,
+        )
 
     def setup_dataloaders(self, dataset: Union[MultiDatasets, Dataset], batch_size: int = 128):
         if isinstance(dataset, MultiDatasets):
@@ -348,6 +511,7 @@ class TrainManager(Loggable):
                         ):
         self.logger.print_it('Initializing training...')
 
+
         if not configs.__eq__(self.train_configs):
             self.logger.print_it('Found different training configurations in the initialize_train method. Resetting the trainer configs...')
             self.reset_configs(configs)
@@ -356,6 +520,11 @@ class TrainManager(Loggable):
                                 batch_size=self.train_configs.batch_size)
         if isinstance(model, nn.Module):
             self.set_model(model)
+            self.frozen_model = copy.deepcopy(model).to(self.device)
+            self.frozen_model.eval()
+            for p in self.frozen_model.parameters():
+                p.requires_grad_(False)
+
         elif isinstance(model, ModelConfigs):
             self.setup_model_from_configs(model_configs=model)
         else:
@@ -363,6 +532,33 @@ class TrainManager(Loggable):
         self.setup_training()
         self.logger.print_it('Training initialization completed!')
 
+
+
+    def _next_ref_x(self):
+        try:
+            batch = next(self.ref_iter)
+        except StopIteration:
+            self.ref_iter = iter(self.ref_loader)
+            batch = next(self.ref_iter)
+        x_re = batch[0] if isinstance(batch, (tuple, list)) else batch
+        return x_re.to(self.device, non_blocking=True)
+
+    def _top_frac_mask(self, scores: torch.Tensor, frac: float) -> torch.Tensor:
+        flat = scores.reshape(-1)
+        k = max(1, int(flat.numel() * frac))
+        # if k is huge, topk can be slow; for your typical penultimate layer it's fine
+        vals, idx = torch.topk(flat, k, largest=True, sorted=False)
+        mask = torch.zeros_like(flat, dtype=torch.bool)
+        mask[idx] = True
+        return mask.view_as(scores)
+
+    @torch.no_grad()
+    def _update_ema(self, step_scores: torch.Tensor):
+        if self.risk_ema is None:
+            self.risk_ema = step_scores.detach().clone()
+        else:
+            b = self.risk_beta
+            self.risk_ema.mul_(b).add_(step_scores.detach(), alpha=(1 - b))
 
     def reset_running_stats(self):
         best_record = np.inf if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else 0
@@ -398,16 +594,14 @@ class TrainManager(Loggable):
         if is_rank0():
             if not self.profiler_epoch:
                 return
-            lines = [f"Profiling summary for epoch {self.epoch}:"]
+            lines = [f'Profiling summary for epoch {self.epoch}:']
             for k, v in sorted(self.profiler_epoch.items(), key=lambda x: -x[1]):
-                lines.append(f"  {k}: {v:.4f}s")
+                lines.append(f'  {k}: {v:.4f}s')
             self.logger.print_it('\n'.join(lines))
     
 
     def train(self, extra_configs: dict[str, Any] = None, return_best_model: bool = True, return_last_model: bool = False, return_stats: bool = False):
         self.extra_configs = extra_configs
-        
-
         # Checkpoint manager works in both single and DDP
         self.ckpts_manager = CheckpointManager(
             model=self.model,
@@ -435,6 +629,7 @@ class TrainManager(Loggable):
         self.epoch_stats_tracker = EpochStats()
 
         while(self.epoch <= self.train_configs.scheduler_config.epochs):
+            self.on_epoch_start()
             self.epoch_stats_tracker.epoch_start()
             self.train_epoch()
             if self.run_test:
@@ -447,9 +642,13 @@ class TrainManager(Loggable):
             # Finalize epoch and checkpoint (rank-0)
             epoch_summary = self.epoch_stats_tracker.finalize_epoch(epoch=self.epoch)
             best_epoch, new_best = self.train_stats_tracker.update_history_and_best(epoch_summary=epoch_summary)
-
-            self.logger.print_it(f"Best epoch so far is {best_epoch}: {'test' if self.run_test else 'train'} {self.metric_to_track} = {new_best:.4f}")
-
+            
+            self.logger.print_it(
+                f"Best epoch so far is {best_epoch}: "
+                f"{'test' if self.run_test else 'train'} "
+                f"{self.metric_to_track} = {new_best:.4f}"
+            )
+                        
             if self.local_rank == 0:
                 ckpt = self.ckpts_manager.build_checkpoint(epoch=self.epoch,
                                                         train_stats=self.train_stats_tracker)
@@ -499,8 +698,10 @@ class TrainManager(Loggable):
         self.reset_epoch_stats(phase='train')
         self._profiler_reset_epoch()
         self.model.train()
+       
         if self.distributed:
             self.train_loader.sampler.set_epoch(self.epoch)
+
         for batch_idx, (inputs, targets) in enumerate(self.train_loader):
             self.train_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
         self.logger.set_logger_newline()
@@ -546,13 +747,133 @@ class TrainManager(Loggable):
             self.optimizer.zero_grad()
             loss, outputs = self.optimizer.get_first_closure_outputs()
         else:
-            # Forward propagation, compute loss, get predictions (no GradScaler/AMP)
             self.optimizer.zero_grad()
+
+            # forward on train batch
             outputs = self.model(inputs)
+            """
             loss = self.criterion(outputs, targets)
-            loss = loss.mean()
+            loss = loss.mean() if loss.numel() > 1 else loss
             loss.backward()
+            """
+            self.optimizer.zero_grad()
+
+            # --------------------------------------------------
+            # 1) NORMAL TRAINING (this is the ONLY loss that updates the model)
+            # --------------------------------------------------
+            outputs = self.model(inputs)
+            loss_ce = self.criterion(outputs, targets)
+            loss_ce = loss_ce.mean() if loss_ce.numel() > 1 else loss_ce
+            loss_ce.backward()    # <-- only backward that writes to .grad
+
+            # --------------------------------------------------
+            # 2) RISK SCORING (NO effect on training grads)
+            # --------------------------------------------------
+            # get a reference batch
+            x_re = self._next_ref_x().to(self.device, non_blocking=True)
+
+            # compute the logits on the "frozen" model i.e. initial model
+            with torch.no_grad():
+                logits_vn = self.frozen_model(x_re)
+
+            # current model predictions (we need the gradient graph)
+            logits_up = self.model(x_re)
+
+            #compute the KL divergence betweens the logits of the initial model and the current model
+            T = self.risk_temp  #temperature for KL 
+            loss_kl = F.kl_div(
+                F.log_softmax(logits_up / T, dim=-1),
+                F.softmax(logits_vn / T, dim=-1),
+                reduction="batchmean"
+            ) * (T ** 2)
+
+            # compute KL gradients WITHOUT touching .grad
+            model_for_defense = self.model.module if hasattr(self.model, "module") else self.model
+            target_layer = _select_trainable_layer(model_for_defense, which="penultimate", debug=False)
+            
+            g_risk = torch.autograd.grad(
+                loss_kl,
+                target_layer.weight,
+                retain_graph=False,
+                create_graph=False
+            )[0]
+
+            # --------------------------------------------------
+            # 3) UPDATE RISK EMA
+            # --------------------------------------------------
+            with torch.no_grad():
+                step_scores = g_risk.detach().abs() * target_layer.weight.detach().abs()
+            self._update_ema(step_scores)
+
+            # --------------------------------------------------
+            # 4) BUILD MASK + OBFUSCATE TRAINING GRADS
+            # --------------------------------------------------
+            d = 0.5
+            b = 50
+
+            weight_mask, stats = select_coords_toprisk_until_weight_l1_le_d_(
+                weight=target_layer.weight.detach(),
+                risk_scores=self.risk_ema,
+                d=d,
+                require_at_least_one=True,
+            )
+           
+            weight_mask, stats = select_coords_risk_biased_random_until_weight_l1_le_d_(
+            weight=target_layer.weight.detach(),
+            risk_scores=self.risk_ema,
+            d=d,
+            alpha=0.7,          # start <1 to avoid always picking the same coords
+            max_draw=None,      # optional speed cap; tune
+            require_at_least_one=True,
+        )
+
+            bias_mask = weight_mask.any(dim=1)
+            grads_before = _snapshot_layer_grads(target_layer)
+            metric_privacy_obfuscation(
+                model_for_defense,
+                d=d,
+                b=b,
+                which="penultimate",
+                clip_scope="masked",
+                coord_mask={"weight": weight_mask, "bias": bias_mask},
+            )
+
+            # --------------------------------------------------
+            # 5) UPDATE
+            # --------------------------------------------------
             self.optimizer.step()
+            
+            #uncomment for prints: verify that only the penultimate layer changes - nothing else and that some of the other parameters actually change
+            # print target changes (what you already do)
+            #_print_grad_changes(target_layer, grads_before, k_show=5)
+            """
+            # checksum grads of ALL OTHER layers after defense
+            ck_after = _grad_checksum_excluding(model_for_defense, exclude_param_ids=exclude_ids)
+
+            # verify nothing else changed
+            ok = _compare_checksums(ck_before, ck_after)
+            if ok:
+                print("[DEFENSE CHECK] ✅ No other layer grads changed.")
+            else:
+                print("[DEFENSE CHECK] ❌ Some non-target grads changed (see above).")
+
+
+            
+             
+        
+            _print_grad_changes(
+            target_layer,
+            grads_before,
+            k_show=5,
+            )
+
+            layer = target_layer
+            print("WEIGHT  max|w|:", layer.weight.detach().abs().max().item(),
+                  "mean|w|:", layer.weight.detach().abs().mean().item())
+            print("GRAD    max|g|:", layer.weight.grad.detach().abs().max().item(),
+                  "mean|g|:", layer.weight.grad.detach().abs().mean().item())
+            """
+            #self.optimizer.step()
         t_comp1 = time.time()
         self._profiler_add('compute', t_comp1 - t_comp0)
 
@@ -622,7 +943,7 @@ class TrainManager(Loggable):
 
     def print_message(self, index_batch, total_batches):
         t0 = time.time()
-        message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
+        message = f'{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |'
         bar_length = 10
         progress = float(index_batch) / float(total_batches)
         if progress >= 1.:
@@ -649,7 +970,7 @@ class TrainManager(Loggable):
             if isinstance(current_lr, (list, tuple)):
                 message += ' LR=[' + ','.join(f"{x:.2e}" for x in current_lr) + '] |'
             else:
-                message += f" LR={current_lr:.2e} |"
+                message += f' LR={current_lr:.2e} |'
         h,m,s = convert_to_hms(self.epoch_stats_tracker.get_current_running_time())
         message += ' Epoch time {}:{:02d}:{:02d} |'.format(h,m,s)
         h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())

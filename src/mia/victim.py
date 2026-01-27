@@ -29,14 +29,25 @@ class Victim(Loggable):
     def get_model(self):
         return self.model
     
-    def train_model(self, train_configs: TrainConfigs):
+    def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
         train_manager = TrainManager(train_configs=train_configs,
                                     name='victim',
                                     logger=self.logger)
         train_manager.initialize_train(dataset=self.dataset,
                                         model=self.model,
                                         configs=train_configs)
-        self.model = train_manager.train(return_best_model=True,
-                                        return_last_model=False,
-                                        return_stats=False)
-        return self.model
+        # TODO: Refactor return of stats for victim and train manager.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/21
+        # assignees: AndAgio
+        if return_stats:
+            self.model, train_stats = train_manager.train(return_best_model=True,
+                                                        return_last_model=False,
+                                                        return_stats=return_stats)
+        else:
+            self.model = train_manager.train(return_best_model=True,
+                                            return_last_model=False,
+                                            return_stats=return_stats)
+        if return_stats:
+            return self.model, train_stats
+        else:
+            return self.model
