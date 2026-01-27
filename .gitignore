@@ -8,11 +8,13 @@ datas/
 logs/
 outs/
 shadow_datas/
+exes/
 
 *.log
 *.pth
 *.pth.tar
 *.pt
+*.sbatch
 
 .DS_Store
 

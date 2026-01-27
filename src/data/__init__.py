@@ -9,6 +9,7 @@ from torchvision.datasets import CIFAR100
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import SVHN
 from torchvision.datasets import FashionMNIST
+from .cinic import Cinic10
 from .imagenet import ImageNet
 from .imagenet1k import ImageNet1K
 from .tinyimagenet import TinyImageNet
@@ -25,17 +26,23 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, au
     printer_func('Gathering dataset "{}". This may take a while...'.format(dataset))
     # Image Preprocessing
     if dataset in ['cifar10', 'cifar100']:
-        normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
-                                        std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
+        mean=[x / 255.0 for x in [125.3, 123.0, 113.9]]
+        std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
+        # normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
+        #                                 std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
         # Setup train transforms
         train_transform = transforms.Compose([])
         if augment:
             train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
             train_transform.transforms.append(transforms.RandomHorizontalFlip())
+            train_transform.transforms.append(transforms.RandomRotation(10))
         train_transform.transforms.append(transforms.ToTensor())
-        train_transform.transforms.append(normalize)
+        train_transform.transforms.append(transforms.Normalize(mean=mean, 
+                                                                std=std))
         # Setup test transforms
-        test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+        test_transform = transforms.Compose([transforms.ToTensor(), 
+                                            transforms.Normalize(mean=mean, 
+                                                                std=std)])
     elif dataset == 'svhn':
         mean = [0.4377, 0.4438, 0.4728]
         std = [0.1980, 0.2010, 0.1970]
@@ -46,6 +53,20 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, au
         std = [0.3530]
         train_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
         test_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
+    elif dataset == 'cinic10':
+        mean = [0.47889522, 0.47227842, 0.43047404]
+        std = [0.24205776, 0.23828046, 0.25874835]
+        train_transform = transforms.Compose([])
+        if augment:
+            train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
+            train_transform.transforms.append(transforms.RandomHorizontalFlip())
+            train_transform.transforms.append(transforms.RandomRotation(10))
+        train_transform.transforms.append(transforms.ToTensor())
+        train_transform.transforms.append(transforms.Normalize(mean=mean, 
+                                                                std=std))
+        test_transform = transforms.Compose([transforms.ToTensor(), 
+                                            transforms.Normalize(mean=mean, 
+                                                                std=std)])
     elif dataset in ['imagenet', 'imagenet1k']:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
@@ -93,6 +114,10 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, au
         root = os.path.join(datasets_folder, 'fmnist')
         train_dataset = FashionMNIST(root=root, train=True, download=True, transform=train_transform)
         test_dataset = FashionMNIST(root=root, train=False, download=True, transform=test_transform)
+    elif dataset == 'cinic10':
+        root = os.path.join(datasets_folder, 'cinic10')
+        train_dataset = Cinic10(root=root, train=True, download=True, transform=train_transform)
+        test_dataset = Cinic10(root=root, train=False, download=True, transform=test_transform)
     elif dataset == 'imagenet':
         root = os.path.join(datasets_folder, 'imagenet')
         train_dataset = ImageNet(root=root, split='train', download=True, transform=train_transform)

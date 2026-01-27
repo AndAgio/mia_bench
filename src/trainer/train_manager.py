@@ -17,14 +17,17 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 import numpy as np
+from opacus import PrivacyEngine
+from opacus.validators import ModuleValidator
+from opacus.distributed import DifferentiallyPrivateDistributedDataParallel as DPDDP
 from src.data.multi import MultiDatasets
 from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
-from src.optimizers.schedulers import GradualWarmupScheduler, CosineAnnealingWarmupRestarts
-from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs
+from src.optimizers.schedulers import GradualWarmupScheduler
+from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs, DPConfigs
 from src.utils import convert_to_hms
-from src.trainer.stats_tracker import TrainStats, EpochStats
+from src.trainer.stats_tracker import TrainStats, EpochStats, StageSummary
 from src.trainer.checkpoints import CheckpointManager
 from src.trainer.metrics import get_performance_metric_func
 from src.trainer.distributed import maybe_init_ddp, is_rank0, ddp_barrier, maybe_cleanup_ddp
@@ -109,10 +112,6 @@ class TrainManager(Loggable):
         self.ref_iter = None
         self.setup_folders(train_configs=self.train_configs)
         self.set_devices_and_seed(train_configs=self.train_configs)
-        # Simple time-based profiler (uses time.time)
-        # `profiler_epoch` stores per-epoch accumulations, `profiler_total` stores totals across training
-        self.profiler_epoch: dict[str, float] = {}
-        self.profiler_total: dict[str, float] = {}
 
     
     def reset_configs(self, configs: TrainConfigs):
@@ -228,12 +227,14 @@ class TrainManager(Loggable):
         if opt_cfg.name == 'adam':
             self.optimizer = Adam(params=self.model.parameters(),
                                 lr=opt_cfg.lr)
+            self.criterion.reduction = 'mean'
         elif opt_cfg.name == 'sgd':
             self.optimizer = SGD(params=self.model.parameters(),
                                 lr=opt_cfg.lr,
                                 momentum=opt_cfg.momentum,
                                 nesterov=opt_cfg.nesterov,
                                 weight_decay=opt_cfg.weight_decay)
+            self.criterion.reduction = 'mean'
         elif opt_cfg.name.split('_')[-1] == 'sam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = SAM(params=self.model.parameters(),
@@ -304,32 +305,44 @@ class TrainManager(Loggable):
             self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1)
         elif sched_cfg.name == 'warmup_step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(sched_cfg.epochs/3), gamma=0.1)
-            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(sched_cfg.epochs/40), after_scheduler=scheduler)
+            assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
+            assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
+            assert sched_cfg.extra['warmup_epochs'] < sched_cfg.epochs - sched_cfg.extra['step_size'], f"Invalid configuration for the number of warmup epochs, as it would not allow for step decay afterward! Warmup epochs: {sched_cfg.extra['warmup_epochs']}, step size: {sched_cfg.extra['step_size']} and total epochs: {sched_cfg.epochs}"
+            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=sched_cfg.extra['warmup_multiplier'], total_epoch=sched_cfg.extra['warmup_epochs'], after_scheduler=scheduler)
             self.scheduler.step()
         elif sched_cfg.name == 'warmup_exp':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
-            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=1, total_epoch=math.ceil(sched_cfg.epochs/40), after_scheduler=scheduler)
+            assert sched_cfg.extra['warmup_epochs'] < sched_cfg.epochs, f"Invalid configuration for the number of warmup epochs! Warmup epochs (found {sched_cfg.extra['warmup_epochs']}) should be less than the total total epochs (found {sched_cfg.epochs})"
+            assert 0 < sched_cfg.extra['exp_gamma'] < 1, f"Exponential decay should be between 0 and 1, found {sched_cfg.extra['exp_gamma']} instead!"
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=sched_cfg.extra['exp_gamma'])
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=sched_cfg.extra['warmup_multiplier'], total_epoch=sched_cfg.extra['warmup_epochs'], after_scheduler=scheduler)
             self.scheduler.step()
         elif sched_cfg.name == 'warmup_cosine':
-            assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            assert sched_cfg.lr is not None and 0 < sched_cfg.lr < 1
-            cycle_steps = math.ceil(sched_cfg.epochs/5)
-            warmup_steps = math.ceil(cycle_steps/10)
-            max_lr=sched_cfg.lr
-            min_lr=max_lr/100
-            self.scheduler = CosineAnnealingWarmupRestarts(self.optimizer, first_cycle_steps=cycle_steps, cycle_mult=1.0, max_lr=max_lr, min_lr=min_lr, warmup_steps=warmup_steps, gamma=0.5)
+            assert sched_cfg.extra['cycle_step'] < sched_cfg.epochs, f"The number of epochs per cycle in warmup cosine scheduler should be less than the total number of epochs!"
+            assert sched_cfg.extra['cycle_gamma'] <= 1, f"The decaying factor per cycle in warmup cosine scheduler should be less than or equal to 1 to avoid lr becoming too large!"
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
+                                                                                T_0=sched_cfg.extra['cycle_step'],
+                                                                                T_mult=sched_cfg.extra['cycle_gamma'],
+                                                                                eta_min=sched_cfg.extra['cosine_min'],
+                                                                                last_epoch=sched_cfg.epochs)
         elif sched_cfg.name == 'step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=math.ceil(sched_cfg.epochs/3), gamma=0.1)
+            assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
+            assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
+        elif sched_cfg.name == 'multistep':
+            assert all(milestone < sched_cfg.epochs for milestone in sched_cfg.extra['step_milestones']), f"All milestones should be before the final epoch in the multistep lr scheduler!"
+            assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
+            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=sched_cfg.extra['step_milestones'], gamma=sched_cfg.extra['step_gamma'])
         elif sched_cfg.name == 'exp':
-            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.98)
+            assert 0 < sched_cfg.extra['exp_gamma'] < 1, f"Exponential decay should be between 0 and 1, found {sched_cfg.extra['exp_gamma']} instead!"
+            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=sched_cfg.extra['exp_gamma'])
         elif sched_cfg.name == 'cosine':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, sched_cfg.epochs)
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=sched_cfg.epochs, eta_min=sched_cfg.extra['cosine_min'])
         else:
-            raise ValueError('Learning rate scheduler "{}" not available!'.format(sched_cfg.name))
+            raise ValueError(f"Learning rate scheduler '{sched_cfg.name}' not available!")
 
     def setup_training(self):
         self.logger.print_it('Setting up training...')
@@ -503,6 +516,59 @@ class TrainManager(Loggable):
                                                         batch_size=batch_size,
                                                         split=False)
 
+    def check_and_set_dp(self, dp_config: DPConfigs):
+        if dp_config.use_dp:
+            self.logger.print_it('Differential Privacy with Opacus: updating model, optimizer and data loaders accordingly...')
+            
+            if dp_config.clip_per_layer:
+                # Each layer has the same clipping threshold. The total grad norm is still bounded by `args.max_grad_norm`.
+                n_layers = len(
+                    [(n, p) for n, p in self.model.named_parameters() if p.requires_grad]
+                )
+                max_grad_norm = [
+                    dp_config.max_grad_norm / np.sqrt(n_layers)
+                ] * n_layers
+            else:
+                max_grad_norm = dp_config.max_grad_norm
+
+            if self.distributed and dp_config.clip_per_layer:
+                self.model = DPDDP(self.model)
+
+            privacy_engine = PrivacyEngine()
+            clipping = "per_layer" if dp_config.clip_per_layer else "flat"
+            if dp_config.grad_sample_mode in ['ghost']:
+                self.model, self.optimizer, self.criterion, self.train_loader = privacy_engine.make_private(
+                    module=self.model,
+                    optimizer=self.optimizer,
+                    data_loader=self.train_loader,
+                    noise_multiplier=dp_config.noise_multiplier,
+                    max_grad_norm=max_grad_norm,
+                    clipping=clipping,
+                    grad_sample_mode=dp_config.grad_sample_mode,
+                )
+            elif dp_config.grad_sample_mode in ['hook']:
+                self.model, self.optimizer, self.train_loader = privacy_engine.make_private(
+                    module=self.model,
+                    optimizer=self.optimizer,
+                    data_loader=self.train_loader,
+                    noise_multiplier=dp_config.noise_multiplier,
+                    max_grad_norm=max_grad_norm,
+                    clipping=clipping,
+                    grad_sample_mode=dp_config.grad_sample_mode,
+                )
+            else:
+                raise ValueError("Unsupported mode '{dp_config.grad_sample_mode}' for dp_config.grad_sample_mode when using DP!")
+            self.logger.print_it('Differential Privacy setup completed!')
+            self.model = self.model.to(self.device)
+        else:
+            pass
+
+    def validate_and_fix_model_for_dp(self, dp_config: DPConfigs):
+        if dp_config.use_dp:
+            self.logger.print_it('Differential Privacy with Opacus: validating model and fixing it if necessary...')
+            if not ModuleValidator.is_valid(self.model):
+                self.model = ModuleValidator.fix(self.model)
+            self.model = self.model.to(self.device)
 
     def initialize_train(self, 
                         dataset: Union[MultiDatasets, Dataset],
@@ -529,7 +595,10 @@ class TrainManager(Loggable):
             self.setup_model_from_configs(model_configs=model)
         else:
             raise ValueError('Not recognizing model given!')
+        self.validate_and_fix_model_for_dp(dp_config=configs.dp_config)
         self.setup_training()
+        # Modifying model, optimizer and loaders for differential privacy if needed
+        self.check_and_set_dp(dp_config=configs.dp_config)
         self.logger.print_it('Training initialization completed!')
 
 
@@ -696,7 +765,6 @@ class TrainManager(Loggable):
     def train_epoch(self):
         # reset epoch stats and per-epoch profiler
         self.reset_epoch_stats(phase='train')
-        self._profiler_reset_epoch()
         self.model.train()
        
         if self.distributed:
@@ -704,31 +772,23 @@ class TrainManager(Loggable):
 
         for batch_idx, (inputs, targets) in enumerate(self.train_loader):
             self.train_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
-        self.logger.set_logger_newline()
+        self.logger.set_logger_newline(console_only=True)
         
-        t_ddp_red0 = time.time()
         self.epoch_stats_tracker.ddp_reduce_current_stage()
-        t_ddp_red1 = time.time()
-        self._profiler_add('ddp_reduce_current_stage', t_ddp_red1 - t_ddp_red0)
         train_summary = self.epoch_stats_tracker.stage_end()
-        t_ddp_red2 = time.time()
-        self._profiler_add('stage_end', t_ddp_red2 - t_ddp_red1)
-        # Log per-epoch profiling summary
-        self._profiler_log_epoch_summary()
+
+        message = self.build_message_for_stage_end(stage_summary=train_summary)
+        self.logger.print_it(f"{message}", file_only=True)
 
         return train_summary
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
         # Map to available device (profile this)
-        t0 = time.time()
         inputs = inputs.to(self.device, non_blocking=True)
         targets = targets.to(self.device, non_blocking=True)
-        t1 = time.time()
-        self._profiler_add('to_device', t1 - t0)
 
         self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
-        t_comp0 = time.time()
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
             def closure(inputs, targets, mean=True, backward=True, run_stats=True):
@@ -877,65 +937,43 @@ class TrainManager(Loggable):
         t_comp1 = time.time()
         self._profiler_add('compute', t_comp1 - t_comp0)
 
-        t_up0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
-        t_up1 = time.time()
-        self._profiler_add('metrics_update', t_up1 - t_up0)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
-        t_up2 = time.time()
-        self._profiler_add('metrics_batch_end', t_up2 - t_up1)
-
+        
         # Print message on console (the print itself is profiled inside print_message)
-        self.print_message(index_batch=batch_idx+1, total_batches=total_batches)
+        message = self.build_message_for_batch_end(index_batch=batch_idx+1,
+                                                total_batches=total_batches)
+        self.logger.print_it_same_line(message, console_only=True)
 
 
     def test_epoch(self):
         # reset per-epoch profiler for test stage as well (keeps same epoch bucket)
         self.reset_epoch_stats(phase='test')
-        self._profiler_reset_epoch()
         self.model.eval()
         if self.distributed:
             self.test_loader.sampler.set_epoch(self.epoch)
         with torch.no_grad():
             for batch_idx, (inputs, targets) in enumerate(self.test_loader):
                 self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.test_loader))
-        self.logger.set_logger_newline()
+        self.logger.set_logger_newline(console_only=True)
 
-        t_ddp_red0 = time.time()
         self.epoch_stats_tracker.ddp_reduce_current_stage()
-        t_ddp_red1 = time.time()
-        self._profiler_add('ddp_reduce_current_stage', t_ddp_red1 - t_ddp_red0)
         test_summary = self.epoch_stats_tracker.stage_end()
-        t_ddp_red2 = time.time()
-        self._profiler_add('stage_end', t_ddp_red2 - t_ddp_red1)
-        # Log per-epoch profiling summary for test
-        self._profiler_log_epoch_summary()
+        message = self.build_message_for_stage_end(stage_summary=test_summary)
+        self.logger.print_it(f"{message}", file_only=True)
         return test_summary
 
     
     def test_step(self, inputs, targets, batch_idx=0, total_batches=0):
         self.epoch_stats_tracker.batch_start()
         # Map to available device (profile)
-        t0 = time.time()
         inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
-        t1 = time.time()
-        self._profiler_add('to_device', t1 - t0)
 
-        t_c0 = time.time()
         # Forward propagation, compute loss, get predictions
         outputs = self.model(inputs)
-        loss = self.criterion(outputs, targets)
-        loss = loss.mean()
-        t_c1 = time.time()
-        self._profiler_add('compute', t_c1 - t_c0)
 
-        t_u0 = time.time()
         self.epoch_stats_tracker.update(preds=outputs, targets=targets)
-        t_u1 = time.time()
-        self._profiler_add('metrics_update', t_u1 - t_u0)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
-        t_u2 = time.time()
-        self._profiler_add('metrics_batch_end', t_u2 - t_u1)
 
         # Print message on console (profiled inside print_message)
         self.print_message(index_batch=batch_idx+1,
@@ -1004,3 +1042,61 @@ class TrainManager(Loggable):
         except Exception:
             current_lr = None
         return current_lr
+    
+    def build_message_for_stage_end(self, stage_summary: StageSummary) -> str:
+        message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
+        message += ' {}: '.format(stage_summary.stage.upper())
+        if is_rank0():
+            metrics = stage_summary.metrics
+        message = self.append_metrics(message, metrics)
+        message = self.append_lr(message)
+        message = self.append_times(message)
+        return message
+    
+    def build_message_for_batch_end(self, index_batch, total_batches) -> str:
+        message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
+        bar_length = 10
+        progress = float(index_batch) / float(total_batches)
+        if progress >= 1.:
+            progress = 1
+        block = int(round(bar_length * progress))
+        message += '[{}]'.format('=' * block + ' ' * (bar_length - block))
+        message += '| {}: '.format(self.epoch_stats_tracker.get_stage().upper())
+        if is_rank0():
+            metrics = self.epoch_stats_tracker._require_active_stage().current_avgs()
+        message = self.append_metrics(message, metrics)
+        message = self.append_lr(message)
+        message = self.append_times(message)
+        return message
+    
+    @staticmethod
+    def append_metrics(message: str, metrics: dict[str, float]) -> str:
+        if metrics is not None:
+            metrics_message = ''
+            index = 0
+            for metric_name, metric_value in metrics.items():
+                if metric_name in ['batch_time_sec', 'samples_per_sec']:
+                    index += 1
+                    continue
+                metrics_message += '{}={:.5f}{} '.format(metric_name, metric_value,
+                                                            ',' if index < len(metrics.keys()) - 1 else '')
+                index += 1
+            message += metrics_message
+        message += '|'
+        return message
+    
+    def append_lr(self, message: str) -> str:
+        current_lr = self.get_current_lr()
+        if current_lr is not None:
+            if isinstance(current_lr, (list, tuple)):
+                message += ' LR=[' + ','.join(f"{x:.2e}" for x in current_lr) + '] |'
+            else:
+                message += f" LR={current_lr:.2e} |"
+        return message
+    
+    def append_times(self, message: str) -> str:
+        h,m,s = convert_to_hms(self.epoch_stats_tracker.get_current_running_time())
+        message += ' Epoch time {}:{:02d}:{:02d} |'.format(h,m,s)
+        h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())
+        message += ' Total time {}:{:02d}:{:02d} |'.format(h,m,s)
+        return message

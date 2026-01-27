@@ -12,7 +12,7 @@ def gather_settings():
         
         # Dataset parameters
         parser.add_argument("--dataset", type=str, default="cifar100",
-                                choices=["cifar10", "cifar100", "svhn", "fmnist", "imagenet", "tinyimagenet"])
+                                choices=["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet"])
         
         # Model parameters
         parser.add_argument("--victim_model", default="resnet18",
@@ -41,7 +41,26 @@ def gather_settings():
         parser.add_argument('--victim_lr', type=float, required=False, default=0.01,
                                 help='learning rate')
         parser.add_argument('--victim_lr_sched', type=str, required=False, default='cosine',
-                                help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+                                help='lr scheduler', choices=['const', 'step', 'multistep', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+        parser.add_argument('--victim_lr_step_size', type=int, required=False, default=50,
+                                help='step size in epochs for the step, warmup step lr schedulers')
+        parser.add_argument('--victim_lr_step_gamma', type=float, required=False, default=0.1,
+                                help='decrease multiplying factor for the step, warmup step lr schedulers')
+        parser.add_argument('--victim_lr_warmup_multiplier', type=float, required=False, default=1,
+                                help='multiplicative factor for the warmup phase of warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_warmup_epochs', type=int, required=False, default=10,
+                                help='number of epochs to use as warmup in warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_exp_gamma', type=float, required=False, default=0.98,
+                                help='decrease multiplying factor for the exp, warmup exp lr schedulers')
+        parser.add_argument('--victim_lr_cycle_step', type=int, required=False, default=40,
+                                help='number of epochs in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_cycle_gamma', type=float, required=False, default=1,
+                                help='dacaying factor to be applied in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--victim_lr_cosine_min', type=float, required=False, default=0.0001,
+                                help='minmum learning rate to use in warmup cosine and cosine lr schedulers')
+        parser.add_argument('--victim_lr_step_milestones', nargs="+", type=int, default=[60, 120],
+                                help='Set of milestones to be used to decay lr in multistep lr scheduler')
+
         parser.add_argument('--victim_weight_decay', type=float, required=False, default=5e-4,
                                 help='weight decay')
         parser.add_argument('--victim_momentum', type=float, required=False, default=0.9,
@@ -50,6 +69,17 @@ def gather_settings():
                                 help='nesterov')
         parser.add_argument('--victim_seed', type=int, default=12345,
                                 help='random seed (default:12345)')
+        # Differential Privacy parameters for victim model
+        parser.add_argument("--victim_use_dp", action="store_true", default=False,
+                                help="enable Differential Privacy for victim model training",)
+        parser.add_argument('--victim_dp_noise_multiplier', type=float, default=1.0,
+                                help='Noise multiplier for DP-SGD')
+        parser.add_argument('--victim_dp_max_grad_norm', type=float, default=1.0,
+                                help='Max grad norm for DP-SGD')
+        parser.add_argument("--victim_dp_clip_per_layer", action="store_true", default=False,
+                                help="whether to use per layer clipping in DP-SGD",)
+        parser.add_argument("--victim_dp_grad_sample_mode", type=str, default="ghost")
+        
         
         # Hardware related settings
         parser.add_argument("--device", default='0',
@@ -76,7 +106,7 @@ def gather_settings():
         
 
         # Shared MIA parameters
-        parser.add_argument("--attack_mode", default="robust",
+        parser.add_argument("--attack_mode", default="quantile",
                                 choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust', "lira", "quantile",
                                         "neural_feat", "neural_prob", "neural_logit", 
                                         'rmia_loss', 'rmia_confidence', 'rmia_entropy', 
@@ -146,6 +176,25 @@ def gather_settings():
                                 help='learning rate')
         parser.add_argument('--att_lr_sched', type=str, required=False, default='cosine',
                                 help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+        parser.add_argument('--att_lr_step_size', type=int, required=False, default=50,
+                                help='step size in epochs for the step, warmup step lr schedulers')
+        parser.add_argument('--att_lr_step_gamma', type=float, required=False, default=0.1,
+                                help='decrease multiplying factor for the step, warmup step lr schedulers')
+        parser.add_argument('--att_lr_warmup_multiplier', type=float, required=False, default=1,
+                                help='multiplicative factor for the warmup phase of warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_warmup_epochs', type=int, required=False, default=10,
+                                help='number of epochs to use as warmup in warmup step, warmup exp, warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_exp_gamma', type=float, required=False, default=0.98,
+                                help='decrease multiplying factor for the exp, warmup exp lr schedulers')
+        parser.add_argument('--att_lr_cycle_step', type=int, required=False, default=40,
+                                help='number of epochs in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_cycle_gamma', type=float, required=False, default=1,
+                                help='dacaying factor to be applied in each warmup and restart cycle of the warmup cosine lr schedulers')
+        parser.add_argument('--att_lr_cosine_min', type=float, required=False, default=0.0001,
+                                help='minmum learning rate to use in warmup cosine and cosine lr schedulers')
+        parser.add_argument('--att_lr_step_milestones', nargs="+", type=int, default=[60, 120],
+                                help='Set of milestones to be used to decay lr in multistep lr scheduler')
+
         parser.add_argument('--att_weight_decay', type=float, required=False, default=5e-4,
                                 help='weight decay')
         parser.add_argument('--att_momentum', type=float, required=False, default=0.9,
@@ -154,6 +203,16 @@ def gather_settings():
                                 help='nesterov')
         parser.add_argument('--att_seed', type=int, default=12345,
                                 help='random seed (default:12345)')
+        # Differential Privacy parameters for attacker model
+        parser.add_argument("--att_use_dp", action="store_true", default=False,
+                                help="enable Differential Privacy for attacker model training",)
+        parser.add_argument('--att_dp_noise_multiplier', type=float, default=1.0,
+                                help='Noise multiplier for DP-SGD')
+        parser.add_argument('--att_dp_max_grad_norm', type=float, default=1.0,
+                                help='Max grad norm for DP-SGD')
+        parser.add_argument("--att_dp_clip_per_layer", action="store_true", default=False,
+                                help="whether to use per layer clipping in DP-SGD",)
+        parser.add_argument("--att_dp_grad_sample_mode", type=str, default="ghost")
         
 
         settings = parser.parse_args()

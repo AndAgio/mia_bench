@@ -23,12 +23,54 @@ class OptimizerConfigs:
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class DPConfigs:
+    use_dp: bool = False
+    noise_multiplier: float = 1.0
+    max_grad_norm: float = 1.0
+    clip_per_layer: bool = False
+    grad_sample_mode: str = 'hook'
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SchedulerConfigs:
     name: str = 'cosine'
-    lr: float = 0.01
     epochs: int = 100
     extra: Dict[str, Any] = field(default_factory=dict)
     
+def build_scheduler_configs_from_settings(settings: Any, mode: str = 'victim') -> SchedulerConfigs:
+    assert mode in ['victim', 'attacker'], f"Mode '{mode}' not available to build LR scheduler configurations!"
+    name = settings.victim_lr_sched if mode == 'victim' else settings.att_lr_sched
+    total_epochs = settings.victim_epochs if mode == 'victim' else settings.att_epochs
+    extra = {}
+    if name == 'warmup_step':
+        extra['step_size'] = settings.victim_lr_step_size  if mode == 'victim' else settings.att_lr_step_size
+        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+        extra['warmup_multiplier'] = settings.victim_lr_warmup_multiplier if mode == 'victim' else settings.att_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.victim_lr_warmup_epochs if mode == 'victim' else settings.att_lr_warmup_epochs
+    elif name == 'warmup_exp':
+        extra['exp_gamma'] = settings.victim_lr_exp_gamma if mode == 'victim' else settings.att_lr_exp_gamma
+        extra['warmup_multiplier'] = settings.victim_lr_warmup_multiplier if mode == 'victim' else settings.att_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.victim_lr_warmup_epochs if mode == 'victim' else settings.att_lr_warmup_epochs
+    elif name == 'warmup_cosine':
+        extra['cycle_step'] = settings.victim_lr_cycle_step if mode == 'victim' else settings.att_lr_cycle_step
+        extra['cycle_gamma'] = settings.victim_lr_cycle_gamma if mode == 'victim' else settings.att_lr_cycle_gamma
+        extra['cosine_min'] = settings.victim_lr_cosine_min if mode == 'victim' else settings.att_lr_cosine_min
+    elif name == 'step':
+        extra['step_size'] = settings.victim_lr_step_size  if mode == 'victim' else settings.att_lr_step_size
+        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+    elif name == 'multistep':
+        extra['step_milestones'] = settings.victim_lr_step_milestones  if mode == 'victim' else settings.victim_lr_step_milestones
+        extra['step_gamma'] = settings.victim_lr_step_gamma if mode == 'victim' else settings.att_lr_step_gamma
+    elif name == 'exp':
+        extra['exp_gamma'] = settings.victim_lr_exp_gamma if mode == 'victim' else settings.att_lr_exp_gamma
+    elif name == 'cosine':
+        extra['cosine_min'] = settings.victim_lr_cosine_min if mode == 'victim' else settings.att_lr_cosine_min
+    else:
+        raise ValueError(f"Learning rate scheduler '{name}' not available!")
+    return SchedulerConfigs(name=name,
+                            epochs=total_epochs,
+                            extra=extra)
+
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class TrainConfigs:
@@ -36,6 +78,7 @@ class TrainConfigs:
     optimizer_config: Union[OptimizerConfigs, Dict[str, Any]]
     scheduler_config: Union[SchedulerConfigs, Dict[str, Any]]
     # Optional arguments with default values
+    dp_config: DPConfigs = field(default_factory=DPConfigs)
     batch_size: Optional[int] = 256
     loss: Optional[Loss] = 'crossentropy'
     metrics: Optional[Tuple[Union[str, Callable[..., Any]], ...]] = ('multi_class_accuracy',)
@@ -137,6 +180,8 @@ def get_im_size_from_name(dataset: str):
         im_size = (32, 32)
     elif dataset == 'fmnist':
         im_size = (28, 28)
+    elif dataset == 'cinic10':
+        im_size = (32, 32)
     elif dataset == 'imagenet':
         im_size = (224, 224)
     elif dataset == 'tinyimagenet':
@@ -154,6 +199,8 @@ def get_im_channels_from_name(dataset: str):
         im_channels = 3
     elif dataset == 'fmnist':
         im_channels = 1
+    elif dataset == 'cinic10':
+        im_channels = 3
     elif dataset == 'imagenet':
         im_channels = 3
     elif dataset == 'tinyimagenet':
@@ -170,6 +217,8 @@ def get_num_classes_from_name(dataset: str):
     elif dataset == 'svhn':
         num_classes = 10
     elif dataset == 'fmnist':
+        num_classes = 10
+    elif dataset == 'cinic10':
         num_classes = 10
     elif dataset == 'imagenet':
         num_classes = 1000
@@ -297,6 +346,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     victim_resume_ckpts_folder = settings.out_folder/'victims'/victim_hash/'resume_ckpts'
     attacker_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'ckpts'
     attacker_resume_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'resume_ckpts'
+    victim_dp_config = DPConfigs(use_dp=settings.victim_use_dp,
+                                noise_multiplier=settings.victim_dp_noise_multiplier,
+                                max_grad_norm=settings.victim_dp_max_grad_norm,
+                                clip_per_layer=settings.victim_dp_clip_per_layer,
+                                grad_sample_mode=settings.victim_dp_grad_sample_mode)
     victim_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation)
@@ -309,11 +363,10 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                 weight_decay=settings.victim_weight_decay,
                                                 momentum=settings.victim_momentum,
                                                 nesterov=settings.victim_nesterov,)
-    victim_scheduler_configs = SchedulerConfigs(name=settings.victim_lr_sched,
-                                                lr=settings.victim_lr,
-                                                epochs=settings.victim_epochs)
+    victim_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='victim')
     victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_configs,
                                         scheduler_config=victim_scheduler_configs,
+                                        dp_config=victim_dp_config,
                                         batch_size=settings.victim_batch_size,
                                         device=settings.device,
                                         distributed=settings.distributed,
@@ -330,6 +383,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                     model=victim_model_configs,
                                     train=victim_train_configs)
 
+    attacker_dp_config = DPConfigs(use_dp=settings.att_use_dp,
+                                noise_multiplier=settings.att_dp_noise_multiplier,
+                                max_grad_norm=settings.att_dp_max_grad_norm,
+                                clip_per_layer=settings.att_dp_clip_per_layer,
+                                grad_sample_mode=settings.att_dp_grad_sample_mode)
     attacker_log_configs = LogConfigs(name='attacker',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
@@ -342,11 +400,10 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     weight_decay=settings.att_weight_decay,
                                                     momentum=settings.att_momentum,
                                                     nesterov=settings.att_nesterov,)
-    attacker_scheduler_configs = SchedulerConfigs(name=settings.att_lr_sched,
-                                                    lr=settings.att_lr,
-                                                    epochs=settings.att_epochs)
+    attacker_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='attacker')
     attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
                                             scheduler_config=attacker_scheduler_configs,
+                                            dp_config=attacker_dp_config,
                                             batch_size=settings.att_batch_size,
                                             loss=settings.att_loss,
                                             metrics=settings.perf_metrics,

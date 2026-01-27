@@ -20,7 +20,7 @@ class BasicBlock(nn.Module):
         self.residual_function = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Conv2d(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels * BasicBlock.expansion)
         )
@@ -37,7 +37,7 @@ class BasicBlock(nn.Module):
             )
 
     def forward(self, x):
-        return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
+        return nn.ReLU(inplace=False)(self.residual_function(x) + self.shortcut(x))
 
 class Bottleneck(nn.Module):
     """Residual block for resnet over 50 layers
@@ -49,10 +49,10 @@ class Bottleneck(nn.Module):
         self.residual_function = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Conv2d(out_channels, out_channels, stride=stride, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=False),
             nn.Conv2d(out_channels, out_channels * Bottleneck.expansion, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channels * Bottleneck.expansion),
         )
@@ -66,7 +66,7 @@ class Bottleneck(nn.Module):
             )
 
     def forward(self, x):
-        return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
+        return nn.ReLU(inplace=False)(self.residual_function(x) + self.shortcut(x))
 
 class ResNet(nn.Module):
 
@@ -98,7 +98,7 @@ class ResNet(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(channel, 64, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True))
+            nn.ReLU(inplace=False))
         #we use a different inputsize than the original paper
         #so conv2_x's stride is 1
         self.conv2_x = self._make_layer(block, 64, num_block[0], 1)
