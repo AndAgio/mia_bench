@@ -1,65 +1,49 @@
 
 from typing import Union
-import torch.nn as nn
+import torch
 from torch.utils.data import Dataset
 import numpy as np
-from src.data.multi import MultiDatasets
+from src.data.helpers import MultiDatasets
 from opacus import PrivacyEngine
 from opacus.validators import ModuleValidator
 from opacus.distributed import DifferentiallyPrivateDistributedDataParallel as DPDDP
 from src.utils.configs import DefenderConfigs, DPDefenseConfigs, TrainConfigs, ModelConfigs 
 from src.trainer.train_manager import TrainManager
-from src.data import get_dataset
-from src.models import get_model
-from src.utils.log import Loggable, get_logger_from_configs
+from src.mia.defenses.base import BaseDefender
 
 
-class DifferentialPrivacyDefender(Loggable):
+class DifferentialPrivacyDefender(BaseDefender):
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, DPDefenseConfigs), f"DifferentialPrivacyDefender can only be used with DPDefenseConfigs, got {type(defender_configs.defense)}"
-        logger=get_logger_from_configs(defender_configs.log)
-        super().__init__(logger=logger)
-        self.defender_hash = defender_configs.hash
-        self.dataset_configs = defender_configs.dataset
-        self.model_configs = defender_configs.model
-        self.dataset = get_dataset(dataset=self.dataset_configs.name,
-                                datasets_folder=self.dataset_configs.data_folder,
-                                augment=self.dataset_configs.data_augmentation,
-                                logger=self.logger)
-        self.model = get_model(model_name=self.model_configs.model_name,
-                            im_channels=self.model_configs.im_channels,
-                            num_classes=self.model_configs.num_classes,
-                            im_size=self.model_configs.im_size,
-                            logger=self.logger)
+        super().__init__(defender_configs=defender_configs)
+        self.name = 'dp_defender'
         self.dp_configs = defender_configs.defense
 
-    def get_dataset(self):
-        return self.dataset
-
-    def get_model(self):
-        return self.model
-    
-    def optimize(self, train_configs: TrainConfigs, return_stats: bool = False):
+    def train(self, train_configs: TrainConfigs, return_stats: bool = False):
         train_manager = DifferentialPrivacyTrainManager(train_configs=train_configs,
-                                                        name='dp_defender',
+                                                        name=self.name,
                                                         logger=self.logger)
         train_manager.initialize_train(dataset=self.dataset,
-                                        model=self.model,
+                                        model=self.untrained_model,
                                         configs=train_configs,
                                         dp_configs=self.dp_configs)
         if return_stats:
-            self.model, train_stats = train_manager.train(return_best_model=True,
+            self.trained_model, train_stats = train_manager.train(return_best_model=True,
                                                         return_last_model=False,
                                                         return_stats=return_stats)
         else:
-            self.model = train_manager.train(return_best_model=True,
+            self.trained_model = train_manager.train(return_best_model=True,
                                             return_last_model=False,
                                             return_stats=return_stats)
         if return_stats:
-            return self.model, train_stats
+            return self.trained_model, train_stats
         else:
-            return self.model
-        
+            return self.trained_model
+
+    def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        self.logger.print_it('Differential Privacy Defender: returning trained model as defended model...')
+        self.defended_model = self.trained_model
+        return self.defended_model
 
 class DifferentialPrivacyTrainManager(TrainManager):
     def __init__(self, train_configs, name: str, logger=None):
@@ -117,7 +101,7 @@ class DifferentialPrivacyTrainManager(TrainManager):
 
     def initialize_train(self, 
                         dataset: Union[MultiDatasets, Dataset],
-                        model: Union[ModelConfigs,nn.Module],
+                        model: Union[ModelConfigs,torch.nn.Module],
                         configs: TrainConfigs,
                         dp_configs: DPDefenseConfigs,
                         ):
@@ -128,7 +112,7 @@ class DifferentialPrivacyTrainManager(TrainManager):
 
         self.setup_dataloaders(dataset=dataset,
                                 batch_size=self.train_configs.batch_size)
-        if isinstance(model, nn.Module):
+        if isinstance(model, torch.nn.Module):
             self.set_model(model)
         elif isinstance(model, ModelConfigs):
             self.setup_model_from_configs(model_configs=model)

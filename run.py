@@ -14,7 +14,10 @@ def main():
 
     defender_class = get_defender_class(settings.defense_mode)
     defender = defender_class(defender_configs=experiment_configs.defender)
-    defender_model, defender_stats = defender.optimize(train_configs=experiment_configs.defender.train, return_stats=True)
+    defender_stats = defender.train(train_configs=experiment_configs.defender.train, return_stats=True)
+    defender.defend_model(device=experiment_configs.defender.train.device)
+    defender_model = defender.get_defended_model()
+    # defender_model, defender_stats = defender.optimize(train_configs=experiment_configs.defender.train, return_stats=True)
 
     # victim = Victim(victim_configs=experiment_configs.victim)
     # victim_model, victim_stats = victim.train_model(train_configs=experiment_configs.victim.train, return_stats=True)

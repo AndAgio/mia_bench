@@ -34,3 +34,16 @@ class MultiDatasets():
 
     def get_info(self):
         return self.info
+
+
+class FixedLabelDataset(Dataset):
+    def __init__(self, dataset: Dataset, fixed_label: int = 0):
+        super().__init__()
+        self.data = dataset
+        self.fixed_label = fixed_label
+
+    def __getitem__(self, index):
+        return self.data[index][0], self.fixed_label
+
+    def __len__(self):
+        return len(self.data)

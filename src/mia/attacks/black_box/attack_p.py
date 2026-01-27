@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import time
 from scipy.stats import norm
-from src.data.multi import MultiDatasets
+from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms

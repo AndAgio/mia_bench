@@ -1,10 +1,6 @@
 import os
-import pathlib
-import sys
 from torchvision.transforms import transforms
 
-from .synthetic import Synthetic
-from .subclass_synthetic import SubclassSynthetic
 from torchvision.datasets import CIFAR100
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import SVHN
@@ -13,8 +9,7 @@ from .cinic import Cinic10
 from .imagenet import ImageNet
 from .imagenet1k import ImageNet1K
 from .tinyimagenet import TinyImageNet
-from .wrapper import DatasetWrapper
-from .multi import MultiDatasets
+from .helpers import MultiDatasets
 
 
 from src.utils.variables import DEFAULT_DATASETS_FOLDER

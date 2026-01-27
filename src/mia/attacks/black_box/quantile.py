@@ -2,7 +2,7 @@ import math
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-from src.data.multi import MultiDatasets
+from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
@@ -62,14 +62,18 @@ class QuantileMIA(BaseMIA):
         shadow_dataset = self.shadow_manager.get_dataset(index=0,
                                                         labels='original')
         shadow_loader = DataLoader(shadow_dataset, batch_size=1, shuffle=False)
+        start_data = time.time()
         with torch.no_grad():
             for data, target in shadow_loader:
+                self.logger.print_it_same_line(f'Quantile MIA attacker: processing sample {len(features)+1}/{len(shadow_dataset)}...', console_only=True)
                 features.append(data)
                 target_score, _ = self.defender_scoring_fn(data, target, device=train_config.device)
                 target_scores.append(target_score)
+            self.logger.set_logger_newline(console_only=True)
         features = torch.cat(features)
         target_scores = torch.cat(target_scores)
         quantile_dataset = TensorDataset(features, target_scores)
+        self.logger.print_it(f"Quantile MIA attacker: constructed quantile dataset in {time.time() - start_data:.2f}s.")
 
         self.logger.print_it('Quantile MIA attacker: training quantile model. This will take a while. Sit back and chill...')
         start = time.time()
@@ -92,7 +96,6 @@ class QuantileMIA(BaseMIA):
         self.reset_logger()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Quantile MIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-
 
     def defender_scoring_fn(self, data: torch.Tensor, target: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):

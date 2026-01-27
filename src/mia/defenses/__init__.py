@@ -1,11 +1,11 @@
-from src.mia.defenses.vanilla import VanillaVictim
+from src.mia.defenses.vanilla import VanillaDefender
 from src.mia.defenses.training.differential_privacy import DifferentialPrivacyDefender
 
 
 
 def get_defender_class(defense_mode: str):
     if defense_mode in ['none', 'no', 'vanilla']:
-        return VanillaVictim
+        return VanillaDefender
     elif defense_mode == 'dp':
         return DifferentialPrivacyDefender
     else:

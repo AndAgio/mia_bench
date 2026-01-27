@@ -3,7 +3,7 @@ from typing import Union
 from src.trainer.train_manager import TrainManager
 from src.mia.helpers.shadow_data_manager import ShadowDatasetsManager
 from src.mia.helpers.shadow_models_manager import ShadowModelsManager
-from src.data.multi import MultiDatasets
+from src.data.helpers import MultiDatasets
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
 from src.utils.configs import ShadowDataConfigs, TrainConfigs, ModelConfigs
 from src.utils.log import Loggable, MyLogger, get_logger

@@ -6,7 +6,7 @@ import copy
 import torch
 from typing import Union
 from torch.utils.data import Subset, ConcatDataset
-from src.data.multi import MultiDatasets
+from src.data.helpers import MultiDatasets
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager, FixedLabelDataset
 from src.utils.configs import ShadowDataConfigs
 from src.utils.log import Loggable, MyLogger

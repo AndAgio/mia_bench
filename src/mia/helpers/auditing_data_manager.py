@@ -1,8 +1,7 @@
-from typing import Union
 import math
 import numpy as np
-from torch.utils.data import Subset, ConcatDataset, Dataset
-from src.data.multi import MultiDatasets
+from torch.utils.data import Subset, ConcatDataset
+from src.data.helpers import MultiDatasets, FixedLabelDataset
 from src.utils.configs import AuditingDataConfigs
 from src.utils.log import Loggable, MyLogger
 
@@ -93,16 +92,3 @@ class AuditingDatasetManager(Loggable):
         else:
             raise ValueError('Labels mode should be either mia or original!')
 
-
-
-class FixedLabelDataset(Dataset):
-    def __init__(self, dataset: Dataset, fixed_label: int = 0):
-        super().__init__()
-        self.data = dataset
-        self.fixed_label = fixed_label
-
-    def __getitem__(self, index):
-        return self.data[index][0], self.fixed_label
-
-    def __len__(self):
-        return len(self.data)
