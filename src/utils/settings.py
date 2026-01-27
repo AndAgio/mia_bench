@@ -74,6 +74,7 @@ def gather_settings():
         parser.add_argument("--defense_mode", default="none",
                                 choices=['none', 'no', 'vanilla',
                                         "dp", "differential_privacy", "differential-privacy", 
+                                        'mem_guard', 'memguard', 'mem-guard',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -85,6 +86,15 @@ def gather_settings():
         parser.add_argument("--defender_dp_clip_per_layer", action="store_true", default=False,
                                 help="whether to use per layer clipping in DP-SGD",)
         parser.add_argument("--defender_dp_grad_sample_mode", type=str, default="ghost")
+        # MemGuard parameters for defender model
+        parser.add_argument('--defender_mem_guard_budget', type=float, default=0.1,
+                                help='Budget parameter for MemGuard defense')
+        parser.add_argument('--defender_mem_guard_shadow_model_layers', type=int, nargs="+", default=[64, 32],
+                                help='List of hidden layer sizes for the shadow attacker model in MemGuard defense')
+        parser.add_argument('--defender_mem_guard_shadow_model_epochs', type=int, default=30,
+                                help='Number of epochs to train the shadow attacker model in MemGuard defense')
+        parser.add_argument('--defender_mem_guard_shadow_model_lr', type=float, default=0.01,
+                                help='Learning rate to train the shadow attacker model in MemGuard defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

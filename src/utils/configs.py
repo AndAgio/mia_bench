@@ -345,10 +345,17 @@ class DPDefenseConfigs:
     clip_per_layer: bool = False
     grad_sample_mode: str = 'hook'
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class MemGuardConfigs:
+    strategy: Literal["mem_guard"] = "mem_guard"
+    budget: float = 10.0
+    shadow_attacker_model_layers: list[int] = field(default_factory=lambda: [64, 32])
+    shadow_attacker_model_epochs: int = 30
+    shadow_attacker_model_lr: float = 0.01
 
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -456,6 +463,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     max_grad_norm=settings.defender_dp_max_grad_norm,
                                                     clip_per_layer=settings.defender_dp_clip_per_layer,
                                                     grad_sample_mode=settings.defender_dp_grad_sample_mode)
+    elif settings.defense_mode in ['mem_guard', 'memguard', 'mem-guard']:
+        defender_defense_configs = MemGuardConfigs(budget=settings.defender_mem_guard_budget)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
