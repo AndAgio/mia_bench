@@ -77,6 +77,7 @@ def gather_settings():
                                         'mem_guard', 'memguard', 'mem-guard',
                                         'relax_loss', 'relaxloss', 'relax-loss',
                                         'adv_reg', 'advreg', 'adv-reg',
+                                        'mixup',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -107,6 +108,9 @@ def gather_settings():
                                 help='List of hidden layer sizes for the shadow attacker model in Adversarial Regularization defense')
         parser.add_argument('--defender_adv_reg_shadow_attacker_k', type=int, default=1,
                                 help='Number of shadow attacker steps per defender step in Adversarial Regularization defense')
+        # Mixup paremeters for defender model
+        parser.add_argument('--defender_mixup_alpha', type=float, default=1.0,
+                                help='Alpha parameter for Mixup defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

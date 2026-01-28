@@ -365,9 +365,14 @@ class AdvRegDefenseConfigs:
     adv_lambda: float = 1.0
     shadow_attacker_k: int = 1
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class MixupDefenseConfigs:
+    strategy: Literal["mixup"] = "mixup"
+    alpha: float = 1.0
+
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -486,6 +491,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         defender_defense_configs = AdvRegDefenseConfigs(shadow_attacker_model_layers=settings.defender_adv_reg_shadow_attacker_model_layers,
                                                         adv_lambda=settings.defender_adv_reg_lambda,
                                                         shadow_attacker_k=settings.defender_adv_reg_shadow_attacker_k)
+    elif settings.defense_mode in ['mixup']:
+        defender_defense_configs = MixupDefenseConfigs(alpha=settings.defender_mixup_alpha)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
