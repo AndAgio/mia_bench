@@ -14,8 +14,6 @@ class MixupDefender(BaseDefender):
         super().__init__(defender_configs=defender_configs)
         self.name = 'mixup_defender'
         self.mixup_configs = defender_configs.defense
-        # TODO: Implement the mixup optimization component.
-        # assignees: AndAgio
 
     def train_model(self, train_configs, return_stats: bool = False):
         self.logger.print_it(f'Mixup Defender: training defender model with alpha {self.mixup_configs.alpha}...')

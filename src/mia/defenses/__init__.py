@@ -2,6 +2,7 @@ from src.mia.defenses.vanilla import VanillaDefender
 from src.mia.defenses.training.differential_privacy import DifferentialPrivacyDefender
 from src.mia.defenses.training.relax_loss import RelaxLossDefender
 from src.mia.defenses.training.adversarial_regularization import AdvRegDefender
+from src.mia.defenses.training.mixup import MixupDefender
 from src.mia.defenses.post_hoc.mem_guard import MemGuardDefender
 
 
@@ -17,5 +18,7 @@ def get_defender_class(defense_mode: str):
         return RelaxLossDefender
     elif defense_mode in ['adv_reg', 'advreg', 'adv-reg']:
         return AdvRegDefender
+    elif defense_mode in ['mixup']:
+        return MixupDefender
     else:
         raise ValueError('Defense "{}" not found or not implemented yet! Double check your settings please!'.format(defense_mode))
