@@ -4,6 +4,7 @@ from src.mia.defenses.training.relax_loss import RelaxLossDefender
 from src.mia.defenses.training.adversarial_regularization import AdvRegDefender
 from src.mia.defenses.training.mixup import MixupDefender
 from src.mia.defenses.post_hoc.mem_guard import MemGuardDefender
+from src.mia.defenses.hybrid.hamp import HampDefender
 
 
 
@@ -20,5 +21,7 @@ def get_defender_class(defense_mode: str):
         return AdvRegDefender
     elif defense_mode in ['mixup']:
         return MixupDefender
+    elif defense_mode in ['hamp', 'hamp_train', 'hamp_test', 'hamp_full']:
+        return HampDefender
     else:
         raise ValueError('Defense "{}" not found or not implemented yet! Double check your settings please!'.format(defense_mode))

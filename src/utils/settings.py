@@ -78,6 +78,7 @@ def gather_settings():
                                         'relax_loss', 'relaxloss', 'relax-loss',
                                         'adv_reg', 'advreg', 'adv-reg',
                                         'mixup',
+                                        'hamp', 'hamp_train', 'hamp_test', 'hamp_full',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -111,6 +112,11 @@ def gather_settings():
         # Mixup paremeters for defender model
         parser.add_argument('--defender_mixup_alpha', type=float, default=1.0,
                                 help='Alpha parameter for Mixup defense')
+        # HAMP parameters for defender model
+        parser.add_argument('--defender_hamp_gamma', type=float, default=0.95,
+                                help='gamma parameter for HAMP defense')
+        parser.add_argument('--defender_hamp_alpha', type=float, default=1.0,
+                                help='Alpha parameter for HAMP defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

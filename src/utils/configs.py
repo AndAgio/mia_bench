@@ -370,9 +370,16 @@ class MixupDefenseConfigs:
     strategy: Literal["mixup"] = "mixup"
     alpha: float = 1.0
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class HampDefenseConfigs:
+    strategy: Literal["hamp"] = "hamp"
+    mode: str = 'full'  # options: 'train_only', 'test_only', 'full'
+    gamma: float = 0.95
+    alpha: float = 1.0
+
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -493,6 +500,18 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         shadow_attacker_k=settings.defender_adv_reg_shadow_attacker_k)
     elif settings.defense_mode in ['mixup']:
         defender_defense_configs = MixupDefenseConfigs(alpha=settings.defender_mixup_alpha)
+    elif settings.defense_mode in ['hamp_train', 'hamp_test', 'hamp_full', 'hamp']:
+        if settings.defense_mode == 'hamp_train':
+            hamp_mode = 'train_only'
+        elif settings.defense_mode == 'hamp_test':
+            hamp_mode = 'test_only'
+        elif settings.defense_mode in ['hamp_full', 'hamp']:
+            hamp_mode = 'full'
+        else:
+            raise ValueError('Hamp defense mode "{}" not recognized!'.format(settings.defense_mode))
+        defender_defense_configs = HampDefenseConfigs(mode=hamp_mode,
+                                                    gamma=settings.defender_hamp_gamma,
+                                                    alpha=settings.defender_hamp_alpha)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
