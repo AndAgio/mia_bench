@@ -50,9 +50,9 @@ class MixupTrainManager(TrainManager):
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
         mixed_inputs, targets_a, targets_b, lmbd = mixup_data(inputs, targets, alpha=self.mixup_configs.alpha)
-        mixed_inputs = mixed_inputs.to(self.device, non_blocking=True)
-        targets_a = targets_a.to(self.device, non_blocking=True)
-        targets_b = targets_b.to(self.device, non_blocking=True)
+        mixed_inputs = mixed_inputs.to(self.device)
+        targets_a = targets_a.to(self.device)
+        targets_b = targets_b.to(self.device)
 
         self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
@@ -82,6 +82,9 @@ class MixupTrainManager(TrainManager):
             loss.backward()
             self.optimizer.step()
 
+        with torch.no_grad():
+            outputs = self.model(inputs)
+        
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
         

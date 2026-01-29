@@ -51,8 +51,8 @@ class RelaxLossTrainManager(TrainManager):
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
         # Map to available device (profile this)
-        inputs = inputs.to(self.device, non_blocking=True)
-        targets = targets.to(self.device, non_blocking=True)
+        inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
 
         self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions (profile compute: forward + backward + optimizer)

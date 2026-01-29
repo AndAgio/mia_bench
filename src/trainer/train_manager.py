@@ -503,8 +503,8 @@ class TrainManager(Loggable):
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
         # Map to available device (profile this)
-        inputs = inputs.to(self.device, non_blocking=True)
-        targets = targets.to(self.device, non_blocking=True)
+        inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
 
         self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
@@ -570,7 +570,7 @@ class TrainManager(Loggable):
     def test_step(self, inputs, targets, batch_idx=0, total_batches=0):
         self.epoch_stats_tracker.batch_start()
         # Map to available device (profile)
-        inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
+        inputs, targets = inputs.to(self.device), targets.to(self.device)
 
         # Forward propagation, compute loss, get predictions
         outputs = self.model(inputs)
