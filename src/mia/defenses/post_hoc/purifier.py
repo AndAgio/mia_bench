@@ -17,7 +17,8 @@ class PurifierDefender(BaseDefender):
         # assignees: AndAgio
 
     def train_model(self, train_configs, return_stats: bool = False):
-        raise NotImplementedError("PurifierDefender: train_model is not implemented yet.")
+        self.logger.print_it("MemGuardDefender: No training required for MemGuard defense, training with standard procedure.")
+        return super().train_model(train_configs=train_configs, return_stats=return_stats)
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
         raise NotImplementedError("PurifierDefender: defend_model is not implemented yet.")
