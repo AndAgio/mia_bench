@@ -15,8 +15,6 @@ class HampDefender(BaseDefender):
         super().__init__(defender_configs=defender_configs)
         self.name = 'hamp_defender'
         self.hamp_configs = defender_configs.defense
-        # TODO: Implement the full HAMP defense.
-        # assignees: AndAgio
 
     def train_model(self, train_configs, return_stats: bool = False):
         self.logger.print_it(f"Hamp Defender: selected mode {self.hamp_configs.mode}")
