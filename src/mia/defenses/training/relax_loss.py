@@ -16,7 +16,7 @@ class RelaxLossDefender(BaseDefender):
         self.name = 'relax_loss_defender'
         self.relax_loss_configs = defender_configs.defense
 
-    def train(self, train_configs: TrainConfigs, return_stats: bool = False):
+    def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
         self.logger.print_it(f'RelaxLoss Defender: training defender model with relaxed loss and alpha {self.relax_loss_configs.relax_alpha}...')
         train_manager = RelaxLossTrainManager(train_configs=train_configs,
                                                 name=self.name,

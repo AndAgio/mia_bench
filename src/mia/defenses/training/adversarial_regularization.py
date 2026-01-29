@@ -18,7 +18,7 @@ class AdvRegDefender(BaseDefender):
         self.name = 'adv_reg_defender'
         self.adv_reg_configs = defender_configs.defense
 
-    def train(self, train_configs: TrainConfigs, return_stats: bool = False):
+    def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
         self.logger.print_it(f'AdvReg Defender: training defender model with adversarial regularization and lambda {self.adv_reg_configs.adv_lambda}...')
         train_manager = AdvRegTrainManager(train_configs=train_configs,
                                             name=self.name,
@@ -121,10 +121,10 @@ class AdvRegTrainManager(TrainManager):
 
     def train_step(self, train_inputs, train_targets, heldout_inputs, heldout_targets, batch_idx=0, total_batches=0):
         # Map to available device (profile this)
-        train_inputs = train_inputs.to(self.device, non_blocking=True)
-        train_targets = train_targets.to(self.device, non_blocking=True)
-        heldout_inputs = heldout_inputs.to(self.device, non_blocking=True)
-        heldout_targets = heldout_targets.to(self.device, non_blocking=True)
+        train_inputs = train_inputs.to(self.device)
+        train_targets = train_targets.to(self.device)
+        heldout_inputs = heldout_inputs.to(self.device)
+        heldout_targets = heldout_targets.to(self.device)
 
         self.epoch_stats_tracker.batch_start()
 

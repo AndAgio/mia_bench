@@ -29,7 +29,7 @@ class BaseDefender(Loggable):
     def get_dataset(self):
         return self.dataset
     
-    def train(self, train_configs: TrainConfigs, return_stats: bool = False):
+    def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
         train_manager = TrainManager(train_configs=train_configs,
                                     name=self.name,
                                     logger=self.logger)
@@ -66,3 +66,16 @@ class BaseDefender(Loggable):
     def get_untrained_model(self) -> torch.nn.Module:
         assert hasattr(self, 'untrained_model'), "Model has not been initialized yet!"
         return self.untrained_model
+    
+    @staticmethod
+    def get_device(dev_str: str = 'cpu'):
+        # Set appropriate devices
+        if torch.cuda.is_available() and dev_str != 'cpu':
+            dev_str = 'cuda:{}'.format(dev_str)
+            device = torch.device(dev_str)
+        elif torch.backends.mps.is_available() and dev_str != 'cpu':
+            dev_str = 'mps'
+            device = torch.device(dev_str)
+        else:
+            device = torch.device('cpu')
+        return device

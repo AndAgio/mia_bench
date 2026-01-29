@@ -19,7 +19,7 @@ class DifferentialPrivacyDefender(BaseDefender):
         self.name = 'dp_defender'
         self.dp_configs = defender_configs.defense
 
-    def train(self, train_configs: TrainConfigs, return_stats: bool = False):
+    def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
         train_manager = DifferentialPrivacyTrainManager(train_configs=train_configs,
                                                         name=self.name,
                                                         logger=self.logger)
