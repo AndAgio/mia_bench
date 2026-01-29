@@ -11,7 +11,7 @@ from src.mia.defenses.base import BaseDefender
 class HampDefender(BaseDefender):
     # Implementation of running time component of HAMP defense from "Overconfidence is a Dangerous Thing: Mitigating Membership Inference Attacks by Enforcing Less Confident Prediction" (https://arxiv.org/pdf/2307.01610).
     def __init__(self, defender_configs: DefenderConfigs):
-        assert isinstance(defender_configs.defense, HampDefenseConfigs), f"HampDefender can only be used with HampDefenseConfigs, got {type(defender_configs.defense)}"
+        assert isinstance(defender_configs.defense, HampDefenseConfigs), f"Hamp Defender can only be used with HampDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'hamp_defender'
         self.hamp_configs = defender_configs.defense
@@ -28,12 +28,12 @@ class HampDefender(BaseDefender):
                                             hamp_configs=self.hamp_configs,
                                             num_classes=self.dataset_configs.num_classes)
         elif self.hamp_configs.mode == 'test_only':
-            self.logger.info("HampDefender: test_only mode selected, training with standard loss and labels.")
+            self.logger.print_it("Hamp Defender: test_only mode selected, training with standard loss and labels.")
             train_manager = TrainManager(train_configs=train_configs,
                                         name=self.name,
                                         logger=self.logger)
         else:
-            raise ValueError(f"HampDefender: Unknown mode {self.hamp_configs.mode}!")
+            raise ValueError(f"Hamp Defender: Unknown mode {self.hamp_configs.mode}!")
         train_manager.initialize_train(dataset=self.dataset,
                                         model=self.untrained_model,
                                         configs=train_configs)
@@ -57,10 +57,10 @@ class HampDefender(BaseDefender):
                 device = self.get_device(dev_str=device)
             self.defended_model = HampTestWrapper(model=self.trained_model).to(device)
         elif self.hamp_configs.mode == 'train_only':
-            self.logger.info("HampDefender: train_only mode selected, defend_model does not modify the model at inference time.")
+            self.logger.print_it("Hamp Defender: train_only mode selected, defend_model does not modify the model at inference time.")
             self.defended_model = self.trained_model
         else:
-            raise ValueError(f"HampDefender: Unknown mode {self.hamp_configs.mode}!")
+            raise ValueError(f"Hamp Defender: Unknown mode {self.hamp_configs.mode}!")
         return self.defended_model
     
 
