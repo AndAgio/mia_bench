@@ -17,7 +17,13 @@ class MemGuardDefender(BaseDefender):
         self.name = 'mem_guard_defender'
         self.mem_guard_configs = defender_configs.defense
 
+    def train_model(self, train_configs, return_stats: bool = False):
+        self.logger.print_it("MemGuardDefender: No training required for MemGuard defense, training with standard procedure.")
+        return super().train_model(train_configs=train_configs, return_stats=return_stats)
+
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        if isinstance(device, str):
+            device = self.get_device(dev_str=device)
         self.logger.print_it('MemGuard Defender: fitting shadow attack model...')
         shadow_model = self.fit_shadow_attack_model(device=device)
         self.logger.print_it('MemGuard Defender: building defense layer...')
@@ -32,7 +38,7 @@ class MemGuardDefender(BaseDefender):
                                         step_size=10.0,
                                         randomize_mix=0.,
                                         apply_expected_budget=True,
-                                        budget_l1=self.mem_guard_configs.budget)
+                                        budget_l1=self.mem_guard_configs.budget).to(device)
         return self.defended_model
 
     def _sort_with_index(self, t: torch.Tensor):
