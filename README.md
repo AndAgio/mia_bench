@@ -1,7 +1,17 @@
 
-# 🛡️ Membership Inference Attacks Benchmarking Framework
+# 🛡️ Membership Inference Attacks Benchmarking Framework with Metric privacy
 
-This repository provides a **modular, scalable, and state‑of‑the‑art framework for evaluating Membership Inference Attacks (MIAs)** against neural network models. It supports realistic attacker/victim threat models, flexible datasets and architectures, and modern optimizer backends. This repository is a  research-focused framework supporting the quick definition and implementation of novel attack strategies by wrapping attacker steps into two main methods (attack optimization and its deployment).
+## 🛡️ Metric Privacy protection 
+To run the mechanism use:
+- `--use_metric`: Uses the defence (flag)
+-  `--metric_b`: Set the noise multiplier b of the Laplace distribution (float)
+-  `--metric_d`: Set the L1 distance radius to protect (float)
+
+The code will automatically calculate the epsilon and delta that you get, based on the theoretical analysis. 
+
+
+####################################################
+The rest remains the same as the main branch:
 
 
 ## ✨ Key Features
