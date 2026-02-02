@@ -6,9 +6,9 @@ from src.utils.configs import get_hash_from_settings, generate_configs_from_sett
 from src.mia.victim import Victim
 from src.mia import get_attacker_class
 import src.trainer.prop_noise_obfs as prop_noise_obfs
+from src.trainer import train_manager
 
 def main():
-    global print_stats2
     settings = gather_settings()
     experiment_configs, exp_out_folder = setup_configs_and_folder_from_settings(settings)
 
@@ -27,18 +27,33 @@ def main():
     # Issue URL: https://github.com/AndAgio/mia_bench/issues/20
     # assignees: AndAgio
     best_epoch, best_acc = victim_stats.get_best()
-    print(f"Victim stats: best {victim_stats.stage_to_track_best} accuracy = {best_acc}")
-    print('Best AUC was obtained for parameters: {} and was {}'.format(best_auc_params, best_auc))
+    #print(f"Victim stats: best {victim_stats.stage_to_track_best} accuracy = {best_acc}")
+    #print('Best AUC was obtained for parameters: {} and was {}'.format(best_auc_params, best_auc))
     # print(attacker.summarize_results())
     best_epoch, best_acc = victim_stats.get_best()
-    print(f"Victim stats: best {victim_stats.stage_to_track_best} accuracy = {best_acc}")
+    #print(f"Victim stats: best {victim_stats.stage_to_track_best} accuracy = {best_acc}")
+
+    
     exp_results_folder = exp_out_folder/'results'
     os.makedirs(exp_results_folder, exist_ok=True)
     attacker.save_results_to_json(os.path.join(exp_results_folder, 'results.json'))
-    if (prop_noise_obfs.print_stats2 == 1):
-        print("Runned METRIC PRIVACY defence")
-    else:
-        print("without any def")
+    print("\n")
+    print("\n")
+    if (experiment_configs.victim.train.metric_config.use_metric == True):
+        final_epsilon = train_manager.final_epsilon
+        final_delta = train_manager.final_delta
+        if (final_epsilon==-1 or final_delta ==-1):
+            print("No feasible integer λ found (within caps). ")
+            print("Try increasing lam_max_hard, or change (b,d,q,T).")
+            print("In other words, theorem 2.1. cannot be applied with this b and d!")
 
+        print("***** Runned METRIC PRIVACY defence ****")
+        print(f"Final ε = {final_epsilon:.3f}, δ = {final_delta:.2e}")
+        print("*******************")
+    else:
+        print("Vanilla - without metric privacy defence")
+    print("-----------------")
+    print(f"Model Accuracy:", best_acc, "| Attack AUC:",float(best_auc))
+    print("-----------------")
 if __name__ == '__main__':
     main()

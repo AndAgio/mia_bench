@@ -13,8 +13,13 @@ import numpy as np
 from typing import List
 import torch.nn.functional as F
 
+import math
+from dataclasses import dataclass
+from typing import List, Optional, Tuple, Literal
 
-print_stats2 = 0
+
+
+
 
 """
 Metric Privacy Noise:
@@ -77,11 +82,6 @@ def metric_privacy_obfuscation(
 ):
     #If you want to use my test function, just pass None on coord_mask and use this:
     #coord_mask = build_test_coord_mask_from_weights(layer,d)
-
-    global print_stats2
-    if (print_stats2 == 0):
-        print("****** RUNNING METRIC PRIVACY DEFENCE *****")
-        print_stats2 = 1
 
     if clip_scope not in {"all", "masked"}:
         raise ValueError("clip_scope must be 'all' or 'masked'")
@@ -556,6 +556,111 @@ def select_coords_until_l1_le_d_(
     mask[chosen] = True
     return mask.view_as(tensor)
 
+
+@dataclass(frozen=True)
+class Theorem21Result:
+    lam: int
+    eps: float
+    delta: float
+    A_bound: float
+    B_bound: float
+
+
+def _eps_from_lambda_theorem21(*, lam: int, b: float, d: float, q: float, T: int) -> float:
+    return (T * (lam + 1) * (q ** 2) / (2.0 * (1.0 - q) * d)) * math.exp(d / b)
+
+
+def _delta_from_eps_theorem21(*, lam: int, eps: float, d: float) -> float:
+    return math.exp(-0.5 * lam * eps * d)
+
+def iter_feasible_lambdas_theorem21_until_delta(
+    *,
+    b: float,
+    d: float,
+    q: float,
+    T: int,
+    delta_max: float = 0.001, #anything that would result above this delta is not taken into account
+    lam_max: Optional[int] = None,
+    lam_max_hard: int = 100_000,
+) -> List[Theorem21Result]:
+    """
+    Enumerate feasible integer λ (Theorem 2.1) in ASCENDING order.
+    Collect feasible candidates and STOP as soon as we see the first feasible λ
+    such that δ(λ) > delta_target.
+
+    Returns the list of feasible candidates seen up to the stopping point.
+    (May be empty if no feasible λ exists within caps.)
+    """
+    if not (0.0 < q < 1.0):
+        raise ValueError("q must be in (0,1)")
+    if T <= 0:
+        raise ValueError("T must be a positive integer")
+    if b <= 0 or d <= 0:
+        raise ValueError("b and d must be > 0")
+    if not (0.0 < delta_max < 1.0):
+        raise ValueError("delta_target must be in (0,1)")
+
+    expm1_db = math.expm1(d / b)
+    if expm1_db <= 0 or not math.isfinite(expm1_db):
+        return []
+
+    # IMPORTANT: Use the A bound that matches your Theorem 2.1 screenshot:
+    # λ < (1-q) / ( q * (exp(d/b)-1) )
+    A = (1.0 - q) / (q * expm1_db)
+
+    caps = [lam_max_hard]
+    if lam_max is not None:
+        caps.append(int(lam_max))
+    if math.isfinite(A):
+        caps.append(max(0, int(math.floor(A)) - 1))
+    lam_cap = max(0, min(caps))
+
+    feasible: List[Theorem21Result] = []
+
+    for lam in range(1, lam_cap + 1):
+        eps = _eps_from_lambda_theorem21(lam=lam, b=b, d=d, q=q, T=T)
+        B = (eps * d * (1.0 - q) / (T * (q ** 2))) - 1.0
+
+        # Theorem feasibility
+        if lam < A and lam < B:
+            delta = _delta_from_eps_theorem21(lam=lam, eps=eps, d=d)
+            if delta <= delta_max:    
+                feasible.append(Theorem21Result(lam=lam, eps=eps, delta=delta, A_bound=A, B_bound=B))
+
+
+    return feasible
+
+def epsilon_delta_theorem21(
+    *,
+    b: float,
+    d: float,
+    q: float,
+    T: int,
+    lam_max: Optional[int] = None,
+    lam_max_hard: int = 100_000,
+    pick: Literal["min_eps", "min_delta"] = "min_eps",
+    delta_target: Optional[float] = None,  # if set, uses early-stop iterator
+) -> Tuple[Theorem21Result, List[Theorem21Result]]:
+
+
+    candidates = iter_feasible_lambdas_theorem21_until_delta(
+        b=b, d=d, q=q, T=T,
+        lam_max=lam_max,
+        lam_max_hard=lam_max_hard,
+    )
+    if not candidates:
+        # Return a sentinel Theorem21Result (or raise; your choice)
+        sentinel = Theorem21Result(lam=-1, eps=-1.0, delta=-1.0, A_bound=float("nan"), B_bound=float("nan"))
+        return sentinel, []
+
+    if pick == "min_eps":
+        chosen = min(candidates, key=lambda r: (r.eps, r.lam))
+    elif pick == "min_delta":
+        chosen = min(candidates, key=lambda r: (r.delta, -r.lam))
+    else:
+        raise ValueError("pick must be 'min_eps' or 'min_delta'")
+
+    return chosen, candidates
 """
 def compute_laplace_b(d, epsilon, q, T, lam):
 

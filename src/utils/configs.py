@@ -30,6 +30,13 @@ class DPConfigs:
     clip_per_layer: bool = False
     grad_sample_mode: str = 'hook'
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class MetricConfigs:
+    use_metric: bool = False
+    metric_b: float = 1.0
+    metric_d: float = 1.0
+
+
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SchedulerConfigs:
@@ -79,6 +86,7 @@ class TrainConfigs:
     scheduler_config: Union[SchedulerConfigs, Dict[str, Any]]
     # Optional arguments with default values
     dp_config: DPConfigs = field(default_factory=DPConfigs)
+    metric_config: MetricConfigs = field(default_factory=MetricConfigs)
     batch_size: Optional[int] = 256
     loss: Optional[Loss] = 'crossentropy'
     metrics: Optional[Tuple[Union[str, Callable[..., Any]], ...]] = ('multi_class_accuracy',)
@@ -351,6 +359,12 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                 max_grad_norm=settings.victim_dp_max_grad_norm,
                                 clip_per_layer=settings.victim_dp_clip_per_layer,
                                 grad_sample_mode=settings.victim_dp_grad_sample_mode)
+
+    victim_metric_config=MetricConfigs(use_metric=settings.use_metric,
+                                        metric_d =settings.metric_d,
+                                        metric_b = settings.metric_b)
+
+
     victim_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation)
@@ -367,6 +381,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     victim_train_configs = TrainConfigs(optimizer_config=victim_optimizer_configs,
                                         scheduler_config=victim_scheduler_configs,
                                         dp_config=victim_dp_config,
+                                        metric_config=victim_metric_config,
                                         batch_size=settings.victim_batch_size,
                                         device=settings.device,
                                         distributed=settings.distributed,
@@ -374,6 +389,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         resume=settings.resume,
                                         ckpts_folder=victim_ckpts_folder,
                                         resume_ckpts_folder=victim_resume_ckpts_folder)
+
     victim_log_configs = LogConfigs(name='victim',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')

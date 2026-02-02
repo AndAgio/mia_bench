@@ -5,6 +5,9 @@ import pathlib
 from src.utils.configs import generate_configs_from_settings, get_hash_from_settings, get_relevant_settings
 from .variables import DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
 
+#hardcoded paramaters, no need to ever change them
+REF_RATIO = 0.1 #use to split dataset for comparing the risk of weights
+SEED_SPLIT = 42 #custom split to avoid randomess
 
 def gather_settings():
         # Training settings
@@ -80,7 +83,14 @@ def gather_settings():
                                 help="whether to use per layer clipping in DP-SGD",)
         parser.add_argument("--victim_dp_grad_sample_mode", type=str, default="ghost")
         
-        
+        # Metric Privacy arguments
+        parser.add_argument("--use_metric", action="store_true", default=False,
+                        help="enable Metric Privacy for victim model training")
+        parser.add_argument("--metric_d", type=float, default=1,
+                        help="d (distance) for metric privacy")
+        parser.add_argument('--metric_b', type=float, default=1.0,
+                                help='b (noise multiplier) for metric privacy')
+
         # Hardware related settings
         parser.add_argument("--device", default='0',
                                 help="Set to 0 or 1 to enable CUDA training, cpu otherwise")

@@ -33,11 +33,10 @@ from src.trainer.metrics import get_performance_metric_func
 from src.trainer.distributed import maybe_init_ddp, is_rank0, ddp_barrier, maybe_cleanup_ddp
 from src.utils.log import Loggable, SmartLogger, DumbLogger
 import torch.nn.functional as F
+from src.utils.settings import REF_RATIO, SEED_SPLIT
 
-
-REF_RATIO = 0.1
-SEED_SPLIT = 42
-
+final_epsilon =0
+final_delta =0
 def _param_ids_in_module(module: torch.nn.Module) -> Set[int]:
     """Returns Python ids of parameter objects in `module` (including submodules)."""
     return {id(p) for p in module.parameters()}
@@ -110,9 +109,13 @@ class TrainManager(Loggable):
         self.risk_lam = 0.7           # lambda in (1-lam)*CE + lam*KL
         self.risk_temp = 1.0          # temperature for KL softmax
         self.ref_iter = None
+        self.batch_size = 128
         self.setup_folders(train_configs=self.train_configs)
         self.set_devices_and_seed(train_configs=self.train_configs)
 
+
+
+      
     
     def reset_configs(self, configs: TrainConfigs):
         self.train_configs = configs
@@ -305,10 +308,13 @@ class TrainManager(Loggable):
             self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1)
         elif sched_cfg.name == 'warmup_step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
+            #assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
             assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
             assert sched_cfg.extra['warmup_epochs'] < sched_cfg.epochs - sched_cfg.extra['step_size'], f"Invalid configuration for the number of warmup epochs, as it would not allow for step decay afterward! Warmup epochs: {sched_cfg.extra['warmup_epochs']}, step size: {sched_cfg.extra['step_size']} and total epochs: {sched_cfg.epochs}"
-            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
+            if (sched_cfg.extra['step_size'] < sched_cfg.epochs):
+                print(f"Setting step_size = sched_cfg.epochs. Because: In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!")
+            #scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
+            scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=max(sched_cfg.extra['step_size'],ched_cfg.epochs), gamma=sched_cfg.extra['step_gamma'])
             self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=sched_cfg.extra['warmup_multiplier'], total_epoch=sched_cfg.extra['warmup_epochs'], after_scheduler=scheduler)
             self.scheduler.step()
         elif sched_cfg.name == 'warmup_exp':
@@ -328,9 +334,12 @@ class TrainManager(Loggable):
                                                                                 last_epoch=sched_cfg.epochs)
         elif sched_cfg.name == 'step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
-            assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
+            #assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
+            
+            if (sched_cfg.extra['step_size'] < sched_cfg.epochs):
+                print(f"Setting step_size = sched_cfg.epochs. Because: In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!")
             assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
-            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=sched_cfg.extra['step_size'], gamma=sched_cfg.extra['step_gamma'])
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size= max(sched_cfg.epochs,sched_cfg.extra['step_size']), gamma=sched_cfg.extra['step_gamma'])
         elif sched_cfg.name == 'multistep':
             assert all(milestone < sched_cfg.epochs for milestone in sched_cfg.extra['step_milestones']), f"All milestones should be before the final epoch in the multistep lr scheduler!"
             assert 0 < sched_cfg.extra['step_gamma'] < 1, f"In step-like schedulers the gamma factor should be between 0 and 1. Found {sched_cfg.extra['step_gamma']}!"
@@ -370,6 +379,8 @@ class TrainManager(Loggable):
 
     def setup_dataloaders_from_multidatasets(self, dataset: MultiDatasets, batch_size: int = 128):
         global SEED_SPLIT, REF_RATIO
+        global final_epsilon,final_delta
+        self.batch_size = batch_size
         try:
             train_dataset = dataset.get('train')
             self.run_train = True
@@ -428,6 +439,18 @@ class TrainManager(Loggable):
             drop_last=True,
         )
 
+        if (self.train_configs.metric_config.use_metric==True):
+            print("Calculating the privacy guarantees of the metric privacy mechanism...")
+            T = self.train_configs.scheduler_config.epochs*len(self.train_loader) #T is the number of times we execute our mechanism i.e. batches times epochs
+            q = self.batch_size/len(self.train_loader.dataset) #probability to select an element
+            chosen, all_cands = epsilon_delta_theorem21(b=self.train_configs.metric_config.metric_b, d=self.train_configs.metric_config.metric_d, q=q, T=T, pick="min_eps")
+            final_epsilon = chosen.eps
+            final_delta = chosen.delta
+            print(final_epsilon)
+            print(final_delta)
+            
+            
+
     def _init_ref_iter(self):
         self.ref_iter = iter(self.ref_loader)
 
@@ -447,6 +470,7 @@ class TrainManager(Loggable):
 
     def setup_dataloaders_from_torch_dataset(self, dataset: Dataset, batch_size: int = 128, split: bool = False):
         self.run_train = True
+        self.batch_size = batch_size
         global REF_RATIO, SEED_SPLIT
 
         if split:
@@ -546,7 +570,7 @@ class TrainManager(Loggable):
                     clipping=clipping,
                     grad_sample_mode=dp_config.grad_sample_mode,
                 )
-            elif dp_config.grad_sample_mode in ['hook']:
+            elif dp_config.grad_sample_mode in ['hooks']:
                 self.model, self.optimizer, self.train_loader = privacy_engine.make_private(
                     module=self.model,
                     optimizer=self.optimizer,
@@ -786,7 +810,7 @@ class TrainManager(Loggable):
         # Map to available device (profile this)
         inputs = inputs.to(self.device, non_blocking=True)
         targets = targets.to(self.device, non_blocking=True)
-
+        t_comp0 = time.time()
         self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
@@ -808,134 +832,95 @@ class TrainManager(Loggable):
             loss, outputs = self.optimizer.get_first_closure_outputs()
         else:
             self.optimizer.zero_grad()
-
-            # forward on train batch
-            outputs = self.model(inputs)
-            """
-            loss = self.criterion(outputs, targets)
-            loss = loss.mean() if loss.numel() > 1 else loss
-            loss.backward()
-            """
-            self.optimizer.zero_grad()
-
             # --------------------------------------------------
-            # 1) NORMAL TRAINING (this is the ONLY loss that updates the model)
+            # 1) NORMAL TRAINING (update the model, without metric privacy)
             # --------------------------------------------------
             outputs = self.model(inputs)
             loss_ce = self.criterion(outputs, targets)
             loss_ce = loss_ce.mean() if loss_ce.numel() > 1 else loss_ce
             loss_ce.backward()    # <-- only backward that writes to .grad
+            if (self.train_configs.metric_config.use_metric==True):
+                b = self.train_configs.metric_config.metric_b
+                d = self.train_configs.metric_config.metric_d
+                # --------------------------------------------------
+                # 2) RISK SCORING (NO effect on training grads)
+                # --------------------------------------------------
+                # get a reference batch
+                x_re = self._next_ref_x().to(self.device, non_blocking=True)
 
-            # --------------------------------------------------
-            # 2) RISK SCORING (NO effect on training grads)
-            # --------------------------------------------------
-            # get a reference batch
-            x_re = self._next_ref_x().to(self.device, non_blocking=True)
+                # compute the logits on the "frozen" model i.e. initial model
+                with torch.no_grad():
+                    logits_vn = self.frozen_model(x_re)
 
-            # compute the logits on the "frozen" model i.e. initial model
-            with torch.no_grad():
-                logits_vn = self.frozen_model(x_re)
+                # current model predictions (we need the gradient graph)
+                logits_up = self.model(x_re)
 
-            # current model predictions (we need the gradient graph)
-            logits_up = self.model(x_re)
+                #compute the KL divergence betweens the logits of the initial model and the current model
+                T = self.risk_temp  #temperature for KL 
+                loss_kl = F.kl_div(
+                    F.log_softmax(logits_up / T, dim=-1),
+                    F.softmax(logits_vn / T, dim=-1),
+                    reduction="batchmean"
+                ) * (T ** 2)
 
-            #compute the KL divergence betweens the logits of the initial model and the current model
-            T = self.risk_temp  #temperature for KL 
-            loss_kl = F.kl_div(
-                F.log_softmax(logits_up / T, dim=-1),
-                F.softmax(logits_vn / T, dim=-1),
-                reduction="batchmean"
-            ) * (T ** 2)
+                # compute KL gradients WITHOUT touching .grad
+                model_for_defense = self.model.module if hasattr(self.model, "module") else self.model
+                target_layer = _select_trainable_layer(model_for_defense, which="penultimate", debug=False)
+                
+                g_risk = torch.autograd.grad(
+                    loss_kl,
+                    target_layer.weight,
+                    retain_graph=False,
+                    create_graph=False
+                )[0]
 
-            # compute KL gradients WITHOUT touching .grad
-            model_for_defense = self.model.module if hasattr(self.model, "module") else self.model
-            target_layer = _select_trainable_layer(model_for_defense, which="penultimate", debug=False)
-            
-            g_risk = torch.autograd.grad(
-                loss_kl,
-                target_layer.weight,
-                retain_graph=False,
-                create_graph=False
-            )[0]
+                # --------------------------------------------------
+                # 3) UPDATE RISK EMA
+                # --------------------------------------------------
+                with torch.no_grad():
+                    step_scores = g_risk.detach().abs() * target_layer.weight.detach().abs()
+                self._update_ema(step_scores)
 
-            # --------------------------------------------------
-            # 3) UPDATE RISK EMA
-            # --------------------------------------------------
-            with torch.no_grad():
-                step_scores = g_risk.detach().abs() * target_layer.weight.detach().abs()
-            self._update_ema(step_scores)
-
-            # --------------------------------------------------
-            # 4) BUILD MASK + OBFUSCATE TRAINING GRADS
-            # --------------------------------------------------
-            d = 0.5
-            b = 50
-
-            weight_mask, stats = select_coords_toprisk_until_weight_l1_le_d_(
+                # --------------------------------------------------
+                # 4) BUILD MASK + OBFUSCATE TRAINING GRADS
+                # --------------------------------------------------
+                """
+                #determenistic pick of riskiest parameter
+                weight_mask, stats = select_coords_toprisk_until_weight_l1_le_d_(
+                    weight=target_layer.weight.detach(),
+                    risk_scores=self.risk_ema,
+                    d=d,
+                    require_at_least_one=True,
+                )
+                """
+                #Pick randomly (without replacement) with probs. based on the risk
+                weight_mask, stats = select_coords_risk_biased_random_until_weight_l1_le_d_(
                 weight=target_layer.weight.detach(),
                 risk_scores=self.risk_ema,
                 d=d,
+                alpha=0.7,          # start <1 to avoid always picking the same coords
+                max_draw=None,      # optional speed cap; tune
                 require_at_least_one=True,
-            )
-           
-            weight_mask, stats = select_coords_risk_biased_random_until_weight_l1_le_d_(
-            weight=target_layer.weight.detach(),
-            risk_scores=self.risk_ema,
-            d=d,
-            alpha=0.7,          # start <1 to avoid always picking the same coords
-            max_draw=None,      # optional speed cap; tune
-            require_at_least_one=True,
-        )
+                )
+                
+                bias_mask = weight_mask.any(dim=1)
+                metric_privacy_obfuscation(
+                    model_for_defense,
+                    d=d,
+                    b=b,
+                    which="penultimate",
+                    clip_scope="masked",
+                    coord_mask={"weight": weight_mask, "bias": bias_mask},
+                )
 
-            bias_mask = weight_mask.any(dim=1)
-            grads_before = _snapshot_layer_grads(target_layer)
-            metric_privacy_obfuscation(
-                model_for_defense,
-                d=d,
-                b=b,
-                which="penultimate",
-                clip_scope="masked",
-                coord_mask={"weight": weight_mask, "bias": bias_mask},
-            )
-
+               
             # --------------------------------------------------
             # 5) UPDATE
             # --------------------------------------------------
             self.optimizer.step()
-            
-            #uncomment for prints: verify that only the penultimate layer changes - nothing else and that some of the other parameters actually change
-            # print target changes (what you already do)
-            #_print_grad_changes(target_layer, grads_before, k_show=5)
-            """
-            # checksum grads of ALL OTHER layers after defense
-            ck_after = _grad_checksum_excluding(model_for_defense, exclude_param_ids=exclude_ids)
-
-            # verify nothing else changed
-            ok = _compare_checksums(ck_before, ck_after)
-            if ok:
-                print("[DEFENSE CHECK] ✅ No other layer grads changed.")
-            else:
-                print("[DEFENSE CHECK] ❌ Some non-target grads changed (see above).")
-
-
-            
-             
-        
-            _print_grad_changes(
-            target_layer,
-            grads_before,
-            k_show=5,
-            )
-
-            layer = target_layer
-            print("WEIGHT  max|w|:", layer.weight.detach().abs().max().item(),
-                  "mean|w|:", layer.weight.detach().abs().mean().item())
-            print("GRAD    max|g|:", layer.weight.grad.detach().abs().max().item(),
-                  "mean|g|:", layer.weight.grad.detach().abs().mean().item())
-            """
-            #self.optimizer.step()
+               
         t_comp1 = time.time()
-        self._profiler_add('compute', t_comp1 - t_comp0)
+        #self._profiler_add('compute', t_comp1 - t_comp0)
 
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
