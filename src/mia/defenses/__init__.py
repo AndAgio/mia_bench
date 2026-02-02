@@ -3,6 +3,7 @@ from src.mia.defenses.training.differential_privacy import DifferentialPrivacyDe
 from src.mia.defenses.training.relax_loss import RelaxLossDefender
 from src.mia.defenses.training.adversarial_regularization import AdvRegDefender
 from src.mia.defenses.training.mixup import MixupDefender
+from src.mia.defenses.training.selena import SelenaDefender
 from src.mia.defenses.post_hoc.mem_guard import MemGuardDefender
 from src.mia.defenses.hybrid.hamp import HampDefender
 
@@ -21,6 +22,8 @@ def get_defender_class(defense_mode: str):
         return AdvRegDefender
     elif defense_mode in ['mixup']:
         return MixupDefender
+    elif defense_mode in ['selena']:
+        return SelenaDefender
     elif defense_mode in ['hamp', 'hamp_train', 'hamp_test', 'hamp_full']:
         return HampDefender
     else:

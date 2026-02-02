@@ -79,6 +79,7 @@ def gather_settings():
                                         'adv_reg', 'advreg', 'adv-reg',
                                         'mixup',
                                         'hamp', 'hamp_train', 'hamp_test', 'hamp_full',
+                                        'selena',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -117,6 +118,11 @@ def gather_settings():
                                 help='gamma parameter for HAMP defense')
         parser.add_argument('--defender_hamp_alpha', type=float, default=1.0,
                                 help='Alpha parameter for HAMP defense')
+        # Selena parameters for defender model
+        parser.add_argument('--defender_selena_K', type=int, default=25,
+                                help='Number of models K for Selena defense')
+        parser.add_argument('--defender_selena_L', type=int, default=10,
+                                help='Number of exclusions L per sample for Selena defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

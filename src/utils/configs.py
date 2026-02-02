@@ -377,9 +377,15 @@ class HampDefenseConfigs:
     gamma: float = 0.95
     alpha: float = 1.0
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class SelenaDefenseConfigs:
+    strategy: Literal["selena"] = "selena"
+    K: int = 25
+    L: int = 10
+
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -512,6 +518,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         defender_defense_configs = HampDefenseConfigs(mode=hamp_mode,
                                                     gamma=settings.defender_hamp_gamma,
                                                     alpha=settings.defender_hamp_alpha)
+    elif settings.defense_mode in ['selena']:
+        defender_defense_configs = SelenaDefenseConfigs(K=settings.defender_selena_K,
+                                                        L=settings.defender_selena_L)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
