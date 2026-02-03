@@ -31,8 +31,9 @@ class SelenaDefender(BaseDefender):
     def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
         self.logger.print_it(f"Selena Defender: training defender model with K={self.selena_configs.K} split models and L={self.selena_configs.L} exclusions per sample...")
         self.train_all_split_models(train_configs=train_configs)
-        self.train_distilled_model(train_configs=train_configs)
-        raise NotImplementedError("Selena Defender: train_model is not implemented yet.")
+        # self.train_distilled_model(train_configs=train_configs)
+        return self.train_distilled_model(train_configs=train_configs,
+                                        return_stats=return_stats)
     
     def train_all_split_models(self, train_configs: TrainConfigs):
         data_splits = self.split_data_manager.get_all_datasets()
@@ -54,7 +55,7 @@ class SelenaDefender(BaseDefender):
                                             model=model)
             self.logger.print_it(f"Selena Defender: finished training split model {k+1}/{self.selena_configs.K}!")
 
-    def train_distilled_model(self, train_configs: TrainConfigs):
+    def train_distilled_model(self, train_configs: TrainConfigs, return_stats: bool = False):
         self.logger.print_it("Selena Defender: training distilled model on outputs of split models...")
         dataset = self.gather_dataset_for_distillation(train_configs=train_configs)
         train_manager = DistillTrainManager(train_configs=train_configs,
@@ -63,10 +64,19 @@ class SelenaDefender(BaseDefender):
         train_manager.initialize_train(dataset=dataset,
                                         model=self.untrained_model,
                                         configs=train_configs)
-        self.trained_model = train_manager.train(return_best_model=True,
-                                                return_last_model=False,
-                                                return_stats=False)
+        if return_stats:
+            self.trained_model, train_stats = train_manager.train(return_best_model=True,
+                                                        return_last_model=False,
+                                                        return_stats=return_stats)
+        else:
+            self.trained_model = train_manager.train(return_best_model=True,
+                                            return_last_model=False,
+                                            return_stats=return_stats)
         self.logger.print_it("Selena Defender: finished training distilled model!")
+        if return_stats:
+            return self.trained_model, train_stats
+        else:
+            return self.trained_model
 
     def gather_dataset_for_distillation(self, train_configs: TrainConfigs) -> TensorDataset:
         start = time.time()
@@ -112,7 +122,6 @@ class SelenaDefender(BaseDefender):
         mean_outputs = torch.where(counts > 0,
                         masked_sum / counts.to(predictions_matrix.dtype),
                         torch.tensor(float('nan'), device=predictions_matrix.device))
-        print(mean_outputs.shape)
         assert torch.isfinite(mean_outputs).all(), "Found NaN or Inf in `mean_outputs`"
         distilled_dataset = copy.deepcopy(train_dataset)
         distilled_dataset.targets = mean_outputs
