@@ -18,9 +18,6 @@ class SelenaDefender(BaseDefender):
         super().__init__(defender_configs=defender_configs)
         self.name = 'selena_defender'
         self.selena_configs = defender_configs.defense
-        # TODO: Implement the Selena defense.
-        # assignees: AndAgio
-
         self.split_data_manager = SplitDataManager(dataset=self.dataset,
                                                     selena_configs=self.selena_configs,
                                                     logger=self.logger)
