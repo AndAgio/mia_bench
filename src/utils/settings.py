@@ -81,6 +81,7 @@ def gather_settings():
                                         'hamp', 'hamp_train', 'hamp_test', 'hamp_full',
                                         'selena',
                                         'mist', 'mist_mixup', 'mist-mixup',
+                                        'weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -135,6 +136,11 @@ def gather_settings():
                                 help='Lambda parameter for MIST defense')
         parser.add_argument('--defender_mist_mixup_alpha', type=float, default=1.0,
                                 help='Mixup alpha parameter for MIST defense when using mixup')
+        # Weighted Smoothing parameters for defender model
+        parser.add_argument('--defender_weighted_smoothing_sigma_noise', type=float, default=0.1,
+                                help='Standard deviation of the gaussian noise to be added in Weighted Smoothing defense')
+        parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=10,
+                                help='Number of warmup epochs to train the model without weighted smoothing in Weighted Smoothing defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

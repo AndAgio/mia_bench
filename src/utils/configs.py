@@ -393,9 +393,16 @@ class MistDefenseConfigs:
     mix_up: bool = False
     alpha_mixup: float = 0.0
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class WeightedSmoothingDefenseConfigs:
+    strategy: Literal["weighted_smoothing"] = "weighted_smoothing"
+    sigma_noise: float = 0.1
+    warmup_epochs: int = 5
+
+
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs, WeightedSmoothingDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -539,6 +546,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     lmbd=settings.defender_mist_lambda,
                                                     mixup=mixup,
                                                     alpha_mixup=settings.defender_mist_mixup_alpha if mixup else 0.0)
+    elif settings.defense_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
+        defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
+                                                                warmup_epochs=settings.defender_weighted_smoothing_warmup_epochs)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
