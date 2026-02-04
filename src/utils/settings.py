@@ -80,6 +80,7 @@ def gather_settings():
                                         'mixup',
                                         'hamp', 'hamp_train', 'hamp_test', 'hamp_full',
                                         'selena',
+                                        'mist', 'mist_mixup', 'mist-mixup',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -123,6 +124,17 @@ def gather_settings():
                                 help='Number of models K for Selena defense')
         parser.add_argument('--defender_selena_L', type=int, default=10,
                                 help='Number of exclusions L per sample for Selena defense')
+        # MIST parameters for defender model
+        parser.add_argument('--defender_mist_num_submodels', type=int, default=5,
+                                help='Number of submodels to train for MIST defense')
+        parser.add_argument('--defender_mist_split_method', type=str, default='random',
+                                help='Data split method for MIST defense', choices=['random', 'stratified'])
+        parser.add_argument('--defender_mist_submodel_epochs', type=int, default=5,
+                                help='Number of epochs to train each submodel for MIST defense')
+        parser.add_argument('--defender_mist_lambda', type=float, default=4,
+                                help='Lambda parameter for MIST defense')
+        parser.add_argument('--defender_mist_mixup_alpha', type=float, default=1.0,
+                                help='Mixup alpha parameter for MIST defense when using mixup')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

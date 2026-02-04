@@ -383,9 +383,19 @@ class SelenaDefenseConfigs:
     K: int = 25
     L: int = 10
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class MistDefenseConfigs:
+    strategy: Literal["mist"] = "mist"
+    num_submodels: int = 5
+    split_method: str = 'random'  # options: 'random', 'stratified'
+    submodel_epochs: int = 5
+    lmbd: float = 4
+    mix_up: bool = False
+    alpha_mixup: float = 0.0
+
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -521,6 +531,14 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.defense_mode in ['selena']:
         defender_defense_configs = SelenaDefenseConfigs(K=settings.defender_selena_K,
                                                         L=settings.defender_selena_L)
+    elif settings.defense_mode in ['mist', 'mist_mixup', 'mist-mixup']:
+        mixup = settings.defense_mode in ['mist_mixup', 'mist-mixup']
+        defender_defense_configs = MistDefenseConfigs(num_submodels=settings.defender_mist_num_submodels,
+                                                    split_method=settings.defender_mist_split_method,
+                                                    submodel_epochs=settings.defender_mist_submodel_epochs,
+                                                    lmbd=settings.defender_mist_lambda,
+                                                    mixup=mixup,
+                                                    alpha_mixup=settings.defender_mist_mixup_alpha if mixup else 0.0)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
