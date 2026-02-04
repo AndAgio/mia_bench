@@ -78,7 +78,7 @@ class DifferentialPrivacyTrainManager(TrainManager):
                 clipping=clipping,
                 grad_sample_mode=dp_config.grad_sample_mode,
             )
-        elif dp_config.grad_sample_mode in ['hook']:
+        elif dp_config.grad_sample_mode in ['hooks']:
             self.model, self.optimizer, self.train_loader = privacy_engine.make_private(
                 module=self.model,
                 optimizer=self.optimizer,

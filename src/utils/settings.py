@@ -91,7 +91,7 @@ def gather_settings():
                                 help='Max grad norm for DP-SGD')
         parser.add_argument("--defender_dp_clip_per_layer", action="store_true", default=False,
                                 help="whether to use per layer clipping in DP-SGD",)
-        parser.add_argument("--defender_dp_grad_sample_mode", type=str, default="ghost")
+        parser.add_argument("--defender_dp_grad_sample_mode", type=str, default="ghost", choices=["ghost", "hooks"],)
         # MemGuard parameters for defender model
         parser.add_argument('--defender_mem_guard_budget', type=float, default=0.1,
                                 help='Budget parameter for MemGuard defense')
