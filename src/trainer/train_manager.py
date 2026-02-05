@@ -344,6 +344,11 @@ class TrainManager(Loggable):
             self.setup_dataloaders_from_torch_dataset(dataset=dataset,
                                                         batch_size=batch_size,
                                                         split=False)
+        else:
+            raise ValueError('Dataset provided is neither MultiDatasets nor torch Dataset!')
+        
+        # TODO: refactor TrainManager to only use MultiDatasets.
+        # assignees: AndAgio.
 
     def initialize_train(self, 
                         dataset: Union[MultiDatasets, Dataset],

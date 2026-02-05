@@ -34,6 +34,10 @@ class MultiDatasets():
 
     def get_info(self):
         return self.info
+    
+    def wrap(self, wrapper_class, **kwargs):
+        for id in self.datasets.keys():
+            self.datasets[id] = wrapper_class(self.datasets[id], **kwargs)
 
 
 class FixedLabelDataset(Dataset):

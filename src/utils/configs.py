@@ -146,6 +146,8 @@ class DatasetConfigs:
     im_channels: Optional[int] = None
     num_classes: Optional[int] = None
     info: Optional[dict] = None
+    seed: int = 12345
+    val_split: float = 0.2
 
     def __post_init__(self):
         if self.im_size is None:
@@ -478,7 +480,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     #                             grad_sample_mode=settings.defender_dp_grad_sample_mode)
     defender_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
-                                            data_augmentation=settings.data_augmentation)
+                                            data_augmentation=settings.data_augmentation,
+                                            seed=settings.defender_seed,
+                                            val_split=settings.val_split)
     defender_model_configs = ModelConfigs(model_name=settings.defender_model,
                                         im_channels=defender_dataset_configs.im_channels,
                                         num_classes=defender_dataset_configs.num_classes,

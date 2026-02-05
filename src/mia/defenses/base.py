@@ -18,6 +18,8 @@ class BaseDefender(Loggable):
         self.model_configs = defender_configs.model
         self.dataset = get_dataset(dataset=self.dataset_configs.name,
                                 datasets_folder=self.dataset_configs.data_folder,
+                                val_split=self.dataset_configs.val_split,
+                                seed=self.dataset_configs.seed,
                                 augment=self.dataset_configs.data_augmentation,
                                 logger=self.logger)
         self.untrained_model = get_model(model_name=self.model_configs.model_name,

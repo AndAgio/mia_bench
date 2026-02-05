@@ -91,7 +91,7 @@ class Cinic10(Dataset):
         for d in dir.rglob("*"):
             if d.is_dir():
                 # Split path into strings 
-                parts = d.parts # type: tuple, strings
+                parts = d.parts
                 item = f"{parts[-2]}_{parts[-1]}"
                 classes.append(item)
 

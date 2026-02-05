@@ -1,4 +1,7 @@
 import os
+import numpy as np
+import copy
+from torch.utils.data import Dataset, Subset
 from torchvision.transforms import transforms
 
 from torchvision.datasets import CIFAR100
@@ -10,13 +13,28 @@ from .imagenet import ImageNet
 from .imagenet1k import ImageNet1K
 from .tinyimagenet import TinyImageNet
 from .helpers import MultiDatasets
+from .wrappers import IndexedDataset
 
 
 from src.utils.variables import DEFAULT_DATASETS_FOLDER
 from src.utils.configs import get_dataset_info_from_name
 
 
-def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, augment: bool = False, logger: callable = None):
+def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, val_split: float = 0.2, seed: int= 12345, augment: bool = False, logger: callable = None):
+    """Return dataset splits packed into a `MultiDatasets` object.
+
+    Parameters:
+    - val_split: if >0 and <=1 treated as fraction of training set to use as validation; if >=1 treated as absolute number of samples.
+    - val_indices: explicit list of indices (w.r.t. original training set ordering) to use as validation. If provided, overrides `val_split`.
+    - val_seed: seed used when sampling a validation split randomly (deterministic if `val_shuffle` is True). If `None` and `rng` is provided, the external RNG will be used.
+    - val_shuffle: whether to shuffle training indices before taking a split.
+    - rng: optional `random.Random`-like instance (with `.shuffle(list)` and `.randint(a,b)`) to be used for sampling. If not provided, a `random.Random(val_seed)` instance is used when `val_seed` is provided, otherwise the module-level `random` is used.
+    - report_seed: if True, the function prints either the explicit `val_seed` (when used) or a small sample integer from the used RNG so that you can compare RNG states across scripts.
+
+    The function preserves original training indices for `val` by creating `torch.utils.data.Subset`
+    instances whose `.indices` attribute corresponds to the indices in the original full training set. This
+    allows mapping back to precomputed per-sample statistics (e.g., memorization scores).
+    """
     printer_func = print if logger is None else logger.print_it
     printer_func('Gathering dataset "{}". This may take a while...'.format(dataset))
     # Image Preprocessing
@@ -127,14 +145,67 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, au
         test_dataset = TinyImageNet(root=root, train=False, transform=test_transform)
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
+
+    # Optionally split the training set into train/val while preserving original indices
+    val_created = False
+    if val_split is not None and (0 < val_split < 1):
+        n_train = len(train_dataset)
+        full_indices = list(range(n_train))
+        k = int(n_train * val_split)
+        rng = np.random.default_rng(seed=seed)
+        val_indices = rng.choice(full_indices, k, replace=False).tolist()
+        val_idx = sorted(val_indices)
+        logger.print_it(f"Dataset getter: val_seed={seed}; val_n={len(val_idx)}; val_indices_sample={val_idx[:10]}")
+        
+        train_idx = [i for i in full_indices if i not in set(val_idx)]
+
+        # Create separate dataset instances (deepcopy) so we can use different transforms
+        train_ds_copy = copy.deepcopy(train_dataset)
+        val_ds_copy = copy.deepcopy(train_dataset)
+        # Ensure train keeps augmentation and val uses the test transforms
+        try:
+            train_ds_copy.transform = train_transform
+            val_ds_copy.transform = test_transform
+        except NameError:
+            # In case transforms aren't available on the dataset object, ignore
+            pass
+
+        # Create Subsets that preserve original indices in `.indices`
+        train_dataset = Subset(train_ds_copy, train_idx)
+        val_dataset = Subset(val_ds_copy, val_idx)
+        val_created = True
+    elif val_split is not None and (val_split >= 1 or val_split <= 0):
+        raise ValueError(f"Invalid val_split={val_split}. Must be >0 and <=1 for fraction or >=1 for absolute number of samples.")
+    else:
+        pass
+
     info = get_dataset_info_from_name(dataset=dataset)
-    printer_func('Gathered dataset "{}": Training samples = {} '
+
+    if val_created:
+        printer_func('Gathered dataset "{}": Training samples = {} '
+                        '& Validation samples = {} & Testing samples = {}'.format(dataset,
+                                                                                    len(train_dataset),
+                                                                                    len(val_dataset),
+                                                                                    len(test_dataset)))
+    else:
+        printer_func('Gathered dataset "{}": Training samples = {} '
                         '& Testing samples = {}'.format(dataset,
                                                         len(train_dataset),
                                                         len(test_dataset)))
-    
+
     data = MultiDatasets()
     data.add(train_dataset, 'train')
+    if val_created:
+        data.add(val_dataset, 'val')
     data.add(test_dataset, 'test')
     data.add_info(info)
+    data.wrap(IndexedDataset)  # Wrap all datasets to preserve original indices
     return data
+
+def wrap_datasets_with_indices(data: MultiDatasets):
+    """Wrap all datasets in `data` with `IndexedDataset` to preserve original indices."""
+    return data.wrap(IndexedDataset)
+
+def wrap_dataset_with_indices(dataset: Dataset):
+    """Wrap a single dataset with `IndexedDataset` to preserve original indices."""
+    return IndexedDataset(dataset)
