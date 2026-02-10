@@ -413,11 +413,16 @@ class PurifierDefenseConfigs:
     pindex_size: int = 1000
     swap_threshold: float = 0.01
 
-
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class MmdDefenseConfigs:
+    strategy: Literal["mmd"] = "mmd"
+    lmbd: float = 1.0
+    use_mixup: bool = False
+    mixup_alpha: float = 0.0
 
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs, WeightedSmoothingDefenseConfigs, PurifierDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs, WeightedSmoothingDefenseConfigs, PurifierDefenseConfigs, MmdDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -564,7 +569,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     submodel_epochs=settings.defender_mist_submodel_epochs,
                                                     lmbd=settings.defender_mist_lambda,
                                                     mixup=mixup,
-                                                    alpha_mixup=settings.defender_mist_mixup_alpha if mixup else 0.0)
+                                                    alpha_mixup=settings.defender_mixup_alpha if mixup else 0.0)
     elif settings.defense_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
         defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
                                                                 warmup_epochs=settings.defender_weighted_smoothing_warmup_epochs)
@@ -577,6 +582,10 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         reformer_lambda=settings.defender_purifier_reformer_lambda,
                                                         pindex_size=settings.defender_purifier_pindex_size,
                                                         swap_threshold=settings.defender_purifier_swap_threshold)
+    elif settings.defense_mode in ['mmd', 'mmd_mixup', 'mmd-mixup']:
+        defender_defense_configs = MmdDefenseConfigs(lmbd=settings.defender_mmd_lambda,
+                                                    use_mixup=True if settings.defense_mode in ['mmd_mixup', 'mmd-mixup'] else False,
+                                                    mixup_alpha=settings.defender_mixup_alpha)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,

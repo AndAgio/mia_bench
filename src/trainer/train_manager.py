@@ -271,6 +271,7 @@ class TrainManager(Loggable):
         self.logger.print_it('Training setup done!')
 
     def setup_dataloaders_from_multidatasets(self, dataset: MultiDatasets, batch_size: int = 128):
+        self.dataset = dataset
         try:
             train_dataset = dataset.get('train')
         except (KeyError, ValueError):
@@ -400,13 +401,7 @@ class TrainManager(Loggable):
 
         while(self.epoch <= self.train_configs.scheduler_config.epochs):
             self.epoch_stats_tracker.epoch_start()
-            self.train_epoch()
-            if self.run_val:
-                self.val_epoch()
-            if self.run_test:
-                self.test_epoch()
-            self.scheduler.step()
-
+            self.train_executions()
             self.epoch_stats_tracker.epoch_end()
             self.epoch_stats_tracker.ddp_consolidate_epoch_time(op="max")
             epoch_time = self.epoch_stats_tracker.get_epoch_time()
@@ -459,6 +454,13 @@ class TrainManager(Loggable):
                 else:
                     return
 
+    def train_executions(self):
+        self.train_epoch()
+        if self.run_val:
+            self.val_epoch()
+        if self.run_test:
+            self.test_epoch()
+        self.scheduler.step()
 
     def train_epoch(self):
         # reset epoch stats and per-epoch profiler

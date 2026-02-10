@@ -85,6 +85,7 @@ def gather_settings():
                                         'mist', 'mist_mixup', 'mist-mixup',
                                         'weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws',
                                         'purifier',
+                                        'mmd', 'mmd_mixup', 'mmd-mixup',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -137,8 +138,6 @@ def gather_settings():
                                 help='Number of epochs to train each submodel for MIST defense')
         parser.add_argument('--defender_mist_lambda', type=float, default=4,
                                 help='Lambda parameter for MIST defense')
-        parser.add_argument('--defender_mist_mixup_alpha', type=float, default=1.0,
-                                help='Mixup alpha parameter for MIST defense when using mixup')
         # Weighted Smoothing parameters for defender model
         parser.add_argument('--defender_weighted_smoothing_sigma_noise', type=float, default=0.1,
                                 help='Standard deviation of the gaussian noise to be added in Weighted Smoothing defense')
@@ -161,6 +160,9 @@ def gather_settings():
                                 help='Number of samples to use in the Pindex for the Purifier defense')
         parser.add_argument('--defender_purifier_swap_threshold', type=float, default=0.01,
                                 help='Threshold for label swapping in the Purifier defense')
+        # MMD parameters for defender model
+        parser.add_argument('--defender_mmd_lambda', type=float, default=1.0,
+                                help='Lambda parameter for MMD defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)

@@ -6,6 +6,7 @@ from src.mia.defenses.training.mixup import MixupDefender
 from src.mia.defenses.training.selena import SelenaDefender
 from src.mia.defenses.training.mist import MistDefender
 from src.mia.defenses.training.weigthed_smoothing import WeightedSmoothingDefender
+from src.mia.defenses.training.mmd import MmdDefender
 from src.mia.defenses.post_hoc.mem_guard import MemGuardDefender
 from src.mia.defenses.post_hoc.purifier import PurifierDefender
 from src.mia.defenses.hybrid.hamp import HampDefender
@@ -35,5 +36,7 @@ def get_defender_class(defense_mode: str):
         return WeightedSmoothingDefender
     elif defense_mode in ['purifier']:
         return PurifierDefender
+    elif defense_mode in ['mmd', 'mmd_mixup', 'mmd-mixup']:
+        return MmdDefender
     else:
         raise ValueError('Defense "{}" not found or not implemented yet! Double check your settings please!'.format(defense_mode))
