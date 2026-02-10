@@ -19,7 +19,7 @@ class HampDefender(BaseDefender):
     def train_model(self, train_configs, return_stats: bool = False):
         self.logger.print_it(f"Hamp Defender: selected mode {self.hamp_configs.mode}")
         if self.hamp_configs.mode in ['train_only', 'full']:
-            self.logger.print_it(f'Hamp Defender: training defender model with alpha {self.hamp_configs.alpha}...')
+            self.logger.print_it(f'Hamp Defender: training defender model with alpha {self.hamp_configs.alpha} and gamma {self.hamp_configs.gamma}...')
             train_manager = HampTrainManager(train_configs=train_configs,
                                             name=self.name,
                                             logger=self.logger,
@@ -151,7 +151,7 @@ class HampLoss(torch.nn.Module):
 
     def forward(self, outputs, targets):
         entropy = torch.distributions.Categorical(probs = torch.nn.functional.softmax(outputs, dim=1)).entropy()
-        loss1 = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(outputs, dim=1), targets, reduction='batchmean') / targets.size(1) # average over support size to make it equivalent to original implementation
+        loss1 = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(outputs, dim=1), targets, reduction='batchmean') # / targets.size(1) # average over support size to make it equivalent to original implementation
         loss2 = -1 * self.alpha * torch.mean(entropy)
         loss = loss1 + loss2
         return loss

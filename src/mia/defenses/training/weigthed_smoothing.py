@@ -1,7 +1,9 @@
+import time
 from typing import Union
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from src.data.helpers import IndexedDataset
 from src.trainer.train_manager import TrainManager
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
@@ -57,20 +59,20 @@ class WeightedSmoothingTrainManager(TrainManager):
         if self.distributed:
             self.train_loader.sampler.set_epoch(self.epoch)
         if self.epoch <= self.weighted_smoothing_configs.warmup_epochs:
-            for batch_idx, (inputs, targets) in enumerate(self.train_loader):
+            for batch_idx, (inputs, targets, _, _) in enumerate(self.train_loader):
                 # Standard training for the first warmup_epochs
                 self.train_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
         else:
             # Weighted Smoothing training after warmup_epochs
             # Compute weights based on class frequencies
-            indexed_dataset = IndexedDataset(self.train_loader.dataset)
-            self.indexed_train_loader = DataLoader(indexed_dataset, batch_size=self.train_loader.batch_size,
-                                            shuffle=True)
+            self.indexed_train_loader = DataLoader(self.train_loader.dataset, 
+                                                batch_size=self.train_loader.batch_size,
+                                                shuffle=True)
             self.compute_weights()
             self.normalize_weights()
-            for batch_idx, (inputs, targets, inputs_indices) in enumerate(self.indexed_train_loader):
+            for batch_idx, (inputs, targets, _, indices) in enumerate(self.indexed_train_loader):
                 # Noise injection based on weights training
-                self.train_step_with_weighted_smoothing(inputs, targets, inputs_indices, batch_idx=batch_idx, total_batches=len(self.train_loader))
+                self.train_step_with_weighted_smoothing(inputs, targets, indices, batch_idx=batch_idx, total_batches=len(self.train_loader))
 
         self.logger.set_logger_newline(console_only=True)
         
@@ -83,21 +85,28 @@ class WeightedSmoothingTrainManager(TrainManager):
         return train_summary
 
     def compute_weights(self):
+        start = time.time()
+        assert isinstance(self.train_loader.dataset, IndexedDataset), "Train loader dataset must be an IndexedDataset!"
         data_loader = DataLoader(self.train_loader.dataset, batch_size=self.train_loader.batch_size, shuffle=False)
         self.weights = torch.zeros(len(self.train_loader.dataset))
-        previous_last_index = 0
-        for inputs, targets in data_loader:
+        self.logger.print_it(f"Computing weights for all training samples based on Mentr. This may take a while...")
+        for batch_index, (inputs, targets, _, sample_indices) in enumerate(data_loader):
+            self.logger.print_it_same_line(f"Computing weights for batch {batch_index+1}/{len(data_loader)}...", console_only=True)
             with torch.no_grad():
                 outputs = self.model(inputs.to(self.device))
                 probs = torch.softmax(outputs, dim=1)
             m_entr = self.mentr(probs, targets, from_logits=True)  # shape (batch_size,)
-            batch_size = inputs.shape[0]
-            self.weights[previous_last_index: previous_last_index + batch_size] = m_entr
-            previous_last_index += batch_size
+            self.weights[sample_indices] = m_entr.cpu()
+        self.logger.set_logger_newline(console_only=True)
+        self.logger.print_it(f"Computed weights for all training samples in {time.time() - start:.2f} seconds.")
     
     def normalize_weights(self):
-        all_targets = torch.tensor(self.train_loader.dataset.targets)
+        start = time.time()
+        assert isinstance(self.train_loader.dataset, IndexedDataset), "Train loader dataset must be an IndexedDataset!"
+        all_targets = self.train_loader.dataset.get_all_targets(to_torch=True)
+        # all_targets = torch.tensor(self.train_loader.dataset.ds.targets)
         classes = torch.unique(all_targets, return_counts=False)
+        self.logger.print_it(f"Normalizing weights per class. This may take a while...")
         for cls in classes:
             cls_indices = (all_targets == cls).nonzero(as_tuple=True)[0]
             cls_weights = self.weights[cls_indices]
@@ -106,6 +115,7 @@ class WeightedSmoothingTrainManager(TrainManager):
                 std_cls_weight = torch.std(cls_weights)
                 normalized_cls_weights = 1 - (cls_weights - avg_cls_weight) / (std_cls_weight + 1e-12)  # standardization
                 self.weights[cls_indices] = normalized_cls_weights
+        self.logger.print_it(f"Normalized weights for all training samples in {time.time() - start:.2f} seconds.")
 
     @staticmethod
     def mentr(preds: torch.Tensor,                # logits or probabilities, shape (N, C)
@@ -186,15 +196,3 @@ class WeightedSmoothingTrainManager(TrainManager):
         message = self.build_message_for_batch_end(index_batch=batch_idx+1,
                                                 total_batches=total_batches)
         self.logger.print_it_same_line(message, console_only=True)
-
-
-class IndexedDataset(torch.utils.data.Dataset):
-    def __init__(self, base_dataset):
-        self.base = base_dataset
-
-    def __len__(self):
-        return len(self.base)
-    
-    def __getitem__(self, idx):
-        x, y = self.base[idx]
-        return x, y, idx

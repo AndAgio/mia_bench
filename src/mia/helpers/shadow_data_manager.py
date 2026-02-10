@@ -143,6 +143,7 @@ class ShadowDatasetsManager(Loggable):
         s = time.time()
         self.logger.print_it(f"Sampling all {self.n_shadow_datasets} shadow datasets...")
         for i in range(self.n_shadow_datasets):
+            self.logger.print_it_same_line(f'Sampling shadow dataset {i+1}/{self.n_shadow_datasets}...', console_only=True)
             train_indexes = self._rng.choice(available_indices_train,
                                             n_samples_from_victim_train,
                                             replace=False).tolist()
@@ -153,6 +154,7 @@ class ShadowDatasetsManager(Loggable):
             shadow_datasets_indices[i] = {'tr_ids': train_indexes,
                                         'te_ids': test_indexes,
                                         'ids': all_indexes}
+        self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Sampling executed in {time.time() - s} seconds.")
         return shadow_datasets_indices
     
@@ -170,6 +172,7 @@ class ShadowDatasetsManager(Loggable):
         s = time.time()
         self.logger.print_it(f"Checking correctness of shadow datasets in {self.mode} mode for all {len(self.auditing_indices)} samples. This may take a while...")
         for k, index in enumerate(self.auditing_indices):
+            self.logger.print_it_same_line(f'Checking correctness for sample {k+1}/{len(self.auditing_indices)}...', console_only=True)
             n_ins_found = 0
             n_outs_found = 0
             n_ins_found_all = 0
@@ -195,6 +198,7 @@ class ShadowDatasetsManager(Loggable):
                         n_outs_found_all == expected_num_outs]
             found_outcomes += outcome
         final_outcome_str = 'positive' if all(found_outcomes) else 'negative'
+        self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Checking executed in {time.time() - s} seconds with {final_outcome_str} outcome.")
         return all(found_outcomes)
 

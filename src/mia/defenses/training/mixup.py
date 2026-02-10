@@ -83,9 +83,9 @@ class MixupTrainManager(TrainManager):
             self.optimizer.step()
 
         with torch.no_grad():
-            outputs = self.model(inputs)
+            outputs = self.model(inputs.to(self.device))
         
-        self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
+        self.epoch_stats_tracker.update(preds=outputs, targets=targets.to(self.device), extras=self.extra_configs)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
         
         # Print message on console (the print itself is profiled inside print_message)

@@ -195,8 +195,12 @@ class MistTrainManager(TrainManager):
 
     def split_data_random(self):
         # Split the training data into subsets for each submodel.
-        total_size = len(self.train_loader.dataset)
-        indices = torch.randperm(total_size)
+        try:
+            all_indices = self.train_loader.dataset.get_indices(to_torch=True)
+        except AttributeError:
+            all_indices = torch.arange(len(self.train_loader.dataset))
+        total_size = len(all_indices)
+        indices = all_indices[torch.randperm(total_size).to(dtype=torch.long, device=all_indices.device)]
         subset_size = total_size // self.mist_configs.num_submodels
         self.submodel_datasets = {}
         for i in range(self.mist_configs.num_submodels):
@@ -208,7 +212,10 @@ class MistTrainManager(TrainManager):
         self.logger.print_it(f"MIST TrainManager: split training data into {self.mist_configs.num_submodels} subsets for sub-models.")
 
     def split_data_stratified(self):
-        y = self.train_loader.dataset.targets
+        try:
+            y = self.train_loader.dataset.get_all_targets()
+        except AttributeError:
+            y = self.train_loader.dataset.targets
         classes = np.unique(y)
         rng = np.random.default_rng(self.seed)
         parts = [list() for _ in range(self.mist_configs.num_submodels)]
@@ -300,7 +307,7 @@ class MistTrainManager(TrainManager):
             submodel_dataset = self.get_submodel_dataset(submodel_index=submodel_index)
             submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=1)
             for epoch in range(self.mist_configs.submodel_epochs):
-                for batch_idx, (inputs, targets) in enumerate(submodel_loader):
+                for batch_idx, (inputs, targets, _, _) in enumerate(submodel_loader):
                     model, optimizer, criterion = self.train_step_submodel(model, submodel_index, optimizer, criterion, inputs, targets, epoch, batch_idx=batch_idx, total_batches=len(submodel_loader))
                 lr_scheduler.step()
             self.logger.set_logger_newline(console_only=True)
@@ -434,7 +441,7 @@ class MistTrainManager(TrainManager):
             submodel_dataset = self.get_submodel_dataset(submodel_index=submodel_index)
             submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=1)
             for epoch in range(self.mist_configs.submodel_epochs):
-                for batch_idx, (inputs, targets) in enumerate(submodel_loader):
+                for batch_idx, (inputs, targets, _, _) in enumerate(submodel_loader):
                     model, optimizer, criterion = self.optimize_difference_step(model, submodel_index, optimizer, criterion, inputs, epoch, batch_idx=batch_idx, total_batches=len(submodel_loader))
                 lr_scheduler.step()
             self.logger.set_logger_newline(console_only=True)

@@ -9,6 +9,8 @@ from src.utils.configs import DefenderConfigs, SelenaDefenseConfigs, TrainConfig
 from src.mia.defenses.base import BaseDefender
 from src.mia.helpers.shadow_models_manager import ShadowModelsManager
 from src.trainer.train_manager import TrainManager
+from src.trainer.stats_tracker import StageSummary
+from src.trainer.distributed import is_rank0
 
 
 class SelenaDefender(BaseDefender):
@@ -39,9 +41,9 @@ class SelenaDefender(BaseDefender):
         assert len(models) == data_splits.n_splits(), f"Selena Defender: number of data splits {data_splits.n_splits()} does not match K={self.selena_configs.K}!"
         for k in range(self.selena_configs.K):
             self.logger.print_it(f"Selena Defender: training split model {k+1}/{self.selena_configs.K}...")
-            train_manager = TrainManager(train_configs=train_configs,
-                                        name='selena_split_{}'.format(k),
-                                        logger=self.logger)
+            train_manager = SelenaSplitTrainManager(train_configs=train_configs,
+                                                    name='selena_split_{}'.format(k),
+                                                    logger=self.logger)
             train_manager.initialize_train(dataset=data_splits.get(id=k),
                                             model=models[k],
                                             configs=train_configs)
@@ -91,7 +93,7 @@ class SelenaDefender(BaseDefender):
             dataloader = DataLoader(train_dataset, batch_size=train_configs.batch_size, shuffle=False)
             all_outputs = []
             with torch.no_grad():
-                for batch_idx, (samples, _) in enumerate(dataloader):
+                for batch_idx, (samples, _, _, _) in enumerate(dataloader):
                     samples = samples.to(device)
                     outputs = model(samples)
                     all_outputs.append(torch.nn.functional.softmax(outputs, dim=1).cpu())
@@ -120,8 +122,18 @@ class SelenaDefender(BaseDefender):
                         masked_sum / counts.to(predictions_matrix.dtype),
                         torch.tensor(float('nan'), device=predictions_matrix.device))
         assert torch.isfinite(mean_outputs).all(), "Found NaN or Inf in `mean_outputs`"
+
         distilled_dataset = copy.deepcopy(train_dataset)
-        distilled_dataset.targets = mean_outputs
+        try:
+            distilled_dataset.set_targets(mean_outputs)
+        except AttributeError:
+            distilled_dataset.targets = mean_outputs
+            dataloader = DataLoader(distilled_dataset, batch_size=train_configs.batch_size, shuffle=False)
+            with torch.no_grad():
+                for batch_idx, (samples, targets, _, _) in enumerate(dataloader):
+                    assert targets.shape[-1] == self.model_configs.num_classes, f"Expected targets to have shape ({len(distilled_dataset)}, {self.model_configs.num_classes}), got {targets.shape} instead!"
+                    break
+
         dataset_to_return.add(distilled_dataset, id='train')
         test_dataset = self.dataset.get('test')
         dataset_to_return.add(test_dataset, id='test')
@@ -142,8 +154,6 @@ class SplitDataManager:
         self.split_data()
 
     def split_data(self):
-        all_train_data = self.dataset.get('train').data
-        all_train_labels = self.dataset.get('train').targets
         all_train_indices = np.arange(len(self.dataset.get('train')))
         exclusion_matrix = np.zeros((all_train_indices.shape[0], self.selena_configs.L))
         for i in range(len(exclusion_matrix)):
@@ -172,8 +182,16 @@ class SplitDataManager:
         indices = np.array(indices)
         train_dataset = Subset(self.dataset.get('train'), indices=indices)
         dataset_to_return.add(train_dataset, id='train')
-        test_dataset = self.dataset.get('test')
-        dataset_to_return.add(test_dataset, id='test')
+        try:
+            val_dataset = self.dataset.get('val')
+            dataset_to_return.add(val_dataset, id='val')
+        except KeyError:
+            pass
+        try:
+            test_dataset = self.dataset.get('test')
+            dataset_to_return.add(test_dataset, id='test')
+        except KeyError:
+            pass
         return dataset_to_return
     
     def get_models_for_sample(self, sample_index: int) -> list[int]:
@@ -187,6 +205,43 @@ class SplitDataManager:
         for k in range(self.selena_configs.K):
             datasets.add(self.get_dataset_for_model(model_index=k), id=k)
         return datasets
+    
+
+class SelenaSplitTrainManager(TrainManager):
+    def __init__(self, train_configs: TrainConfigs, name: str, logger=None):
+        super().__init__(train_configs=train_configs,
+                        name=name,
+                        logger=logger)
+        
+    def build_message_for_stage_end(self, stage_summary: StageSummary) -> str:
+        message = f"{self.device.type.upper()}:{self.local_rank} | "
+        message += f"SPLIT ID: {self.name.split('_')[-1]} | "
+        message += f"EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
+        message += ' {}: '.format(stage_summary.stage.upper())
+        if is_rank0():
+            metrics = stage_summary.metrics
+        message = self.append_metrics(message, metrics)
+        message = self.append_lr(message)
+        message = self.append_times(message)
+        return message
+    
+    def build_message_for_batch_end(self, index_batch, total_batches) -> str:
+        message = f"{self.device.type.upper()}:{self.local_rank} | "
+        message += f"SPLIT ID: {self.name.split('_')[-1]} | "
+        message += f"EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
+        bar_length = 10
+        progress = float(index_batch) / float(total_batches)
+        if progress >= 1.:
+            progress = 1
+        block = int(round(bar_length * progress))
+        message += '[{}]'.format('=' * block + ' ' * (bar_length - block))
+        message += '| {}: '.format(self.epoch_stats_tracker.get_stage().upper())
+        if is_rank0():
+            metrics = self.epoch_stats_tracker._require_active_stage().current_avgs()
+        message = self.append_metrics(message, metrics)
+        message = self.append_lr(message)
+        message = self.append_times(message)
+        return message
     
 
 class DistillTrainManager(TrainManager):

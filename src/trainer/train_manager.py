@@ -273,22 +273,35 @@ class TrainManager(Loggable):
     def setup_dataloaders_from_multidatasets(self, dataset: MultiDatasets, batch_size: int = 128):
         try:
             train_dataset = dataset.get('train')
-            self.run_train = True
-        except:
+        except (KeyError, ValueError):
             raise ValueError('At least the train split should be in the dataset!')
+        try:
+            val_dataset = dataset.get('val')
+            self.run_val = True
+        except (KeyError, ValueError):
+            self.run_val = False
+            self.logger.print_it('No validation split found in the dataset. Will only set up train and test dataloaders.')
         try:
             test_dataset = dataset.get('test')
             self.run_test = True
-        except:
+        except (KeyError, ValueError):
             self.run_test = False
+            self.logger.print_it(f'No test split found in the dataset. Will only set up train {"and validation " if self.run_val else ""}dataloader{"s" if self.run_val else ""}.')
+        
         if self.distributed:
-            if self.run_train:
-                self.train_loader = DataLoader(train_dataset, batch_size=batch_size,
+            self.train_loader = DataLoader(train_dataset, batch_size=batch_size,
+                                            pin_memory=True, shuffle=False,
+                                            sampler=DistributedSampler(train_dataset,
+                                                                        num_replicas=self.world_size,
+                                                                        rank=self.global_rank,
+                                                                        shuffle=True))
+            if self.run_val:
+                self.val_loader = DataLoader(val_dataset, batch_size=batch_size,
                                                 pin_memory=True, shuffle=False,
-                                                sampler=DistributedSampler(train_dataset,
+                                                sampler=DistributedSampler(val_dataset,
                                                                             num_replicas=self.world_size,
                                                                             rank=self.global_rank,
-                                                                            shuffle=True))
+                                                                            shuffle=False))
             if self.run_test:
                 self.test_loader = DataLoader(test_dataset, batch_size=batch_size,
                                                 pin_memory=True, shuffle=False,
@@ -297,61 +310,65 @@ class TrainManager(Loggable):
                                                                             rank=self.global_rank,
                                                                             shuffle=False))
         else:
-            if self.run_train:
-                self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+            self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+            if self.run_val:
+                self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
             if self.run_test:
                 self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
-    def setup_dataloaders_from_torch_dataset(self, dataset: Dataset, batch_size: int = 128, split: bool = False):
-        self.run_train = True
-        if split:
-            train_dataset, test_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
-            if self.distributed:
-                self.train_loader = DataLoader(train_dataset, batch_size=batch_size,
-                                                    pin_memory=True, shuffle=False,
-                                                    sampler=DistributedSampler(train_dataset,
-                                                                            num_replicas=self.world_size,
-                                                                            rank=self.global_rank,
-                                                                            shuffle=True))
-                self.test_loader = DataLoader(test_dataset, batch_size=batch_size,
-                                                    pin_memory=True, shuffle=False,
-                                                    sampler=DistributedSampler(test_dataset,
-                                                                            num_replicas=self.world_size,
-                                                                            rank=self.global_rank,
-                                                                            shuffle=False))
-            else:
-                self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-                self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-            self.run_test = True
-        else:
-            self.run_test = False
-            if self.distributed:
-                self.train_loader = DataLoader(dataset, batch_size=batch_size,
-                                                    pin_memory=True, shuffle=False,
-                                                    sampler=DistributedSampler(dataset,
-                                                                            num_replicas=self.world_size,
-                                                                            rank=self.global_rank,
-                                                                            shuffle=True))
-            else:
-                self.train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # def setup_dataloaders_from_torch_dataset(self, dataset: Dataset, batch_size: int = 128, split: bool = False):
+    #     self.run_train = True
+    #     if split:
+    #         train_dataset, test_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
+    #         if self.distributed:
+    #             self.train_loader = DataLoader(train_dataset, batch_size=batch_size,
+    #                                                 pin_memory=True, shuffle=False,
+    #                                                 sampler=DistributedSampler(train_dataset,
+    #                                                                         num_replicas=self.world_size,
+    #                                                                         rank=self.global_rank,
+    #                                                                         shuffle=True))
+    #             self.test_loader = DataLoader(test_dataset, batch_size=batch_size,
+    #                                                 pin_memory=True, shuffle=False,
+    #                                                 sampler=DistributedSampler(test_dataset,
+    #                                                                         num_replicas=self.world_size,
+    #                                                                         rank=self.global_rank,
+    #                                                                         shuffle=False))
+    #         else:
+    #             self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    #             self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    #         self.run_test = True
+    #     else:
+    #         self.run_test = False
+    #         if self.distributed:
+    #             self.train_loader = DataLoader(dataset, batch_size=batch_size,
+    #                                                 pin_memory=True, shuffle=False,
+    #                                                 sampler=DistributedSampler(dataset,
+    #                                                                         num_replicas=self.world_size,
+    #                                                                         rank=self.global_rank,
+    #                                                                         shuffle=True))
+    #         else:
+    #             self.train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    def setup_dataloaders(self, dataset: Union[MultiDatasets, Dataset], batch_size: int = 128):
-        if isinstance(dataset, MultiDatasets):
-            self.setup_dataloaders_from_multidatasets(dataset=dataset,
-                                                        batch_size=batch_size)
-        elif isinstance(dataset, Dataset):
-            self.setup_dataloaders_from_torch_dataset(dataset=dataset,
-                                                        batch_size=batch_size,
-                                                        split=False)
-        else:
-            raise ValueError('Dataset provided is neither MultiDatasets nor torch Dataset!')
+    def setup_dataloaders(self, dataset: MultiDatasets, batch_size: int = 128):
+        assert isinstance(dataset, MultiDatasets), f"Dataset should be of type MultiDatasets. Found {type(dataset)} instead!"
+        self.setup_dataloaders_from_multidatasets(dataset=dataset, batch_size=batch_size)
+
+        # if isinstance(dataset, MultiDatasets):
+        #     self.setup_dataloaders_from_multidatasets(dataset=dataset,
+        #                                                 batch_size=batch_size)
+        # elif isinstance(dataset, Dataset):
+        #     self.setup_dataloaders_from_torch_dataset(dataset=dataset,
+        #                                                 batch_size=batch_size,
+        #                                                 split=False)
+        # else:
+        #     raise ValueError('Dataset provided is neither MultiDatasets nor torch Dataset!')
         
         # TODO: refactor TrainManager to only use MultiDatasets.
         # assignees: AndAgio.
 
     def initialize_train(self, 
-                        dataset: Union[MultiDatasets, Dataset],
+                        dataset: MultiDatasets,
                         model: Union[ModelConfigs,nn.Module],
                         configs: TrainConfigs,
                         ):
@@ -379,7 +396,7 @@ class TrainManager(Loggable):
     def reset_running_stats(self):
         best_record = np.inf if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else 0
         mode_to_track_best = "min" if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else "max"
-        stage_to_track_best = "test" if self.run_test else "train"
+        stage_to_track_best = "val" if self.run_val else "test" if self.run_test else "train"
         self.train_stats_tracker = TrainStats(best_epoch=0,
                                             best_record=best_record,
                                             metric_to_track_best=self.metric_to_track,
@@ -431,6 +448,8 @@ class TrainManager(Loggable):
         while(self.epoch <= self.train_configs.scheduler_config.epochs):
             self.epoch_stats_tracker.epoch_start()
             self.train_epoch()
+            if self.run_val:
+                self.val_epoch()
             if self.run_test:
                 self.test_epoch()
             self.scheduler.step()
@@ -442,7 +461,7 @@ class TrainManager(Loggable):
             epoch_summary = self.epoch_stats_tracker.finalize_epoch(epoch=self.epoch)
             best_epoch, new_best = self.train_stats_tracker.update_history_and_best(epoch_summary=epoch_summary)
 
-            self.logger.print_it(f"Best epoch so far is {best_epoch}: {'test' if self.run_test else 'train'} {self.metric_to_track} = {new_best:.4f}")
+            self.logger.print_it(f"Best epoch so far is {best_epoch}: {'val' if self.run_val else 'test' if self.run_test else 'train'} {self.metric_to_track} = {new_best:.4f}")
 
             if self.local_rank == 0:
                 ckpt = self.ckpts_manager.build_checkpoint(epoch=self.epoch,
@@ -494,7 +513,7 @@ class TrainManager(Loggable):
         self.model.train()
         if self.distributed:
             self.train_loader.sampler.set_epoch(self.epoch)
-        for batch_idx, (inputs, targets) in enumerate(self.train_loader):
+        for batch_idx, (inputs, targets, original_indices, resampled_indices) in enumerate(self.train_loader):
             self.train_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
         self.logger.set_logger_newline(console_only=True)
         
@@ -554,6 +573,26 @@ class TrainManager(Loggable):
         except Exception:
             return isinstance(self.criterion, torch.nn.modules.loss._Loss) and self.criterion.reduction == 'none'
 
+    def val_epoch(self):
+        # reset per-epoch profiler for test stage as well (keeps same epoch bucket)
+        self.reset_epoch_stats(phase='val')
+        self.model.eval()
+        if self.distributed:
+            self.val_loader.sampler.set_epoch(self.epoch)
+        with torch.no_grad():
+            for batch_idx, (inputs, targets, original_indices, resampled_indices) in enumerate(self.val_loader):
+                self.val_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.val_loader))
+        self.logger.set_logger_newline(console_only=True)
+
+        self.epoch_stats_tracker.ddp_reduce_current_stage()
+        val_summary = self.epoch_stats_tracker.stage_end()
+        message = self.build_message_for_stage_end(stage_summary=val_summary)
+        self.logger.print_it(f"{message}", file_only=True)
+        return val_summary
+
+    def val_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=total_batches)
+
     def test_epoch(self):
         # reset per-epoch profiler for test stage as well (keeps same epoch bucket)
         self.reset_epoch_stats(phase='test')
@@ -561,7 +600,7 @@ class TrainManager(Loggable):
         if self.distributed:
             self.test_loader.sampler.set_epoch(self.epoch)
         with torch.no_grad():
-            for batch_idx, (inputs, targets) in enumerate(self.test_loader):
+            for batch_idx, (inputs, targets, original_indices, resampled_indices) in enumerate(self.test_loader):
                 self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.test_loader))
         self.logger.set_logger_newline(console_only=True)
 

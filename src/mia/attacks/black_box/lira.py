@@ -80,9 +80,7 @@ class LiRA(BaseMIA):
         p_out = norm.pdf(phis_defender, loc=shadow_out_means, scale=shadow_out_stds)
 
         scores = p_in/(p_out+1e-15)
-
-        self.logger.print_it(f"LiRA attacker: scores = {scores}")
-
+        # self.logger.print_it(f"LiRA attacker: scores = {scores}")
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('LiRA attacker: score computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))
@@ -97,7 +95,8 @@ class LiRA(BaseMIA):
         phis = np.zeros((len(audit_dataset), len(models_for_sample[0])))
         s = time.time()
         self.logger.print_it(f"Computing phi for all {tot_samples} samples. This may take a while...")
-        for sample_index, (sample, label) in enumerate(audit_loader):
+        for sample_index, (sample, label, _, _) in enumerate(audit_loader):
+            self.logger.print_it_same_line(f"Computing phi for sample {sample_index+1}/{tot_samples}...", console_only=True)
             models = models_for_sample[sample_index]
             for model_index, model in enumerate(models):
                 if isinstance(model, torch.nn.Module):
@@ -111,6 +110,7 @@ class LiRA(BaseMIA):
                                         target=label,
                                         device=device)
                 phis[sample_index, model_index] = phi
+        self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Computed phis in {time.time() - s} seconds.")
         return phis
 

@@ -5,6 +5,7 @@ from torch.utils.data import TensorDataset, DataLoader, Dataset
 import torch.nn as nn
 import torch.optim as optim
 import time
+from src.data.helpers import IndexedDataset
 from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
@@ -43,14 +44,13 @@ class NeuralMIA(BaseMIA):
         self.logger.print_it('Neural MIA attacker: done training shadow models, it took {}:{:02d}:{:02d}...'.format(h, m, s))
         self.logger.print_it('Neural MIA attacker: constructing the dataset of shadow predictions to train the attacking model...')
         all_shadow_data = self.shadow_manager.get_all_samples_in_all_shadow_datasets()
-        all_indexed_shadow_data = IndexDataset(all_shadow_data)
         all_shadow_models_indices = self.shadow_manager.get_all_model_indeces()
 
         tot_n_samples = len(all_shadow_data) * len(all_shadow_models_indices)
         sample_label_map = {}
         self.logger.print_it('Neural MIA attacker: building sample label map...')
         start_map = time.time()
-        for enumerate_index, (_, _, sample_id) in enumerate(all_indexed_shadow_data):
+        for enumerate_index, (_, _, _, sample_id) in enumerate(all_shadow_data):
             # self.logger.print_it_same_line(f"Processing sample {enumerate_index}/{len(all_indexed_shadow_data)} for attacking model dataset construction...")
             in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=sample_id,
                                                                                                 split='all')
@@ -63,7 +63,7 @@ class NeuralMIA(BaseMIA):
         self.logger.print_it(f"Neural MIA attacker: sample label map created in {time.time() - start_map:.2f} seconds!")
             
         # Get feature shape by passing a dummy sample through one model
-        dummy_data, _, _ = all_indexed_shadow_data[0]
+        dummy_data, _, _, _ = all_shadow_data[0]
         dummy_data = dummy_data.unsqueeze(0)  # add batch dimension
         dummy_model_index = all_shadow_models_indices[0]
         dummy_model = self.shadow_manager.get_model(index=dummy_model_index)
@@ -82,9 +82,9 @@ class NeuralMIA(BaseMIA):
         current_index = 0
         for model_index in all_shadow_models_indices:
             shadow_model = self.shadow_manager.get_model(index=model_index)
-            dataloader = DataLoader(all_indexed_shadow_data, batch_size=PROCESSING_BATCH_SIZE, shuffle=False)
-            for enumerate_index, (batch_data, _, batch_sample_ids) in enumerate(dataloader):
-                # self.logger.print_it_same_line(f"Processing batch {enumerate_index}/{len(dataloader)} of shadow model {model_index}/{len(all_shadow_models_indices)} for attacking model dataset construction...")
+            dataloader = DataLoader(all_shadow_data, batch_size=PROCESSING_BATCH_SIZE, shuffle=False)
+            for enumerate_index, (batch_data, _, _, batch_sample_ids) in enumerate(dataloader):
+                self.logger.print_it_same_line(f"Processing batch {enumerate_index+1}/{len(dataloader)} of shadow model {model_index+1}/{len(all_shadow_models_indices)} for attacking model dataset construction...", console_only=True)
                 batch_size = batch_data.size(0)
                 batch_features = NeuralMIA.get_model_out(model=shadow_model,
                                                         data=batch_data,
@@ -94,10 +94,10 @@ class NeuralMIA(BaseMIA):
                 for i in range(batch_size):
                     targets[current_index + i, 0] = sample_label_map[(batch_sample_ids[i].item(), model_index)]
                 current_index += batch_size
-        # self.logger.set_logger_newline()
+        self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Neural MIA attacker: training dataset built in {time.time() - start_build:.2f} seconds!")
         # Build and train the attacking model
-        dataset = TensorDataset(features, targets)
+        dataset = IndexedDataset(TensorDataset(features, targets))
         train_loader = DataLoader(dataset, batch_size=PROCESSING_BATCH_SIZE, shuffle=True)
         layers = []
         prev_dim = features.shape[1]
@@ -133,7 +133,7 @@ class NeuralMIA(BaseMIA):
         self.defender_model.eval()
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         scores = np.zeros((len(audit_dataset), ))
-        for sample_index, (sample, _) in enumerate(audit_loader):
+        for sample_index, (sample, _, _, _) in enumerate(audit_loader):
             feature = NeuralMIA.get_model_out(model=self.defender_model,
                                                 data=sample,
                                                 device=device,
@@ -159,7 +159,7 @@ class NeuralMIA(BaseMIA):
         model.train()
         for epoch in range(self.attack_configs.model_epochs):
             run_loss = 0.0
-            for features, labels in train_loader:
+            for features, labels, _, _ in train_loader:
                 features = features.to(device)
                 labels = labels.to(device)
 
@@ -171,7 +171,8 @@ class NeuralMIA(BaseMIA):
                 optimizer.step()
 
                 run_loss += loss.item()
-            self.logger.print_it(f"Epoch {epoch+1}/{self.attack_configs.model_epochs}, Attack Loss: {run_loss/len(train_loader):.4f}")
+            self.logger.print_it_same_line(f"Epoch {epoch+1}/{self.attack_configs.model_epochs}, Attack Loss: {run_loss/len(train_loader):.4f}", console_only=True)
+        self.logger.set_logger_newline(console_only=True)
         return model
 
     @staticmethod
@@ -191,16 +192,3 @@ class NeuralMIA(BaseMIA):
                 assert hasattr(model, 'feature'), 'Model does not have feature extraction method which is required for running NeuralMIA with feature mode!'
                 output = model.feature(data.to(device)).cpu()
         return output
-
-
-class IndexDataset(Dataset):
-    def __init__(self, dataset):
-        self.dataset = dataset
-        
-    def __getitem__(self, index):
-        data, target = self.dataset[index]
-        return data, target, index
-    
-    def __len__(self):
-        return len(self.dataset)
-    

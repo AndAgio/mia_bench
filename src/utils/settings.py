@@ -118,9 +118,9 @@ def gather_settings():
         parser.add_argument('--defender_mixup_alpha', type=float, default=1.0,
                                 help='Alpha parameter for Mixup defense')
         # HAMP parameters for defender model
-        parser.add_argument('--defender_hamp_gamma', type=float, default=0.95,
+        parser.add_argument('--defender_hamp_gamma', type=float, default=0.5,
                                 help='gamma parameter for HAMP defense')
-        parser.add_argument('--defender_hamp_alpha', type=float, default=1.0,
+        parser.add_argument('--defender_hamp_alpha', type=float, default=0.001,
                                 help='Alpha parameter for HAMP defense')
         # Selena parameters for defender model
         parser.add_argument('--defender_selena_K', type=int, default=25,

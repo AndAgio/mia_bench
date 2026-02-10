@@ -58,7 +58,8 @@ class AttackRMIA(BaseMIA):
         ref_matrix = np.zeros((len(shadow_models), len(audit_dataset)))
         for i, shadow_model in shadow_models.items():
             losses = []
-            for data, label in audit_loader:
+            for batch_index, (data, label, _, _) in enumerate(audit_loader):
+                self.logger.print_it_same_line(f"{self.name}: computing reference losses for shadow model {i+1}/{len(shadow_models)} and batch {batch_index+1}/{len(audit_loader)}...", console_only=True)
                 data = data.to(device)
                 label = label.to(device)
                 losses.append(
@@ -67,6 +68,7 @@ class AttackRMIA(BaseMIA):
                                             label=label)
                 )
             ref_matrix[i] = np.concatenate(losses, axis=0)
+        self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"{self.name}: built reference loss matrix in {time.time() - start_ref:.2f}s.")
         # compute smoothed thresholds for each audit sample 
         self.logger.print_it(f"{self.name}: computing smoothed thresholds. This may take a while...")
@@ -77,7 +79,8 @@ class AttackRMIA(BaseMIA):
         self.logger.print_it(f"{self.name}: forwarding through auditing and thresholding. This may take a while...")
         start_thresh = time.time()
         target_losses = []
-        for data, label in audit_loader:
+        for batch_index, (data, label, _, _) in enumerate(audit_loader):
+            self.logger.print_it_same_line(f"{self.name}: forwarding through auditing and thresholding for batch {batch_index+1}/{len(audit_loader)}...", console_only=True)
             data = data.to(device)
             label = label.to(device)
             target_losses.append(
@@ -85,6 +88,7 @@ class AttackRMIA(BaseMIA):
                                         data=data, 
                                         label=label)
             )
+        self.logger.set_logger_newline(console_only=True)
         target_losses = np.concatenate(target_losses, axis=0)
         # decide membership per sample
         scores = target_losses <= thresholds
@@ -93,7 +97,7 @@ class AttackRMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
         metrics = self.compute_stats(scores)
-        self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics["auc"]}")
+        self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
         return metrics
 
     def compute_batch_scores(self, model: torch.nn.Module, data: torch.Tensor, label: torch.Tensor):

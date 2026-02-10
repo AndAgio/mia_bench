@@ -38,7 +38,7 @@ class BaseMIA(Loggable):
     def compute_stats(self, scores: np.array, params: dict = {}):
         audit_data = self.audit_manager.get(labels='mia')
         self.reset_logger()
-        audit_labels = [label for _, (_, label) in enumerate(audit_data)]
+        audit_labels = [label for _, (_, label, _, _) in enumerate(audit_data)]
         fpr, tpr, roc = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)
         results = {'auc': auc_score,

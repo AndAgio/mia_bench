@@ -1,4 +1,5 @@
 from typing import Union
+import time
 import torch
 from torch.utils.data import TensorDataset, DataLoader, ConcatDataset
 from src.data.helpers import FixedLabelDataset
@@ -39,6 +40,7 @@ class MemGuardDefender(BaseDefender):
                                         randomize_mix=0.,
                                         apply_expected_budget=True,
                                         budget_l1=self.mem_guard_configs.budget).to(device)
+        self.logger.print_it('MemGuard Defender: finished building defense layer!')
         return self.defended_model
 
     def _sort_with_index(self, t: torch.Tensor):
@@ -75,6 +77,8 @@ class MemGuardDefender(BaseDefender):
         optimizer = torch.optim.Adam(shadow_attacker_model.parameters(), lr=self.mem_guard_configs.shadow_attacker_model_lr)
         criterion = torch.nn.BCEWithLogitsLoss()
         shadow_attacker_model.train()
+        start_time = time.time()
+        self.logger.print_it(f"MemGuard Defender: Training shadow attack model for {self.mem_guard_configs.shadow_attacker_model_epochs} epochs with LR {self.mem_guard_configs.shadow_attacker_model_lr}. This may take a while...")
         for epoch in range(self.mem_guard_configs.shadow_attacker_model_epochs):
             run_loss = 0.0
             for features, labels in data_loader:
@@ -86,7 +90,9 @@ class MemGuardDefender(BaseDefender):
                 loss.backward()
                 optimizer.step()
                 run_loss += loss.item()
-            self.logger.print_it(f"MemGuard Defender: Training shadow attack model -> epoch {epoch+1}/{self.mem_guard_configs.shadow_attacker_model_epochs}, attack Loss: {run_loss/len(data_loader):.4f}")
+            self.logger.print_it_same_line(f"MemGuard Defender: Training shadow attack model -> epoch {epoch+1}/{self.mem_guard_configs.shadow_attacker_model_epochs}, attack Loss: {run_loss/len(data_loader):.4f}", console_only=True)
+        self.logger.set_logger_newline(console_only=True)
+        self.logger.print_it(f"MemGuard Defender: Finished training shadow attack model in {time.time() - start_time:.2f} seconds.")
         shadow_attacker_model.eval()
         return shadow_attacker_model
 
@@ -95,7 +101,7 @@ class MemGuardDefender(BaseDefender):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         model.eval()
-        dummy_data, _ = data[0]
+        dummy_data, _, _, _ = data[0]
         dummy_data = dummy_data.unsqueeze(0)
         dummy_feature = MemGuardDefender.get_model_out(model=model,
                                                 data=dummy_data,
@@ -104,14 +110,15 @@ class MemGuardDefender(BaseDefender):
         features = torch.zeros((len(data), feature_shape))
         dataloader = DataLoader(data, batch_size=BATCH_SIZE, shuffle=False)
         current_index = 0
-        for enumerate_index, (batch_data, _) in enumerate(dataloader):
-            # self.logger.print_it_same_line(f"Processing batch {enumerate_index}/{len(dataloader)} for attacking model dataset construction...")
+        for enumerate_index, (batch_data, _, _, _) in enumerate(dataloader):
+            self.logger.print_it_same_line(f"Processing batch {enumerate_index}/{len(dataloader)} for attacking model dataset construction...", console_only=True)
             batch_size = batch_data.size(0)
             batch_features = MemGuardDefender.get_model_out(model=model,
                                                         data=batch_data,
                                                         device=device)
             features[current_index:current_index+batch_size, :] = batch_features
             current_index += batch_size
+        self.logger.set_logger_newline(console_only=True)
         return features
     
     @staticmethod

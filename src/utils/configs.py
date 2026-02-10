@@ -376,8 +376,8 @@ class MixupDefenseConfigs:
 class HampDefenseConfigs:
     strategy: Literal["hamp"] = "hamp"
     mode: str = 'full'  # options: 'train_only', 'test_only', 'full'
-    gamma: float = 0.95
-    alpha: float = 1.0
+    gamma: float = 0.5
+    alpha: float = 0.001
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SelenaDefenseConfigs:
@@ -440,7 +440,7 @@ class ExperimentConfigs:
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
     assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
-        attacker_settings = ['dataset', 'attacker_model', 'attack_mode', 
+        attacker_settings = ['dataset', 'val_split', 'attacker_model', 'attack_mode', 
                             'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
                             'random_population_size', 'robust_alphas', 'robust_gamma', 
                             'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian',
@@ -448,7 +448,7 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
                             'r_alpha']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
     elif mode == 'defender':
-        defender_settings = ['dataset', 'defender_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
+        defender_settings = ['dataset', 'val_split', 'defender_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('defender_') or k in defender_settings}
     else:
         exclude_keys = ["resume", "device"]
@@ -515,9 +515,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     clip_per_layer=settings.defender_dp_clip_per_layer,
                                                     grad_sample_mode=settings.defender_dp_grad_sample_mode)
     elif settings.defense_mode in ['mem_guard', 'memguard', 'mem-guard']:
-        defender_defense_configs = MemGuardDefenseConfigs(shadow_attacker_model_layers=settings.defender_mem_guard_shadow_attacker_model_layers,
-                                                        shadow_attacker_model_epochs=settings.defender_mem_guard_shadow_attacker_model_epochs,
-                                                        shadow_attacker_model_lr=settings.defender_mem_guard_shadow_attacker_model_lr,
+        defender_defense_configs = MemGuardDefenseConfigs(shadow_attacker_model_layers=settings.defender_mem_guard_shadow_model_layers,
+                                                        shadow_attacker_model_epochs=settings.defender_mem_guard_shadow_model_epochs,
+                                                        shadow_attacker_model_lr=settings.defender_mem_guard_shadow_model_lr,
                                                         budget=settings.defender_mem_guard_budget)
     elif settings.defense_mode in ['relax_loss', 'relaxloss', 'relax-loss']:
         defender_defense_configs = RelaxLossDefenseConfigs(relax_alpha=settings.defender_relax_loss_alpha)

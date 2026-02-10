@@ -12,8 +12,7 @@ from .cinic import Cinic10
 from .imagenet import ImageNet
 from .imagenet1k import ImageNet1K
 from .tinyimagenet import TinyImageNet
-from .helpers import MultiDatasets
-from .wrappers import IndexedDataset
+from .helpers import MultiDatasets, IndexedDataset
 
 
 from src.utils.variables import DEFAULT_DATASETS_FOLDER
@@ -148,7 +147,9 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
 
     # Optionally split the training set into train/val while preserving original indices
     val_created = False
-    if val_split is not None and (0 < val_split < 1):
+    if val_split is not None and val_split == 0:
+        logger.print_it("val_split is set to 0, skipping creation of validation split...")
+    elif val_split is not None and (0 < val_split < 1):
         n_train = len(train_dataset)
         full_indices = list(range(n_train))
         k = int(n_train * val_split)
@@ -174,10 +175,10 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
         train_dataset = Subset(train_ds_copy, train_idx)
         val_dataset = Subset(val_ds_copy, val_idx)
         val_created = True
-    elif val_split is not None and (val_split >= 1 or val_split <= 0):
+    elif val_split is not None and (val_split >= 1 or val_split < 0):
         raise ValueError(f"Invalid val_split={val_split}. Must be >0 and <=1 for fraction or >=1 for absolute number of samples.")
     else:
-        pass
+        raise ValueError(f"Invalid val_split={val_split}. Must be a positive number or None.")
 
     info = get_dataset_info_from_name(dataset=dataset)
 

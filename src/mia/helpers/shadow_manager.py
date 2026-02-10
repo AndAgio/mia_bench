@@ -43,8 +43,9 @@ class ShadowManager(Loggable):
         train_manager = TrainManager(train_configs=train_configs,
                                     name='shadow_{}'.format(id),
                                     logger=logger)
-        train_manager.initialize_train(dataset=self.shadow_data.get(index=id,
-                                                                    labels=labels_mode),
+        dataset = self.shadow_data.get(index=id, labels=labels_mode)
+        wrapped_dataset = MultiDatasets([dataset], ids=['train'])
+        train_manager.initialize_train(dataset=wrapped_dataset,
                                         model=self.shadow_models.get(index=id),
                                         configs=train_configs)
         model = train_manager.train(return_best_model=False,

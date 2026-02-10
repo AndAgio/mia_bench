@@ -2,6 +2,7 @@ import math
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from src.data.helpers import IndexedDataset
 from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
@@ -64,7 +65,7 @@ class QuantileMIA(BaseMIA):
         shadow_loader = DataLoader(shadow_dataset, batch_size=1, shuffle=False)
         start_data = time.time()
         with torch.no_grad():
-            for data, target in shadow_loader:
+            for data, target, _, _ in shadow_loader:
                 self.logger.print_it_same_line(f'Quantile MIA attacker: processing sample {len(features)+1}/{len(shadow_dataset)}...', console_only=True)
                 features.append(data)
                 target_score, _ = self.defender_scoring_fn(data, target, device=train_config.device)
@@ -72,7 +73,8 @@ class QuantileMIA(BaseMIA):
             self.logger.set_logger_newline(console_only=True)
         features = torch.cat(features)
         target_scores = torch.cat(target_scores)
-        quantile_dataset = TensorDataset(features, target_scores)
+        quantile_dataset = IndexedDataset(TensorDataset(features, target_scores))
+        quantile_dataset = MultiDatasets([quantile_dataset], ids=['train'])
 
         # TODO: wrap the quantile_dataset in MultiDataset to ease TrainManager handling and maybe in IndexedDataset to preserve original indices.
         # assignees: AndAgio.
@@ -127,8 +129,9 @@ class QuantileMIA(BaseMIA):
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         scores = np.zeros((len(audit_dataset), ))
-        self.logger.print_it(f"Computing scores for all {tot_samples} samples. This may take a while...")
-        for sample_index, (sample, label) in enumerate(audit_loader):
+        self.logger.print_it(f"Computing scores for all {tot_samples} samples. This may take a while...", file_only=True)
+        for sample_index, (sample, label, _, _) in enumerate(audit_loader):
+            self.logger.print_it_same_line(f'Quantile MIA attacker: computing score for sample {sample_index+1}/{tot_samples}...', console_only=True)
             with torch.no_grad():
                 target_score, _ = self.defender_scoring_fn(sample, label, device=device)
                 predicted_scores = quantile_model(sample.to(device))
@@ -141,6 +144,7 @@ class QuantileMIA(BaseMIA):
                 quantile_index = torch.argmin(torch.abs(self.quantile - quantile_value))
                 score = target_score.detach().cpu().item() - predicted_scores[0, quantile_index].detach().cpu().item()
                 scores[sample_index] = score
+        self.logger.set_logger_newline(console_only=True)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Quantile MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))

@@ -48,7 +48,8 @@ class AttackPMIA(BaseMIA):
         start_ref = time.time()
         # Collect population scores
         pop_scores = []
-        for data, label in shadow_loader:
+        for batch_index, (data, label, _, _) in enumerate(shadow_loader):
+            self.logger.print_it_same_line(f"{self.name}: computing reference scores for batch {batch_index+1}/{len(shadow_loader)}...", console_only=True)
             data = data.to(device)
             label = label.to(device)
             pop_scores.append(
@@ -57,6 +58,7 @@ class AttackPMIA(BaseMIA):
                                         label=label)
             )
         pop_scores = np.concatenate(pop_scores, axis=0)
+        self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"{self.name}: built reference scores matrix in {time.time() - start_ref:.2f}s.")
         # compute smoothed thresholds for each audit sample 
         self.logger.print_it(f"{self.name}: computing smoothed thresholds. This may take a while...")
@@ -69,7 +71,8 @@ class AttackPMIA(BaseMIA):
         audit_scores = []
         audit_dataset = self.audit_manager.get(labels='original')
         audit_loader = torch.utils.data.DataLoader(audit_dataset, batch_size=BATCH_SIZE, shuffle=False)
-        for data, label in audit_loader:
+        for batch_index, (data, label, _, _) in enumerate(audit_loader):
+            self.logger.print_it_same_line(f"{self.name}: forwarding through auditing and thresholding for batch {batch_index+1}/{len(audit_loader)}...", console_only=True)
             data = data.to(device)
             label = label.to(device)
             audit_scores.append(
@@ -77,6 +80,7 @@ class AttackPMIA(BaseMIA):
                                         data=data,
                                         label=label)
             )
+        self.logger.set_logger_newline(console_only=True)
         audit_scores = np.concatenate(audit_scores, axis=0)
         # decide membership per sample
         if self.attack_configs.p_score_type == "confidence":

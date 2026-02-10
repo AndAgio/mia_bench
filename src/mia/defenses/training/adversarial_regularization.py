@@ -107,7 +107,7 @@ class AdvRegTrainManager(TrainManager):
         if self.distributed:
             self.train_loader.sampler.set_epoch(self.epoch)
             self.heldout_loader.sampler.set_epoch(self.epoch)
-        for batch_idx, ((train_inputs, train_targets), (heldout_inputs, heldout_targets)) in enumerate(zip(self.train_loader, self.heldout_loader)):
+        for batch_idx, ((train_inputs, train_targets, _, _), (heldout_inputs, heldout_targets, _, _)) in enumerate(zip(self.train_loader, self.heldout_loader)):
             self.train_step(train_inputs, train_targets, heldout_inputs, heldout_targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
         self.logger.set_logger_newline(console_only=True)
         
