@@ -77,9 +77,8 @@ class MmdTrainManager(TrainManager):
             mixed_inputs = mixed_inputs.to(self.device)
             targets_a = targets_a.to(self.device)
             targets_b = targets_b.to(self.device)
-        else:
-            inputs = inputs.to(self.device)
-            targets = targets.to(self.device)
+        inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
 
         self.epoch_stats_tracker.batch_start()
         if self.mmd_configs.use_mixup:
@@ -98,9 +97,8 @@ class MmdTrainManager(TrainManager):
                                                 total_batches=total_batches)
         self.logger.print_it_same_line(message, console_only=True)
 
-    def train_step_mixup(self, inputs, targets_a, targets_b, lmbd):
+    def train_step_mixup(self, mixed_inputs, targets_a, targets_b, lmbd):
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
-        mixed_inputs = inputs
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
             def closure(mixed_inputs, targets_a, targets_b, mean=True, backward=True, run_stats=True):
