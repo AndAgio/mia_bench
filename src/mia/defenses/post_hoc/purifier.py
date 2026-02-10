@@ -1,7 +1,6 @@
 from typing import Union
 import torch
-from torch.utils.data import TensorDataset, DataLoader, ConcatDataset, Subset
-from src.data.helpers import FixedLabelDataset
+from torch.utils.data import DataLoader, Subset
 from src.utils.configs import DefenderConfigs, PurifierDefenseConfigs, TrainConfigs
 from src.mia.defenses.base import BaseDefender
 
