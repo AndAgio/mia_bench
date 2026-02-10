@@ -75,12 +75,8 @@ class QuantileMIA(BaseMIA):
         target_scores = torch.cat(target_scores)
         quantile_dataset = IndexedDataset(TensorDataset(features, target_scores))
         quantile_dataset = MultiDatasets([quantile_dataset], ids=['train'])
-
-        # TODO: wrap the quantile_dataset in MultiDataset to ease TrainManager handling and maybe in IndexedDataset to preserve original indices.
-        # assignees: AndAgio.
-
         self.logger.print_it(f"Quantile MIA attacker: constructed quantile dataset in {time.time() - start_data:.2f}s.")
-
+        
         self.logger.print_it('Quantile MIA attacker: training quantile model. This will take a while. Sit back and chill...')
         start = time.time()
         logger = get_logger(name='{} quantile shadow'.format(self.logger.name),
