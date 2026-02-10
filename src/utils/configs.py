@@ -447,6 +447,8 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
                             'neural_model_layers', 'neural_model_epochs', 'neural_model_lr',
                             'r_alpha']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
+        if settings.attack_mode == 'quantile':
+            relevant_settings.pop('n_shadows')
     elif mode == 'defender':
         defender_settings = ['dataset', 'val_split', 'defender_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('defender_') or k in defender_settings}

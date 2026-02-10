@@ -22,12 +22,9 @@ class QuantileMIA(BaseMIA):
                 attacker_configs: AttackerConfigs):
         super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Quantile MIA!")
-        
-        # TODO: add silent check for n_shadow_datasets == 1 and avoid raising an error, but rather modify configurations on the fly.
-        # Issue URL: https://github.com/AndAgio/mia_bench/issues/19
-        # assignees: AndAgio.
-
-        assert self.shadow_configs.n_shadow_datasets == 1, f"When using quantile MIA, only 1 shadow dataset must be used!"
+        if self.shadow_configs.n_shadow_datasets != 1:
+            self.logger.print_it(f"Quantile MIA attacker [WARNING]: when using quantile MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
+            self.shadow_configs.n_shadow_datasets = 1
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
@@ -76,7 +73,7 @@ class QuantileMIA(BaseMIA):
         quantile_dataset = IndexedDataset(TensorDataset(features, target_scores))
         quantile_dataset = MultiDatasets([quantile_dataset], ids=['train'])
         self.logger.print_it(f"Quantile MIA attacker: constructed quantile dataset in {time.time() - start_data:.2f}s.")
-        
+
         self.logger.print_it('Quantile MIA attacker: training quantile model. This will take a while. Sit back and chill...')
         start = time.time()
         logger = get_logger(name='{} quantile shadow'.format(self.logger.name),
