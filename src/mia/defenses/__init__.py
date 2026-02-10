@@ -7,6 +7,7 @@ from src.mia.defenses.training.selena import SelenaDefender
 from src.mia.defenses.training.mist import MistDefender
 from src.mia.defenses.training.weigthed_smoothing import WeightedSmoothingDefender
 from src.mia.defenses.post_hoc.mem_guard import MemGuardDefender
+from src.mia.defenses.post_hoc.purifier import PurifierDefender
 from src.mia.defenses.hybrid.hamp import HampDefender
 
 
@@ -32,5 +33,7 @@ def get_defender_class(defense_mode: str):
         return MistDefender
     elif defense_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
         return WeightedSmoothingDefender
+    elif defense_mode in ['purifier']:
+        return PurifierDefender
     else:
         raise ValueError('Defense "{}" not found or not implemented yet! Double check your settings please!'.format(defense_mode))

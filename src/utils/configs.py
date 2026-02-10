@@ -401,10 +401,23 @@ class WeightedSmoothingDefenseConfigs:
     sigma_noise: float = 0.1
     warmup_epochs: int = 5
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class PurifierDefenseConfigs:
+    strategy: Literal["purifier"] = "purifier"
+    reformer_latent_dim: int = 16
+    reformer_hidden_dim: int = 128
+    reformer_epochs: int = 20
+    reformer_lr: float = 0.01
+    reformer_batch_size: int = 256
+    reformer_lambda: float = 1.0
+    pindex_size: int = 1000
+    swap_threshold: float = 0.01
+
+
 
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs, WeightedSmoothingDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs, WeightedSmoothingDefenseConfigs, PurifierDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -555,6 +568,15 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.defense_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
         defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
                                                                 warmup_epochs=settings.defender_weighted_smoothing_warmup_epochs)
+    elif settings.defense_mode in ['purifier']:
+        defender_defense_configs = PurifierDefenseConfigs(reformer_latent_dim=settings.defender_purifier_reformer_latent_dim,
+                                                        reformer_hidden_dim=settings.defender_purifier_reformer_hidden_dim,
+                                                        reformer_epochs=settings.defender_purifier_reformer_epochs,
+                                                        reformer_lr=settings.defender_purifier_reformer_lr,
+                                                        reformer_batch_size=settings.defender_purifier_reformer_batch_size,
+                                                        reformer_lambda=settings.defender_purifier_reformer_lambda,
+                                                        pindex_size=settings.defender_purifier_pindex_size,
+                                                        swap_threshold=settings.defender_purifier_swap_threshold)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,

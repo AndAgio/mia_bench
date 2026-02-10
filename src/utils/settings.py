@@ -84,6 +84,7 @@ def gather_settings():
                                         'selena',
                                         'mist', 'mist_mixup', 'mist-mixup',
                                         'weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws',
+                                        'purifier',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -143,6 +144,23 @@ def gather_settings():
                                 help='Standard deviation of the gaussian noise to be added in Weighted Smoothing defense')
         parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=10,
                                 help='Number of warmup epochs to train the model without weighted smoothing in Weighted Smoothing defense')
+        # Purifier parameters for defender model
+        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=16,
+                                help='Latent dimension for the reformer model in Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=128,
+                                help='Hidden dimension for the reformer model in Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=20,
+                                help='Number of epochs to train the reformer model in Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_lr', type=float, default=0.01,
+                                help='Learning rate to train the reformer model in Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_batch_size', type=int, default=256,
+                                help='Batch size to train the reformer model in Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_lambda', type=float, default=1.0,
+                                help='Lambda parameter to weight the reformer loss in Purifier defense')
+        parser.add_argument('--defender_purifier_pindex_size', type=int, default=1000,
+                                help='Number of samples to use in the Pindex for the Purifier defense')
+        parser.add_argument('--defender_purifier_swap_threshold', type=float, default=0.01,
+                                help='Threshold for label swapping in the Purifier defense')
         # Data Augmentation parameters for defender model
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)
