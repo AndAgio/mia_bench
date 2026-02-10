@@ -316,56 +316,9 @@ class TrainManager(Loggable):
             if self.run_test:
                 self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-
-    # def setup_dataloaders_from_torch_dataset(self, dataset: Dataset, batch_size: int = 128, split: bool = False):
-    #     self.run_train = True
-    #     if split:
-    #         train_dataset, test_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
-    #         if self.distributed:
-    #             self.train_loader = DataLoader(train_dataset, batch_size=batch_size,
-    #                                                 pin_memory=True, shuffle=False,
-    #                                                 sampler=DistributedSampler(train_dataset,
-    #                                                                         num_replicas=self.world_size,
-    #                                                                         rank=self.global_rank,
-    #                                                                         shuffle=True))
-    #             self.test_loader = DataLoader(test_dataset, batch_size=batch_size,
-    #                                                 pin_memory=True, shuffle=False,
-    #                                                 sampler=DistributedSampler(test_dataset,
-    #                                                                         num_replicas=self.world_size,
-    #                                                                         rank=self.global_rank,
-    #                                                                         shuffle=False))
-    #         else:
-    #             self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    #             self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    #         self.run_test = True
-    #     else:
-    #         self.run_test = False
-    #         if self.distributed:
-    #             self.train_loader = DataLoader(dataset, batch_size=batch_size,
-    #                                                 pin_memory=True, shuffle=False,
-    #                                                 sampler=DistributedSampler(dataset,
-    #                                                                         num_replicas=self.world_size,
-    #                                                                         rank=self.global_rank,
-    #                                                                         shuffle=True))
-    #         else:
-    #             self.train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
     def setup_dataloaders(self, dataset: MultiDatasets, batch_size: int = 128):
         assert isinstance(dataset, MultiDatasets), f"Dataset should be of type MultiDatasets. Found {type(dataset)} instead!"
         self.setup_dataloaders_from_multidatasets(dataset=dataset, batch_size=batch_size)
-
-        # if isinstance(dataset, MultiDatasets):
-        #     self.setup_dataloaders_from_multidatasets(dataset=dataset,
-        #                                                 batch_size=batch_size)
-        # elif isinstance(dataset, Dataset):
-        #     self.setup_dataloaders_from_torch_dataset(dataset=dataset,
-        #                                                 batch_size=batch_size,
-        #                                                 split=False)
-        # else:
-        #     raise ValueError('Dataset provided is neither MultiDatasets nor torch Dataset!')
-        
-        # TODO: refactor TrainManager to only use MultiDatasets.
-        # assignees: AndAgio.
 
     def initialize_train(self, 
                         dataset: MultiDatasets,
