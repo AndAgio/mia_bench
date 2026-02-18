@@ -23,6 +23,9 @@ exes/
 *.txt
 !venv_files/requirements.txt
 !apptainers/*/requirements.txt
+apptainers/*/*.log
+apptainers/*/*.out
+apptainers/*/*.err
 
 tests/
 temp.py

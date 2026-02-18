@@ -1,2 +1,4 @@
-# mpi4py
-# watermark
+pysdd
+pydantic
+python-telegram-bot
+PyYaml
