@@ -1,0 +1,34 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%files
+    environment.yml /environment.yml
+    requirements.txt /requirements.txt
+
+%post
+
+    # Install optional packages and programs
+    # Need DEBIAN_FRONTEND=noninteractive to not get stuck during build
+    # Then clean up to keep the container small
+
+    apt-get update && \
+        DEBIAN_FRONTEND=noninteractive TZ=Europe/Amsterdam \
+        apt-get install -y libopenmpi-dev curl wget vim watch procps ncdu tree && \
+        apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # Create the __apptainer__ environment. The underscores indicate that the 
+    # environment is inside the container. This is a precausion to not mix the 
+    # environment up with environments outside the container. This can happen
+    # when /home/$USER is mounted inside the container. 
+
+    # Create a new Conda environment with JupyterLab
+    mamba env create --quiet --file /environment.yml
+    
+    # Clean up
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+    mamba clean --all -y
+
+    # Now add the script to activate the Conda environment
+    echo '. "/opt/conda/etc/profile.d/conda.sh"' >> $APPTAINER_ENVIRONMENT
+    echo 'conda activate __apptainer__' >> $APPTAINER_ENVIRONMENT
+

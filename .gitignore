@@ -21,6 +21,8 @@ exes/
 *.png
 *.pdf
 *.txt
+!venv_files/requirements.txt
+!apptainers/*/requirements.txt
 
 tests/
 temp.py

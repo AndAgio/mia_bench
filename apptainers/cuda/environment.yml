@@ -1,0 +1,40 @@
+name: __apptainer__
+channels:
+  - nvidia
+  - pytorch
+  - plotly
+  # - huggingface
+  - conda-forge
+dependencies:
+  - python==3.12
+  - pip
+  - plotly
+  # - ipywidgets
+  - tqdm
+  - seaborn
+  - pandas
+  - numpy
+  - scikit-learn
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - torchmetrics 
+  # - lightning
+  # - accelerate
+  # - safetensors
+  # - diffusers
+  # - transformers
+  # - datasets
+  # - deepspeed
+  # - opencv
+  - pillow
+  - spacy
+  - scipy
+  # - onnx
+  # - fastai
+  # - wandb
+  # - pycocotools
+  - tqdm 
+  - pip:
+    - -r requirements.txt
