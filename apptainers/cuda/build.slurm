@@ -1,6 +1,8 @@
 #!/bin/sh
 #SBATCH --job-name="build-apptainer" # Name of your job
-#SBATCH --partition=small            # Request partition.
+#SBATCH --account="ewi-insy-cys"     # Name of the account (research group)
+#SBATCH --partition=insy             # Request partition. Default is 'general' 
+#SBATCH --qos=medium                 # Request Quality of Service. Default is 'short' (maximum run time: 4 hours)
 #SBATCH --time=1:00:00               # Request run time (wall-clock). Default is 1 minute
 #SBATCH --nodes=1                    # Number of nodes to allocate
 #SBATCH --tasks-per-node=1           # Number of tasks to run per node
