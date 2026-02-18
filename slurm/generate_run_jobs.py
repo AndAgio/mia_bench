@@ -1,24 +1,39 @@
 import os
+import pathlib
 import shutil
 import glob
 import subprocess
-from src.utils.yaml import load_secrets_yaml
+from ..src.utils.yaml import load_secrets_yaml
+
+
+def define_slurm_file_preamble(job_name, secrets):
+    text = "#!/bin/sh\n"
+    text += f"\n#SBATCH --job-name {job_name}"
+    text += f"\n#SBATCH --account={secrets['cluster']['account']}"
+    text += f"\n#SBATCH --partition={secrets['cluster']['partition']}"
+    text += f"\n#SBATCH --qos={secrets['cluster']['qos']}"
+    text += f"\n#SBATCH --time {secrets['cluster']['timeout']}"
+    text += f"\n#SBATCH --nodes={secrets['cluster']['nodes']}"
+    text += f"\n#SBATCH --tasks-per-node={secrets['cluster']['tasks_per_node']}"
+    text += f"\n#SBATCH --cpus-per-task={secrets['cluster']['cpus_per_task']}"
+    text += f"\n#SBATCH --mem={secrets['cluster']['mem']}"
+    text += f"\n#SBATCH --output={job_name}.out"
+    text += f"\n#SBATCH --error={job_name}.out"
+    if secrets['cluster']['university'] == 'delft':
+        text += f"\n#SBATCH --mail-type=END"
+    text += "\ncd .."
+    if secrets['cluster']['university'] == 'delft':
+        text += f"\nexport APPTAINER_IMAGE={secrets['cluster']['container_path']}"
+
+
 
 MODE = 'train_defender'  # 'train_defender' or 'run_attack'
-
-TIMEOUT = load_secrets_yaml()['cluster']['server_timeout']
-CLUSTER_MACHINE = load_secrets_yaml()['cluster']['server_qos']
-REQUESTED_GPU = "v100"
-ACCOUNT = load_secrets_yaml()['cluster']['server_account']
-NODES = 1
-GPUS_PER_NODE = 1
-CPUS_PER_TASK = 1
-MEM_PER_CPU = 50000
+secrets = load_secrets_yaml()
 
 
 # Rotating variable
-DATASETS = ['cifar10', 'cifar100', 'svhn', 'fmnist', 'cinic10', 'tinyimagenet']
-VICTIM_MODELS = ['resnet18', 'resnet50', 'vgg16', 'mobile_small', 'mobile_large', 'wideresnet_16_8', 'wideresnet_28_10', 'wideresnet_50_2', "inception_v3"]
+DATASETS = ['cifar10'] # ['cifar10', 'cifar100', 'svhn', 'fmnist', 'cinic10', 'tinyimagenet']
+VICTIM_MODELS = ['resnet18'] # ['resnet18', 'resnet50', 'vgg16', 'mobile_small', 'mobile_large', 'wideresnet_16_8', 'wideresnet_28_10', 'wideresnet_50_2', "inception_v3"]
 ATTACKS = ['on_robust', 'off_robust', "lira", "quantile", "neural_feat", "neural_prob", "neural_logit", 'rmia_loss', 'rmia_confidence', 'rmia_entropy', 'pmia_loss', 'pmia_confidence', 'pmia_entropy']
 # ATTACKER_MODEL = ['resnet18']
 
@@ -222,14 +237,14 @@ SGD_HYPERPARAMS = {
 
 
 # Fixed variables
-VICTIM_EPOCHS = 100
-ATTACKER_EPOCHS = 50
 N_SHADOWS = 50
 SAMPLES_SHADOW = 10000
 SAMPLES_AUDIT = 5000
 
 # Defining folder where to store job files
 jobs_dir = 'exes'
+PATH_REPO = pathlib.Path(__file__).parent.parent
+jobs_dir = os.path.join(PATH_REPO, jobs_dir)
 if os.path.exists(jobs_dir) and os.path.isdir(jobs_dir):
     shutil.rmtree(jobs_dir)
 os.makedirs(jobs_dir, exist_ok=True)
@@ -241,22 +256,14 @@ if MODE == 'train_defender':
             job_name = 'train_defender_{}_with_{}'.format(dataset, defender_model)
             print(f"Generating sbatch file for job with name: {job_name}")
             # Define device usages
-            text = "#!/bin/sh\n"
-            text += f"\n#SBATCH --account={ACCOUNT} --qos={CLUSTER_MACHINE} --partition={REQUESTED_GPU}"
-            text += f"\n#SBATCH --time {TIMEOUT}"
-            text += f"\n#SBATCH --nodes={NODES} --gpus-per-node={GPUS_PER_NODE} --cpus-per-task={CPUS_PER_TASK}"
-            text += f"\n#SBATCH --job-name {job_name}"
-            text += f"\n#SBATCH --output={job_name}.out"
-            text += f"\n#SBATCH --error={job_name}.out"
-            text += f"\n#SBATCH --mem-per-cpu={MEM_PER_CPU}"
-            
-            text += "\ncd .."
+            text = define_slurm_file_preamble(job_name, secrets)
 
             cfg = SGD_HYPERPARAMS[dataset]
             cfg = cfg.get(defender_model, cfg["default"])
 
             # Define python script to launch
-            text += f"\n\npython train_defender.py --dataset={dataset} --defender_model={defender_model} "\
+            text += f"\n\n{'srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/' if secrets['cluster']['university'] == 'delft' else ''}"\
+                    f"python train_defender.py --dataset={dataset} --defender_model={defender_model} "\
                     f"--defender_epochs={cfg['training']['epochs']} --defender_batch_size={cfg['training']['batch_size']} "\
                     f"--defender_optimizer={cfg['optimizer']['name']} --defender_lr={cfg['optimizer']['lr']} --defender_weight_decay={cfg['optimizer']['weight_decay']} --defender_momentum={cfg['optimizer']['momentum']} {'--defender_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
                     f"--defender_lr_sched={cfg['scheduler']['name']} "
@@ -285,22 +292,14 @@ elif MODE == 'run_attack':
                 job_name = '{}_on_{}_with_vic_{}_and_att_{}'.format(attack, dataset, attacker_model, defender_model)
                 print(f"Generating sbatch file for job with name: {job_name}")
                 # Define device usages
-                text = "#!/bin/sh\n"
-                text += f"\n#SBATCH --account={ACCOUNT} --qos={CLUSTER_MACHINE} --partition={REQUESTED_GPU}"
-                text += f"\n#SBATCH --time {TIMEOUT}"
-                text += f"\n#SBATCH --nodes={NODES} --gpus-per-node={GPUS_PER_NODE} --cpus-per-task={CPUS_PER_TASK}"
-                text += f"\n#SBATCH --job-name {job_name}"
-                text += f"\n#SBATCH --output={job_name}.out"
-                text += f"\n#SBATCH --error={job_name}.out"
-                text += f"\n#SBATCH --mem-per-cpu={MEM_PER_CPU}"
-                
-                text += "\ncd .."
+                text = define_slurm_file_preamble(job_name, secrets)
 
                 cfg = SGD_HYPERPARAMS[dataset]
                 cfg = cfg.get(defender_model, cfg["default"])
 
                 # Define python script to launch
-                text += f"\n\npython run.py --dataset={dataset} --defender_model={defender_model} "\
+                text += f"\n\n{'srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/' if secrets['cluster']['university'] == 'delft' else ''}"\
+                        f"python run.py --dataset={dataset} --defender_model={defender_model} "\
                         f"--defender_epochs={cfg['training']['epochs']} --defender_batch_size={cfg['training']['batch_size']} "\
                         f"--defender_optimizer={cfg['optimizer']['name']} --defender_lr={cfg['optimizer']['lr']} --defender_weight_decay={cfg['optimizer']['weight_decay']} --defender_momentum={cfg['optimizer']['momentum']} {'--defender_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
                         f"--defender_lr_sched={cfg['scheduler']['name']} "
@@ -334,25 +333,26 @@ elif MODE == 'run_attack':
                         f"--resume"
 
                 # Write file
-                with open(os.path.join(jobs_dir, '{}.sbatch'.format(job_name)), 'w') as f:
+                with open(os.path.join(jobs_dir, '{}.slurm'.format(job_name)), 'w') as f:
                     f.write(text)
 else:
     raise ValueError(f"Unknown MODE '{MODE}' specified!")
 
-# SUBMIT
-files = glob.glob(os.path.join(jobs_dir, '*.sbatch'))
-skeemed_files = []
-for file in files:
-    with open(file) as f:
-        content = f.readlines()
-        if CLUSTER_MACHINE in content[2]:
-            skeemed_files.append(file)
+# # SUBMIT JOBS
+# files = glob.glob(os.path.join(jobs_dir, '*.slurm'))
+# skeemed_files = files
+# # skeemed_files = []
+# # for file in files:
+# #     with open(file) as f:
+# #         content = f.readlines()
+# #         if CLUSTER_MACHINE in content[2]:
+# #             skeemed_files.append(file)
 
-print('Skeemed files: {}'.format(skeemed_files))
+# # print('Skeemed files: {}'.format(skeemed_files))
 
-commands = ['cd {}\nsbatch {}'.format(jobs_dir, filename.split('/')[-1]) for filename in skeemed_files]
-procs = [subprocess.Popen(commands[j], shell=True) for j in range(len(commands))]
-for p in procs:
-    p.wait()
+# commands = ['cd {}\nsbatch {}'.format(jobs_dir, filename.split('/')[-1]) for filename in skeemed_files]
+# procs = [subprocess.Popen(commands[j], shell=True) for j in range(len(commands))]
+# for p in procs:
+#     p.wait()
 
 
