@@ -6,10 +6,10 @@
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=32024
+#SBATCH --mem=50GB
 #SBATCH --mail-type=END
 #SBATCH --output=run_mia.out
-#SBATCH --error=run_mia.err
+#SBATCH --error=run_mia.out
 
 #SBATCH --gres=gpu:1
 
