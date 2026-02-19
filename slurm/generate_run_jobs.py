@@ -25,6 +25,10 @@ def define_slurm_file_preamble(job_name, secrets):
     text += f"\n#SBATCH --error={job_name}.out"
     if secrets['cluster']['university'] == 'delft':
         text += f"\n#SBATCH --mail-type=END"
+        gpu_type = ":" + secrets['cluster']['gpu_type'] if secrets['cluster']['gpu_type'] != 'none' else ''
+        text += f"\n#SBATCH --gres=gpu{gpu_type}:{secrets['cluster']['gpu_num']}"
+    elif secrets['cluster']['university'] == 'purdue':
+        text += f"\n#SBATCH --gpus-per-node={secrets['cluster']['gpu_num']}"
     text += "\n\ncd .."
     if secrets['cluster']['university'] == 'delft':
         text += f"\nexport APPTAINER_IMAGE={secrets['cluster']['container_path']}"
