@@ -1,5 +1,9 @@
 import os
-from src.data import CIFAR10, CIFAR100, SVHN, FashionMNIST, ImageNet, TinyImageNet, ImageNet1K
+import pathlib
+import sys
+PATH_REPO = pathlib.Path(__file__).parent.parent.parent
+sys.path.append(str(PATH_REPO))
+from . import CIFAR10, CIFAR100, SVHN, FashionMNIST, ImageNet, TinyImageNet, ImageNet1K
 from src.utils import gather_settings
 
 

@@ -15,4 +15,4 @@
 cd ..
 export APPTAINER_IMAGE="apptainers/cuda/cuda_container.sif"
 # Run script
-srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/ $APPTAINER_IMAGE python download_all_datasets.py
+srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/ $APPTAINER_IMAGE python -m src.data
