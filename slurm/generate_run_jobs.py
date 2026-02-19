@@ -3,7 +3,11 @@ import pathlib
 import shutil
 import glob
 import subprocess
-from ..src.utils.yaml import load_secrets_yaml
+PATH_REPO = pathlib.Path(__file__).parent.parent
+print(f"PATH_REPO: {PATH_REPO}")
+import sys
+sys.path.append(str(PATH_REPO))
+from src.utils.yaml import load_secrets_yaml
 
 
 def define_slurm_file_preamble(job_name, secrets):
@@ -21,9 +25,10 @@ def define_slurm_file_preamble(job_name, secrets):
     text += f"\n#SBATCH --error={job_name}.out"
     if secrets['cluster']['university'] == 'delft':
         text += f"\n#SBATCH --mail-type=END"
-    text += "\ncd .."
+    text += "\n\ncd .."
     if secrets['cluster']['university'] == 'delft':
         text += f"\nexport APPTAINER_IMAGE={secrets['cluster']['container_path']}"
+    return text
 
 
 
@@ -243,7 +248,6 @@ SAMPLES_AUDIT = 5000
 
 # Defining folder where to store job files
 jobs_dir = 'exes'
-PATH_REPO = pathlib.Path(__file__).parent.parent
 jobs_dir = os.path.join(PATH_REPO, jobs_dir)
 if os.path.exists(jobs_dir) and os.path.isdir(jobs_dir):
     shutil.rmtree(jobs_dir)
@@ -262,7 +266,7 @@ if MODE == 'train_defender':
             cfg = cfg.get(defender_model, cfg["default"])
 
             # Define python script to launch
-            text += f"\n\n{'srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/' if secrets['cluster']['university'] == 'delft' else ''}"\
+            text += f"\n\n{'srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/ $APPTAINER_IMAGE ' if secrets['cluster']['university'] == 'delft' else ''}"\
                     f"python train_defender.py --dataset={dataset} --defender_model={defender_model} "\
                     f"--defender_epochs={cfg['training']['epochs']} --defender_batch_size={cfg['training']['batch_size']} "\
                     f"--defender_optimizer={cfg['optimizer']['name']} --defender_lr={cfg['optimizer']['lr']} --defender_weight_decay={cfg['optimizer']['weight_decay']} --defender_momentum={cfg['optimizer']['momentum']} {'--defender_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
@@ -298,7 +302,7 @@ elif MODE == 'run_attack':
                 cfg = cfg.get(defender_model, cfg["default"])
 
                 # Define python script to launch
-                text += f"\n\n{'srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/' if secrets['cluster']['university'] == 'delft' else ''}"\
+                text += f"\n\n{'srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/ $APPTAINER_IMAGE ' if secrets['cluster']['university'] == 'delft' else ''}"\
                         f"python run.py --dataset={dataset} --defender_model={defender_model} "\
                         f"--defender_epochs={cfg['training']['epochs']} --defender_batch_size={cfg['training']['batch_size']} "\
                         f"--defender_optimizer={cfg['optimizer']['name']} --defender_lr={cfg['optimizer']['lr']} --defender_weight_decay={cfg['optimizer']['weight_decay']} --defender_momentum={cfg['optimizer']['momentum']} {'--defender_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
