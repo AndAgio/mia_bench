@@ -1,16 +1,16 @@
 #!/bin/sh
-#SBATCH --job-name="build-apptainer" # Name of your job
-#SBATCH --account="ewi-insy-cys"     # Name of the account (research group)
-#SBATCH --partition=insy             # Request partition. Default is 'general' 
-#SBATCH --qos=medium                 # Request Quality of Service. Default is 'short' (maximum run time: 4 hours)
-#SBATCH --time=1:00:00               # Request run time (wall-clock). Default is 1 minute
-#SBATCH --nodes=1                    # Number of nodes to allocate
-#SBATCH --tasks-per-node=1           # Number of tasks to run per node
-#SBATCH --cpus-per-task=12           # Request number of CPUs (threads) per task
-#SBATCH --mem=12GB                   # Amount of memory to allocate
-#SBATCH --mail-type=END              # Set mail type to 'END' to receive a mail when the job finishes
-#SBATCH --output=slurm-%x-%j.out     # Set name of output log. %j is the Slurm jobId
-#SBATCH --error=slurm-%x-%j.err      # Set name of error log. %j is the Slurm jobId
+#SBATCH --job-name="build-cuda-apptainer"
+#SBATCH --account="ewi-insy-cys"
+#SBATCH --partition=insy
+#SBATCH --qos=medium
+#SBATCH --time=1:00:00
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=12
+#SBATCH --mem=12GB
+#SBATCH --mail-type=END
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 
 # Start measuring execution time
 start_time=$(date +%s)
