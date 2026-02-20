@@ -270,7 +270,7 @@ if MODE == 'train_defender':
             cfg = cfg.get(defender_model, cfg["default"])
 
             # Define python script to launch
-            text += f"\n\n{'srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/ $APPTAINER_IMAGE ' if secrets['cluster']['university'] == 'delft' else ''}"\
+            text += f"\n\n{'srun apptainer exec --nv -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/ $APPTAINER_IMAGE ' if secrets['cluster']['university'] == 'delft' else ''}"\
                     f"python train_defender.py --dataset={dataset} --defender_model={defender_model} "\
                     f"--defender_epochs={cfg['training']['epochs']} --defender_batch_size={cfg['training']['batch_size']} "\
                     f"--defender_optimizer={cfg['optimizer']['name']} --defender_lr={cfg['optimizer']['lr']} --defender_weight_decay={cfg['optimizer']['weight_decay']} --defender_momentum={cfg['optimizer']['momentum']} {'--defender_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
