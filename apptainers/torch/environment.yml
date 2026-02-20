@@ -1,0 +1,65 @@
+name: apptainer
+channels:
+  - conda-forge
+  - nvidia
+  - pytorch
+  - huggingface
+  - plotly
+dependencies:
+  # Core Python and System Utilities
+  - python
+  - pip
+#  - jupyterlab
+#  - tqdm
+
+  # Data Manipulation and Visualization
+#  - numpy #<2.0.0
+#  - pandas
+#  - seaborn
+#  - matplotlib
+#  - plotly
+#  - ipywidgets
+
+  # Machine Learning and Deep Learning Frameworks
+#  - scikit-learn
+  - pytorch==2.2.1
+#  - torchvision
+# - torchaudio
+  - pytorch-cuda=12.1
+#  - torchmetrics
+#  - lightning
+#  - accelerate
+#  - fastai
+#  - deepspeed
+
+  # Hugging Face Ecosystem
+#  - transformers
+#  - datasets
+#  - diffusers
+#  - safetensors
+#  - evaluate
+#  - sentence-transformers
+
+  # Computer Vision
+#  - opencv
+#  - pillow
+#  - pycocotools
+
+  # Natural Language Processing
+#  - spacy
+#  - nltk
+#  - gensim
+#  - fasttext
+
+  # Scientific Computing
+#  - scipy
+#  - onnx
+
+  # Experiment Tracking
+#  - wandb
+#  - mlflow
+
+  # Pip Dependencies
+ # - pip:
+ #     - -r requirements.txt
+
