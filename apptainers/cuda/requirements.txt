@@ -1,4 +1,3 @@
-pysdd
 pydantic
 python-telegram-bot
 PyYaml
