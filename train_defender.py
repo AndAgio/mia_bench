@@ -2,8 +2,8 @@ from src.utils.settings import gather_settings, setup_configs_and_folder_from_se
 from src.mia.defenses import get_defender_class
 
 
+import torch
 def get_device(dev_str: str = 'cpu'):
-    import torch
     # Set appropriate devices
     if torch.cuda.is_available() and dev_str != 'cpu':
         dev_str = 'cuda:{}'.format(dev_str)
@@ -22,6 +22,7 @@ def main():
 
     print("\n\n================= Device Configurations =================")
     print(f"Using device: {experiment_configs.defender.train.device}")
+    print(f"torch.cuda.is_available(): {torch.cuda.is_available()}")
     print(f"Device name: {get_device(experiment_configs.defender.train.device)}")
     print("=========================================================\n\n")
 

@@ -32,6 +32,8 @@ def define_slurm_file_preamble(job_name, secrets):
     text += "\n\ncd .."
     if secrets['cluster']['university'] == 'delft':
         text += f"\nexport APPTAINER_IMAGE={secrets['cluster']['container_path']}"
+        text += f"\n\nmodule use /opt/insy/modulefiles"
+        text += f"\nmodule load cuda/12.4"
     return text
 
 
