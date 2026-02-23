@@ -1,2 +1,26 @@
-mpi4py
-watermark
+# mpi4py
+# watermark
+
+
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.4.1
+torchmetrics
+torchvision
+torchaudio
+matplotlib==3.10.7
+networkx==3.5
+opacus==1.5.4
+pandas==2.3.3
+pillow==12.0.0
+pydantic==2.12.4
+pydantic-core==2.41.5
+pysdd==1.0.5
+python-graphviz==0.21
+python-telegram-bot==22.5
+pytorch-lightning==2.5.6
+pyyaml==6.0.3
+scikit-learn==1.7.2
+scipy==1.16.3
+seaborn==0.13.2
+sympy==1.14.0
+tqdm==4.67.1
