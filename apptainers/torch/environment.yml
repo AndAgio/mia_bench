@@ -22,10 +22,10 @@ dependencies:
 
   # Machine Learning and Deep Learning Frameworks
 #  - scikit-learn
-  - pytorch==2.2.1
+  - pytorch==2.5.1
 #  - torchvision
 # - torchaudio
-  - pytorch-cuda=12.1
+  - pytorch-cuda=12.4
 #  - torchmetrics
 #  - lightning
 #  - accelerate
