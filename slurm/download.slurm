@@ -13,6 +13,6 @@
 
 # Remaining job commands go below here. For example, to run python code that makes use of GPU resources:
 cd ..
-export APPTAINER_IMAGE="apptainers/cuda/cuda_container.sif"
+export APPTAINER_IMAGE="apptainers/torch/torch_container.sif"
 # Run script
 srun apptainer exec -B $HOME:$HOME -B /tudelft.net/:/tudelft.net/ $APPTAINER_IMAGE python -m src.data
