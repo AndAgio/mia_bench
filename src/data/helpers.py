@@ -171,3 +171,67 @@ class FixedLabelDataset(Dataset):
     def get_all_original_indices(self):
         """Public accessor for the full list of originals (as resolved by IndexedDataset)."""
         return list(self._orig_indices)
+    
+    @property
+    def transform(self):
+        if isinstance(self.data, Subset):
+            return self.data.dataset.transform
+        elif isinstance(self.data, Dataset):
+            return self.data.transform
+        else:
+            raise ValueError(f"Found dataset of type {type(self.data)} inside FixedLabelDataset. It is not supported for getting transform!")
+
+
+
+class MyConcatDataset(ConcatDataset):
+    def __init__(self, datasets: list[Dataset]):
+        super().__init__(datasets)
+
+    def __getitem__(self, idx):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError(
+                    "absolute value of index should not exceed dataset length"
+                )
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+        batch_x, batch_y, original_id, _ = self.datasets[dataset_idx][sample_idx]
+        return batch_x, batch_y, original_id, idx
+
+    @property
+    def transform(self):
+        transforms = []
+        for dataset in self.datasets:
+            if isinstance(dataset, Subset):
+                transforms.append(dataset.dataset.transform)
+            elif isinstance(dataset, Dataset):
+                transforms.append(dataset.transform)
+            else:
+                try:
+                    transforms.append(dataset.transform)
+                except AttributeError:
+                    raise ValueError(f"Found dataset of type {type(dataset)} inside MyConcatDataset. It is not supported for getting transform!")
+        if not all(are_transforms_equal(transforms[0], t) for t in transforms):
+            print(f"WARNING: not all datasets in MyConcatDataset have the same transform! Found transforms: {transforms}. Returning the first one by default.")
+        return transforms[0]
+
+
+def are_transforms_equal(t1: transforms, t2: transforms):
+    # Check if they have the same number of steps
+    if len(t1.transforms) != len(t2.transforms):
+        return False
+    
+    # Iterate through and compare each step
+    for step1, step2 in zip(t1.transforms, t2.transforms):
+        # Check if they are the exact same type of transform
+        if type(step1) != type(step2):
+            return False
+        # Check if their internal parameters match
+        if step1.__dict__ != step2.__dict__:
+            return False
+            
+    return True
