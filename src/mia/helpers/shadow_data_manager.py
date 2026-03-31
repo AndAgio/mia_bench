@@ -6,7 +6,7 @@ import copy
 import torch
 from typing import Union
 from torch.utils.data import Subset, ConcatDataset
-from src.data.helpers import MultiDatasets
+from src.data.helpers import MultiDatasets, MyConcatDataset
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager, FixedLabelDataset
 from src.utils.configs import ShadowDataConfigs
 from src.utils.log import Loggable, MyLogger
@@ -30,10 +30,12 @@ class ShadowDatasetsManager(Loggable):
 
         assert shadow_configs.mode in ['online', 'offline']
         self.mode = shadow_configs.mode
+        self.shadow_configs = shadow_configs
         assert auditing_dataset is not None
         assert auditing_dataset.get_all_ids() is not None
         assert auditing_dataset.get_all_ids() != []
         self.auditing_indices = auditing_dataset.get_all_ids()
+        self.auditing_dataset = auditing_dataset
 
         if self.mode == 'online':
             if not shadow_configs.n_samples_per_dataset > len(self.auditing_indices):
@@ -223,43 +225,68 @@ class ShadowDatasetsManager(Loggable):
         return indices
     
     def get_random_population(self, indices: dict = None, num_data: int = None, labels: str = 'original'):
+        assert labels in ['mia', 'original', 'shadow'], f"Labels mode should be either mia, original or shadow! Found {labels} instead!"
         original_train_data = self.original_datasets.get('train')
         original_test_data = self.original_datasets.get('test')
         if indices is None:
             assert 0 < num_data <= 1000, f"Number of data to sample random population should be between 1 and 1000, received {num_data} instead!"
             indices = self.sample_random_indices(num_data=num_data)
         if labels == 'mia':
+            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
+            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
             train_data = Subset(original_train_data, indices['train_ids'])
             test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
-            return ConcatDataset([FixedLabelDataset(train_data,
-                                                    fixed_label=1),
-                                    FixedLabelDataset(test_data,
-                                                    fixed_label=0),])
+            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+                                    FixedLabelDataset(test_data, fixed_label=0),])
         elif labels == 'original':
+            # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+            # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
             train_data = Subset(original_train_data, indices['train_ids'])
             test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
-            return ConcatDataset([train_data,test_data])
+            return MyConcatDataset([train_data,test_data])
+        elif labels == 'shadow':
+            raise ValueError('Labels mode shadow is not supported for random population sampling! This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. Therefore, we want to learn to classify all their training data as members. This does not make sense when sampling random populations that are not associated to any shadow dataset!')
         else:
-            raise ValueError('Labels mode should be either mia or original!')
+            raise ValueError('Labels mode should be either mia, original or shadow!')
 
+    def get_map(self, index: int):
+        assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get map with id {index}"
+        return self.shadow_datasets_map[index]
+    
+    def set_map(self, index: int, new_map: dict, force_new_index: bool = False):
+        if not force_new_index:
+            assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to set map with id {index}"
+        self.shadow_datasets_map[index] = new_map
     
     def get(self, index: int, labels: str = 'mia'):
         assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
+        assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to get shadow dataset with id {index}!"
         original_train_data = self.original_datasets.get('train')
         original_test_data = self.original_datasets.get('test')
         if labels == 'mia':
+            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
+            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
             train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
             test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
-            return ConcatDataset([FixedLabelDataset(train_data,
-                                                    fixed_label=1),
-                                    FixedLabelDataset(test_data,
-                                                    fixed_label=0),])
+            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+                                    FixedLabelDataset(test_data, fixed_label=0),])
         elif labels == 'original':
+            # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+            # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
             train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
             test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
-            return ConcatDataset([train_data,test_data])
+            return MyConcatDataset([train_data,test_data])
+        elif labels == 'shadow':
+            # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as members (1) regardless of their original membership. 
+            # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
+            # Therefore, we want to learn to classify all their training data as members.
+            train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
+            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+                                    FixedLabelDataset(test_data, fixed_label=1),])
         else:
-            raise ValueError('Labels mode should be either mia or original!')
+            raise ValueError('Labels mode should be either mia, original or shadow!')
+        
 
     def get_by_indices(self, indices: list[int], labels: str = 'mia'):
         datasets = MultiDatasets()
@@ -302,20 +329,99 @@ class ShadowDatasetsManager(Loggable):
         return list(set(all_ids))
     
     def get_all_samples_in_all_shadow_datasets(self, labels: str = 'original'):
+        assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to get all samples in all shadow datasets!"
         original_train_data = self.original_datasets.get('train')
         original_test_data = self.original_datasets.get('test')
         all_train_indices = list(set().union(*[self.shadow_datasets_map[index]['train_ids'] for index in range(self.n_shadow_datasets)]))
         all_test_indices = list(set().union(*[self.shadow_datasets_map[index]['test_ids'] for index in range(self.n_shadow_datasets)]))
         if labels == 'mia':
+            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
+            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
             train_data = Subset(original_train_data, all_train_indices)
             test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
-            return ConcatDataset([FixedLabelDataset(train_data,
-                                                    fixed_label=1),
-                                    FixedLabelDataset(test_data,
-                                                    fixed_label=0),])
+            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+                                    FixedLabelDataset(test_data, fixed_label=0),])
         elif labels == 'original':
+            # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+            # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
             train_data = Subset(original_train_data, all_train_indices)
             test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
-            return ConcatDataset([train_data,test_data])
+            return MyConcatDataset([train_data,test_data])
+        elif labels == 'shadow':
+            # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as members (1) regardless of their original membership. 
+            # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
+            # Therefore, we want to learn to classify all their training data as members.
+            train_data = Subset(original_train_data, all_train_indices)
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
+            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+                                    FixedLabelDataset(test_data, fixed_label=1),])
         else:
-            raise ValueError('Labels mode should be either mia or original!')
+            raise ValueError('Labels mode should be either mia, original or shadow!')
+        
+    def sample_outside_shadow_dataset(self, index: int, num_data: int, labels: str = 'original'):
+        assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
+        assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to sample outside shadow dataset with id {index}!"
+        inside_ids = self.shadow_datasets_map[index]['all_ids']
+        original_train_data = self.original_datasets.get('train')
+        original_test_data = self.original_datasets.get('test')
+        indices_to_avoid = copy.deepcopy(self.auditing_indices)
+        indices_original_train = [i for i in range(len(original_train_data)) if i not in indices_to_avoid]
+        indices_original_test = [i for i in range(len(original_train_data),len(original_test_data)+len(original_train_data))]
+        all_original_indexes = indices_original_train + indices_original_test
+        available_indices = [i for i in all_original_indexes if i not in inside_ids]
+        assert len(available_indices) >= num_data, f"Not enough available data to sample outside shadow dataset! Requested {num_data} samples but only {len(available_indices)} are available."
+        sampled_indices = self._rng.choice(available_indices, num_data, replace=False).tolist()
+        if labels == 'mia':
+            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
+            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
+            train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
+            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+                                FixedLabelDataset(test_data, fixed_label=0),])
+        elif labels == 'original':
+            # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+            # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
+            train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
+            return MyConcatDataset([train_data,test_data])
+        elif labels == 'shadow':
+            # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as non members (0) since we are sampling outside the shadow dataset selected with the index (regardless of their original membership). 
+            # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
+            # Therefore, we want to learn to classify all their training data as non members.
+            train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
+            test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
+            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=0),
+                                    FixedLabelDataset(test_data, fixed_label=0),])
+        else:
+            raise ValueError('Labels mode should be either mia, original or shadow!')
+
+    def clone(self):
+        return ShadowDatasetsManager(original_datasets=self.original_datasets,
+                                    auditing_dataset=self.auditing_dataset,
+                                    shadow_configs=self.shadow_configs,
+                                    attacker_hash=self.attacker_hash,
+                                    logger=self.logger)
+
+    # def clone_with_n_shadow_datasets(self, n_datasets: int):
+    #     new_shadow_configs = copy.deepcopy(self.shadow_configs)
+    #     new_shadow_configs.n_shadow_datasets = n_datasets
+    #     return ShadowDatasetsManager(original_datasets=self.original_datasets,
+    #                                 auditing_dataset=self.auditing_dataset,
+    #                                 shadow_configs=new_shadow_configs,
+    #                                 attacker_hash=self.attacker_hash,
+    #                                 logger=self.logger)
+
+    # def replicate_dataset(self, index: int, n_replicas: int):
+    #     # Replicate the chosen shadow dataset n_replicas times and assign it to new indices.
+    #     duplicate = self.clone_with_n_shadow_datasets(n_datasets=n_replicas)
+    #     for i in range(n_replicas):
+    #         duplicate.set_map(index=i,
+    #                         new_map=copy.deepcopy(self.shadow_datasets_map[index]))
+    #     return duplicate
+
+    def replicate_dataset(self, index: int, n_replicas: int):
+        # Replicate the chosen shadow dataset n_replicas times and assign it to new indices.
+        for i in range(n_replicas):
+            self.set_map(index=i,
+                        new_map=copy.deepcopy(self.shadow_datasets_map[index]),
+                        force_new_index=True)
