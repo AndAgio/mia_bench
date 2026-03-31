@@ -86,6 +86,7 @@ def gather_settings():
                                         'weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws',
                                         'purifier',
                                         'mmd', 'mmd_mixup', 'mmd-mixup',
+                                        'ldl',
                                         'data_augmentation', 'augmentation', 'data-augmentation',])
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
@@ -163,7 +164,24 @@ def gather_settings():
         # MMD parameters for defender model
         parser.add_argument('--defender_mmd_lambda', type=float, default=1.0,
                                 help='Lambda parameter for MMD defense')
+        # LDL parameters for defender model
+        parser.add_argument('--defender_ldl_n_queries', type=int, default=100,
+                                help='Number of queries to train the LDL defense layer')
+        parser.add_argument('--defender_ldl_noise_scale', type=float, default=0.1,
+                                help='Standard deviation of the noise to be added in the LDL defense layer')
         # Data Augmentation parameters for defender model
+        parser.add_argument('--defender_augment_horizontal_flip', action="store_true", default=False,
+                                help="whether to apply horizontal flip augmentation for the Data Augmentation defense",)
+        parser.add_argument('--defender_augment_rotation', type=float, default=10,
+                                help='degree of random rotation augmentation for the Data Augmentation defense')
+        parser.add_argument('--defender_augment_random_crop', type=int, default=32,
+                                help="whether to apply random crop augmentation for the Data Augmentation defense",)
+        parser.add_argument('--defender_augment_jitter_brightness', type=float, default=0.2,
+                                help='brightness jitter factor for the Color Jitter augmentation in the Data Augmentation defense')
+        parser.add_argument('--defender_augment_jitter_hue', type=float, default=0.2,
+                                help='hue jitter factor for the Color Jitter augmentation in the Data Augmentation defense')
+        parser.add_argument('--defender_augment_perspective_distortion_scale', type=float, default=0.2,
+                                help='distortion scale for the Random Perspective augmentation in the Data Augmentation defense')
         parser.add_argument("--data_augmentation", action="store_true", default=False,
                                 help="augment data by flipping and cropping",)
         
@@ -195,7 +213,15 @@ def gather_settings():
                                 choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust', "lira", "quantile",
                                         "neural_feat", "neural_prob", "neural_logit", 
                                         'rmia_loss', 'rmia_confidence', 'rmia_entropy', 
-                                        'pmia_loss', 'pmia_confidence', 'pmia_entropy'])
+                                        'pmia_loss', 'pmia_confidence', 'pmia_entropy',
+                                        'sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom',
+                                        'uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom',
+                                        'noise_robust', 'noise_robustness', 'noise_rob', 'nr',
+                                        'transfer_loss', 'transfer_confidence', 'transfer_entropy',
+                                        'oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm',
+                                        'dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black', 'dh-attack_random',
+                                        'online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo',
+                                        ])
         parser.add_argument('--n_auditing_samples', type=int, default=1000,
                                 help='Number of samples to use for auditing on the attacker side')
         parser.add_argument('--audit_in_perc', type=float, default=0.5,
@@ -239,7 +265,51 @@ def gather_settings():
         # Attack-P MIA parameters
         parser.add_argument('--p_alpha', type=float, default=0.05,
                                 help='Alpha to be used in the Attack-P MIA attack')
-        
+        # Boundary MIA parameters
+        parser.add_argument('--bound_n_queries', type=int, default=1000,
+                                help='Number of queries to train the attack regressor in the Boundary MIA attack')
+        parser.add_argument('--bound_norm', type=str, default='l2',
+                                help='Norm to use for the hopskip steps in the Boundary MIA attack')
+        parser.add_argument('--bound_qeba_reduction_factor', type=int, default=8,
+                                help='Reduction factor for QEBA (spatial/dct variants)')
+        parser.add_argument('--bound_quantile', type=float, default=0.5,
+                                help='Quantile to use for the unsupervised variant of the Boundary MIA attack')
+        # Noise Robustness MIA parameters
+        parser.add_argument('--noise_robust_n_queries', type=int, default=5000,
+                                help='Number of noisy copies to create for each sample in the Noise Robustness MIA attack')
+        parser.add_argument('--noise_robust_sigmas', type=float, nargs="+", default=[0.01, 0.05, 0.1, 0.15, 0.2, 0.25], #[0.1, 0.2, 0.3, 0.4, 0.5], #[0.001, 0.002, 0.005, 0.008, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2],
+                                help='Standard deviations of the gaussian noise to be added in the Noise Robustness MIA attack')
+        # OSLO MIA parameters
+        parser.add_argument('--oslo_n_models', type=int, default=10,
+                                help='Number of shadow models to be trained for the OSLO MIA attack')
+        parser.add_argument('--oslo_same_arch', action='store_true', default=False,
+                                help='Whether to use the same architecture for all shadow models or not')
+        parser.add_argument('--oslo_source_models_ratio', type=float, default=0.75,
+                                help='Ratio of shadow models to use as source models for the attack (the rest will be used as validation models)')
+        parser.add_argument('--oslo_K', type=int, default=10,
+                                help='Number of attack sub-procedures for the OSLO MIA attack')
+        parser.add_argument('--oslo_N', type=int, default=1000,
+                                help='Number of attack iterations per sub-procedure for the OSLO MIA attack')
+        parser.add_argument('--oslo_max_epsilon', type=float, default=4/255,
+                                help='Maximum perturbation for the OSLO MIA attack')
+        parser.add_argument('--oslo_threshold', type=float, default=0.01,
+                                help='Decision threshold for the OSLO MIA attack')
+        # DHAttack MIA parameters
+        parser.add_argument('--dh_n_models', type=int, default=10,
+                                help='Number of shadow models to be trained for the DHAttack MIA attack')
+        parser.add_argument('--dh_n_queries', type=int, default=1000,
+                                help='Number of queries to train the attack regressor in the DHAttack MIA attack')
+        # YOQO MIA parameters
+        parser.add_argument('--yoqo_alpha', type=float, default=2,
+                                help='Alpha parameter for the YOQO MIA attack')
+        parser.add_argument('--yoqo_gamma', type=float, default=5,
+                                help='Gamma parameter for the YOQO MIA attack')
+        parser.add_argument('--yoqo_adv_opt_max_iter', type=int, default=100,
+                                help='Maximum number of iterations for the adversarial optimization in the YOQO MIA attack')
+        parser.add_argument('--yoqo_adv_opt_lr', type=float, default=0.01,
+                                help='Learning rate for the adversarial optimization in the YOQO MIA attack')
+        parser.add_argument('--yoqo_adv_opt_loss_threshold', type=float, default=6,
+                                help='Loss threshold for the adversarial optimization in the YOQO MIA attack')
 
         # Attacker training parameters
         parser.add_argument("--att_model", default="resnet18",

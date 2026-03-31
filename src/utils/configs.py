@@ -328,8 +328,79 @@ class AttackPMiaConfigs:
     p_score_type: str = 'loss'  # options: loss, confidence, entropy
 
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class QebaConfigs:
+    reduction_mode: str = 'spatial'  # only for qeba variants
+    reduction_factor: int = 8  # only for qeba variants
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class BoundaryMiaConfigs:
+    n_queries: int = 1000
+    mode: str = 'hsj' # options: hsj, hopskipjump, hopskip, hop, qeba, qeba-spatial, qeba-dct, qeba-pca, qeba-custom
+    norm: Literal["l2", "linf"] = "l2"
+    qeba: Optional[QebaConfigs] = None
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class SupervisedBoundaryAttackConfig:
+    strategy: Literal["sba"] = "sba"
+    mode: str = 'offline'
+    boundary: BoundaryMiaConfigs = field(default_factory=BoundaryMiaConfigs)
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class UnsupervisedBoundaryAttackConfig:
+    strategy: Literal["uba"] = "uba"
+    mode: str = 'offline'
+    boundary: BoundaryMiaConfigs = field(default_factory=BoundaryMiaConfigs)
+    quantile: float = 0.95
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class NoiseRobustnessAttackConfig:
+    strategy: Literal["noise_robustness"] = "noise_robustness"
+    mode: str = 'offline'
+    n_queries: int = 1000
+    sigmas: Union[float, list[float]] = field(default_factory=lambda: [0.01, 0.02, 0.05, 0.1, 0.15, 0.2])
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class TransferAttackConfig:
+    strategy: Literal["transfer"] = "transfer"
+    mode: str = 'offline'
+    feature_mode: str = 'loss' # options: loss, max_confidence, entropy
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class OsloAttackConfig:
+    strategy: Literal["oslo"] = "oslo"
+    mode: str = 'offline'
+    n_models: int = 10 # number of shadow models to train for the attack
+    same_arch: bool = True # whether to use the same architecture for all shadow models or not
+    source_models_ratio: float = 0.75 # ratio of shadow models to use as source models for the attack (the rest will be used as validation models to define the attack decision boundary)
+    K: int = 10 # number of attack sub-procedures
+    N: int = 1000 # number of attack iterations per sub-procedure
+    max_epsilon: float = 4/255 # maximum perturbation for the attack
+    ga_mode: str = 'difgsm' # algorithm for gradient ascent step: options are 'difgsm', 'mifgsm', 'tifgsm', 'tmifgsm'
+    threshold: float = 0.01 # decision threshold for the attack
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class DHAttackConfig:
+    strategy: Literal["dh"] = "dh"
+    mode: str = 'offline'
+    n_models: int = 10 # number of shadow models to train for the attack
+    n_queries: int = 1000 # number of queries to perform inference
+    fixed_input_mode: str = 'white' # options: 'white', 'black'
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class YoqoAttackConfig:
+    strategy: Literal["yoqo"] = "yoqo"
+    mode: str = 'online'
+    adv_opt_max_iter: int = 50 # maximum number of iterations for the adversarial optimization procedure
+    adv_opt_lr: float = 0.01 # learning rate for the adversarial optimization procedure
+    adv_opt_loss_threshold: float = 6 # loss threshold for early stopping of the adversarial optimization procedure
+    alpha: float = 2 # weight for the out-shadow-models loss in the adversarial optimization procedure
+    gamma: float = 5 # weight for the MSE loss between the adversarial example and the original sample in the adversarial optimization procedure
+
 AttackConfigs = Annotated[
-    Union[RobustMiaConfigs, LiraMiaConfigs, QuantileMiaConfigs, NeuralMiaConfigs, AttackRMiaConfigs, AttackPMiaConfigs],
+    Union[RobustMiaConfigs, LiraMiaConfigs, QuantileMiaConfigs, NeuralMiaConfigs, AttackRMiaConfigs, AttackPMiaConfigs,
+        SupervisedBoundaryAttackConfig, UnsupervisedBoundaryAttackConfig, NoiseRobustnessAttackConfig, TransferAttackConfig,
+        OsloAttackConfig, DHAttackConfig, YoqoAttackConfig],
     Field(discriminator="strategy")
 ]
 
@@ -420,9 +491,31 @@ class MmdDefenseConfigs:
     use_mixup: bool = False
     mixup_alpha: float = 0.0
 
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class LdlDefenseConfigs:
+    strategy: Literal["ldl"] = "ldl"
+    n_queries: int = 100
+    noise_type: str = 'bernoulli' # options: 'bernoulli', 'gaussian'
+    noise_scale: float = 0.1
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class DataAugmentationDefenseConfigs:
+    strategy: Literal["data_augmentation"] = "data_augmentation"
+    horizontal_flip: bool = False
+    rotation: int = 10
+    random_crop: int = 32
+    jitter_brightness: float = 0.2
+    jitter_hue: float = 0.2
+    perspective_distortion_scale: float = 0.2
+
+
 # One-of: only the selected strategy's fields are validated/available
 DefenseConfigs = Annotated[
-    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, MistDefenseConfigs, WeightedSmoothingDefenseConfigs, PurifierDefenseConfigs, MmdDefenseConfigs],
+    Union[NoDefenseConfigs, DPDefenseConfigs, MemGuardDefenseConfigs, RelaxLossDefenseConfigs, 
+        AdvRegDefenseConfigs, MixupDefenseConfigs, HampDefenseConfigs, SelenaDefenseConfigs, 
+        MistDefenseConfigs, WeightedSmoothingDefenseConfigs, PurifierDefenseConfigs, MmdDefenseConfigs,
+        LdlDefenseConfigs,
+        DataAugmentationDefenseConfigs],
     Field(discriminator="strategy")
 ]
 
@@ -586,6 +679,21 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         defender_defense_configs = MmdDefenseConfigs(lmbd=settings.defender_mmd_lambda,
                                                     use_mixup=True if settings.defense_mode in ['mmd_mixup', 'mmd-mixup'] else False,
                                                     mixup_alpha=settings.defender_mixup_alpha)
+    elif settings.defense_mode in ['ldl']:
+        if settings.dataset in ["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet"]:
+            noise_type = "normal"
+        elif settings.dataset in []:
+            noise_type = "bernoulli"
+        defender_defense_configs = LdlDefenseConfigs(n_queries=settings.defender_ldl_n_queries,
+                                                    noise_type=noise_type,
+                                                    noise_scale=settings.defender_ldl_noise_scale)
+    elif settings.defense_mode in ['data_augmentation', 'data-augmentation', 'dataaug', 'data-aug']:
+        defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip,
+                                                                rotation=settings.defender_augment_rotation,
+                                                                random_crop=settings.defender_augment_random_crop,
+                                                                jitter_brightness=settings.defender_augment_jitter_brightness,
+                                                                jitter_hue=settings.defender_augment_jitter_hue,
+                                                                perspective_distortion_scale=settings.defender_augment_perspective_distortion_scale)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
@@ -676,6 +784,76 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         attacker_shadow_configs.n_shadow_datasets = 1
         attacker_shadow_configs.mode = 'offline'
         attacker_shadow_configs.test_perc = 1.0
+    elif settings.attack_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
+        if settings.attack_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop']:
+            bound_mode = 'hop_skip_jump'
+        elif settings.attack_mode in ['sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
+            bound_mode = 'qeba'
+            qeba_reduction_mode = settings.attack_mode.split('-')[-1] if '-' in settings.attack_mode else 'spatial'
+            qeba_configs = QebaConfigs(reduction_mode=qeba_reduction_mode,
+                                        reduction_factor=settings.bound_qeba_reduction_factor)
+        else:
+            raise ValueError('Supervised Boundary Attack mode "{}" not recognized!'.format(settings.attack_mode))
+        boundary_configs = BoundaryMiaConfigs(n_queries=settings.bound_n_queries,
+                                            mode=bound_mode,
+                                            norm=settings.bound_norm,
+                                            qeba=qeba_configs if bound_mode == 'qeba' else None)
+        attack_configs = SupervisedBoundaryAttackConfig(boundary=boundary_configs,
+                                                        mode='offline')
+        attacker_shadow_configs.mode = 'offline'
+    elif settings.attack_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
+        if settings.attack_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop']:
+            bound_mode = 'hop_skip_jump'
+        elif settings.attack_mode in ['uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
+            bound_mode = 'qeba'
+            qeba_reduction_mode = settings.attack_mode.split('-')[-1] if '-' in settings.attack_mode else 'spatial'
+            qeba_configs = QebaConfigs(reduction_mode=qeba_reduction_mode,
+                                        reduction_factor=settings.bound_qeba_reduction_factor)
+        else:
+            raise ValueError('Unsupervised Boundary Attack mode "{}" not recognized!'.format(settings.attack_mode))
+        boundary_configs = BoundaryMiaConfigs(n_queries=settings.bound_n_queries,
+                                        mode=bound_mode,
+                                        norm=settings.bound_norm,
+                                        qeba=qeba_configs if bound_mode == 'qeba' else None)
+        attack_configs = UnsupervisedBoundaryAttackConfig(boundary=boundary_configs,
+                                                        mode='offline',
+                                                        quantile=settings.bound_quantile)
+        attacker_shadow_configs.mode = 'offline'
+    
+    elif settings.attack_mode in ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']:
+        attack_configs = NoiseRobustnessAttackConfig(n_queries=settings.noise_robust_n_queries,
+                                                    sigmas=settings.noise_robust_sigmas)
+        attacker_shadow_configs.mode = 'offline'
+    elif settings.attack_mode in ['transfer_loss', 'transfer_confidence', 'transfer_entropy']:
+        feature_mode = settings.attack_mode.split('_')[-1]
+        attack_configs = TransferAttackConfig(feature_mode=feature_mode)
+        attacker_shadow_configs.mode = 'offline'
+    elif settings.attack_mode in ['oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm']:
+        ga_mode = settings.attack_mode.split('_')[-1] if '_' in settings.attack_mode else 'difgsm'
+        attack_configs = OsloAttackConfig(n_models=settings.oslo_n_models,
+                                        same_arch=settings.oslo_same_arch,
+                                        source_models_ratio=settings.oslo_source_models_ratio,
+                                        K=settings.oslo_K,
+                                        N=settings.oslo_N,
+                                        max_epsilon=settings.oslo_max_epsilon,
+                                        ga_mode=ga_mode,
+                                        threshold=settings.oslo_threshold)
+        attacker_shadow_configs.mode = 'offline'
+    elif settings.attack_mode in ['dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black', 'dh-attack_random']:
+        fixed_input_mode = settings.attack_mode.split('_')[-1] if '_' in settings.attack_mode else 'white'
+        attack_configs = DHAttackConfig(n_models=settings.dh_n_models,
+                                        n_queries=settings.dh_n_queries,
+                                        fixed_input_mode=fixed_input_mode)
+        attacker_shadow_configs.mode = 'offline'
+    elif settings.attack_mode in ['online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo']:
+        yoqo_mode = 'online' if settings.attack_mode in ['online_yoqo', 'on_yoqo'] else 'offline'
+        attack_configs = YoqoAttackConfig(mode=yoqo_mode,
+                                        adv_opt_max_iter=settings.yoqo_adv_opt_max_iter,
+                                        adv_opt_lr=settings.yoqo_adv_opt_lr,
+                                        adv_opt_loss_threshold=settings.yoqo_adv_opt_loss_threshold,
+                                        alpha=settings.yoqo_alpha,
+                                        gamma=settings.yoqo_gamma)
+        attacker_shadow_configs.mode = yoqo_mode
     else:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attack_mode))
     attacker_configs = AttackerConfigs(hash=attacker_hash,
