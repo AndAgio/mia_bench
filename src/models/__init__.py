@@ -50,3 +50,11 @@ def get_model(model_name: str, im_channels: int = 3, num_classes: int = 10, im_s
     else:
         printer_func('Specified model "{}" not recognized!'.format(model_name))
     return model
+
+
+ARCHITECTURES = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
+                    'wideresnet_16_8', 'wideresnet_28_2', 'wideresnet_28_10', 'wideresnet_50_2', #'wideresnet_101_2',
+                    'vgg11', 'vgg13', 'vgg16', 'vgg19',
+                    'mobile_small', 'mobile_large',
+                    'inception_v3',
+                    'vit']
