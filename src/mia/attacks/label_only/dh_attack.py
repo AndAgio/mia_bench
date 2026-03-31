@@ -226,6 +226,7 @@ class DHAttack(BaseMIA):
     #     self.attack_threshold = 0.01
 
     # TODO: Add method to find optimal threshold based on an extra shadow model and shadow dataset.
+    # Issue URL: https://github.com/AndAgio/mia_bench/issues/41
     # assignees: AndAgio.
 
     @torch.no_grad()
