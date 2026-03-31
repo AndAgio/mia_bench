@@ -39,6 +39,8 @@ class BaseMIA(Loggable):
         audit_data = self.audit_manager.get(labels='mia')
         self.reset_logger()
         audit_labels = [label for _, (_, label, _, _) in enumerate(audit_data)]
+        mia_labels = torch.asarray(audit_labels)
+        assert torch.asarray(scores).shape == mia_labels.shape, f"Unexpected shape for scores: {scores.shape}, expected {mia_labels.shape}"
         fpr, tpr, roc = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)
         results = {'auc': auc_score,
