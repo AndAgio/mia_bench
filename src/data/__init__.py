@@ -19,6 +19,30 @@ from src.utils.variables import DEFAULT_DATASETS_FOLDER
 from src.utils.configs import get_dataset_info_from_name
 
 
+def get_dataset_mean_std(dataset: str):
+    if dataset == 'cifar10':
+        mean = [x / 255.0 for x in [125.3, 123.0, 113.9]]
+        std = [x / 255.0 for x in [63.0, 62.1, 66.7]]
+    elif dataset == 'svhn':
+        mean = [0.4377, 0.4438, 0.4728]
+        std = [0.1980, 0.2010, 0.1970]
+    elif dataset == 'fmnist':
+        mean = [0.2861]
+        std = [0.3530]
+    elif dataset == 'cinic10':
+        mean = [0.47889522, 0.47227842, 0.43047404]
+        std = [0.24205776, 0.23828046, 0.25874835]
+    elif dataset in ['imagenet', 'imagenet1k']:
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+    elif dataset == 'tinyimagenet':
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+    else:
+        raise ValueError('Dataset "{}" is not available!'.format(dataset))
+    return mean, std
+
+
 def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, val_split: float = 0.2, seed: int= 12345, augment: bool = False, logger: callable = None):
     """Return dataset splits packed into a `MultiDatasets` object.
 
@@ -38,8 +62,7 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
     printer_func('Gathering dataset "{}". This may take a while...'.format(dataset))
     # Image Preprocessing
     if dataset in ['cifar10', 'cifar100']:
-        mean=[x / 255.0 for x in [125.3, 123.0, 113.9]]
-        std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
+        mean, std = get_dataset_mean_std(dataset)
         # normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
         #                                 std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
         # Setup train transforms
@@ -48,6 +71,8 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
             train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
             train_transform.transforms.append(transforms.RandomHorizontalFlip())
             train_transform.transforms.append(transforms.RandomRotation(10))
+            train_transform.transforms.append(transforms.ColorJitter(brightness=0.2, hue=0.1))
+            train_transform.transforms.append(transforms.RandomPerspective(distortion_scale=0.2, p=0.5))
         train_transform.transforms.append(transforms.ToTensor())
         train_transform.transforms.append(transforms.Normalize(mean=mean, 
                                                                 std=std))
@@ -56,18 +81,15 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
                                             transforms.Normalize(mean=mean, 
                                                                 std=std)])
     elif dataset == 'svhn':
-        mean = [0.4377, 0.4438, 0.4728]
-        std = [0.1980, 0.2010, 0.1970]
+        mean, std = get_dataset_mean_std(dataset)
         train_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
         test_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'fmnist':
-        mean = [0.2861]
-        std = [0.3530]
+        mean, std = get_dataset_mean_std(dataset)
         train_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
         test_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'cinic10':
-        mean = [0.47889522, 0.47227842, 0.43047404]
-        std = [0.24205776, 0.23828046, 0.25874835]
+        mean, std = get_dataset_mean_std(dataset)
         train_transform = transforms.Compose([])
         if augment:
             train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
@@ -80,8 +102,8 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
                                             transforms.Normalize(mean=mean, 
                                                                 std=std)])
     elif dataset in ['imagenet', 'imagenet1k']:
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                        std=[0.229, 0.224, 0.225])
+        mean, std = get_dataset_mean_std(dataset)
+        normalize = transforms.Normalize(mean=mean, std=std)
         train_transform = transforms.Compose([])
         train_transform.transforms.append(transforms.RandomResizedCrop(224))
         if augment:
@@ -93,8 +115,8 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
                                                 transforms.ToTensor(),
                                                 normalize])
     elif dataset == 'tinyimagenet':
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                                        std=[0.229, 0.224, 0.225])
+        mean, std = get_dataset_mean_std(dataset)
+        normalize = transforms.Normalize(mean=mean, std=std)
         # Setup train transforms for Tiny ImageNet
         train_transform = transforms.Compose([])
         if augment:
