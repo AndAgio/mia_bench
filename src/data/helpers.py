@@ -1,6 +1,8 @@
 from typing import Union
+import bisect
 import torch
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Dataset, Subset, ConcatDataset
+import torchvision.transforms as transforms
 
 
 class IndexedDataset:
@@ -27,11 +29,14 @@ class IndexedDataset:
         indices = list(range(len(ds)))
         base = ds
         while True:
+            # print(f"Resolving indices for dataset of type {type(base)} with {len(indices)} samples. indices = {indices}")
             if isinstance(base, Subset):
+                # print(f"Reached Subset base with orig_indices = {base.indices}")
                 indices = [base.indices[i] for i in indices]
                 base = base.dataset
                 continue
             if isinstance(base, IndexedDataset):
+                # print(f"Reached IndexedDataset base with orig_indices = {base.orig_indices}")
                 indices = [base.orig_indices[i] for i in indices]
             break
         return indices
@@ -87,7 +92,15 @@ class IndexedDataset:
             self.ds.targets = new_targets if isinstance(new_targets, torch.Tensor) else torch.tensor(new_targets)
         else:
             raise ValueError(f"Found dataset of type {type(self.ds)} inside IndexedDataset. It is not supported for getting all targets!")
-
+        
+    @property
+    def transform(self):
+        if isinstance(self.ds, Subset):
+            return self.ds.dataset.transform
+        elif isinstance(self.ds, Dataset):
+            return self.ds.transform
+        else:
+            raise ValueError(f"Found dataset of type {type(self.ds)} inside IndexedDataset. It is not supported for getting transform!")
 
 class MultiDatasets():
     def __init__(self, datasets: list[Dataset] = None, ids: list[str] = None, info: dict = None):
