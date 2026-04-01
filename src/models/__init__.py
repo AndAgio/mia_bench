@@ -4,6 +4,7 @@ from .mobilenetv3 import MobileNetV3Small, MobileNetV3Large
 from .wideresnet import WRN168, WRN282, WRN2810, WRN502, WRN1012
 from .inceptionv3 import InceptionV3
 from .vit import ViT
+from .tabular_mlp import TabularMLP
 from typing import Tuple
 
 
@@ -47,6 +48,8 @@ def get_model(model_name: str, im_channels: int = 3, num_classes: int = 10, im_s
         model = InceptionV3(channel=im_channels, num_classes=num_classes, im_size=im_size)
     elif model_name == 'vit':
         model = ViT(pretrained=True, in_channels=im_channels, num_classes=num_classes, image_size=im_size)
+    elif model_name == 'tabular_mlp':
+        model = TabularMLP(input_dim=im_channels, num_classes=num_classes, hidden_dims=[1024, 512, 256])
     else:
         printer_func('Specified model "{}" not recognized!'.format(model_name))
     return model

@@ -12,7 +12,8 @@ def gather_settings():
         
         # Dataset parameters
         parser.add_argument("--dataset", type=str, default="cifar100",
-                                choices=["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet"])
+                                choices=["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet",
+                                        "purchase", "texas", "news"],)
         parser.add_argument("--val_split", type=float, default=0.2,
                                 help="percentage of training data to use for validation during defender model training",)
         
@@ -23,7 +24,8 @@ def gather_settings():
                                         "inception_v3", 
                                         "vgg11", "vgg13", "vgg16", "vgg19", 
                                         "mobile_small", "mobile_large", 
-                                        "vit"])
+                                        "vit",
+                                        "tabular_mlp",],)
         # parser.add_argument("--visualize_model", action="store_true", default=False,
         #                     help="whether to visualize the plot of the NN or not (for debugging)",)
 

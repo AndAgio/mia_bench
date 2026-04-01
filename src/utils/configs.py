@@ -180,6 +180,8 @@ def get_im_size_from_name(dataset: str):
         im_size = (224, 224)
     elif dataset == 'tinyimagenet':
         im_size = (64, 64)
+    elif dataset in ['texas', 'purchase', 'news']:
+        im_size = None  # For tabular datasets, the size is determined by the data itself
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
     return im_size
@@ -199,6 +201,12 @@ def get_im_channels_from_name(dataset: str):
         im_channels = 3
     elif dataset == 'tinyimagenet':
         im_channels = 3
+    elif dataset == 'news':
+        im_channels = 134,410
+    elif dataset == 'purchase':
+        im_channels = 600
+    elif dataset == 'texas':
+        im_channels = 6169
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
     return im_channels
@@ -218,6 +226,12 @@ def get_num_classes_from_name(dataset: str):
         num_classes = 1000
     elif dataset == 'tinyimagenet':
         num_classes = 200
+    elif dataset == 'news':
+        num_classes = 20
+    elif dataset == 'purchase':
+        num_classes = 100
+    elif dataset == 'texas':
+        num_classes = 100
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
     return num_classes
@@ -596,6 +610,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                             data_augmentation=settings.data_augmentation,
                                             seed=settings.defender_seed,
                                             val_split=settings.val_split)
+    if settings.dataset in ['texas', 'purchase', 'news']:
+        assert settings.defender_model in ['tabular_mlp'], f"Dataset '{settings.dataset}' only supports tabular models! Please change the defender model or the dataset."
+        assert settings.attacker_model in ['tabular_mlp'], f"Dataset '{settings.dataset}' only supports tabular models! Please change the attacker model or the dataset."
     defender_model_configs = ModelConfigs(model_name=settings.defender_model,
                                         im_channels=defender_dataset_configs.im_channels,
                                         num_classes=defender_dataset_configs.num_classes,

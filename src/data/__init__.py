@@ -12,6 +12,9 @@ from .cinic import Cinic10
 from .imagenet import ImageNet
 from .imagenet1k import ImageNet1K
 from .tinyimagenet import TinyImageNet
+from .purchase import Purchase
+from .texas import Texas
+from .news import News
 from .helpers import MultiDatasets, IndexedDataset
 
 
@@ -126,6 +129,15 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
         train_transform.transforms.append(normalize)
         # Setup test transforms for Tiny ImageNet
         test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+    elif dataset == 'purchase':
+        train_transform = None
+        test_transform = None
+    elif dataset == 'texas':
+        train_transform = None
+        test_transform = None
+    elif dataset == 'news':
+        train_transform = None
+        test_transform = None
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
 
@@ -164,6 +176,15 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
         root = os.path.join(datasets_folder, 'tinyimagenet')
         train_dataset = TinyImageNet(root=root, train=True, transform=train_transform)
         test_dataset = TinyImageNet(root=root, train=False, transform=test_transform)
+    elif dataset == 'purchase':
+        train_dataset = Purchase(root=root, train=True, transform=train_transform, download=True)
+        test_dataset = Purchase(root=root, train=False, transform=test_transform, download=True)
+    elif dataset == 'texas':
+        train_dataset = Texas(root=root, train=True, transform=train_transform, download=True)
+        test_dataset = Texas(root=root, train=False, transform=test_transform, download=True)
+    elif dataset == 'news':
+        train_dataset = News(train=True, transform=train_transform)
+        test_dataset = News(train=False, transform=test_transform)
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
 
