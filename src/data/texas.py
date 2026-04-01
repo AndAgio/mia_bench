@@ -100,8 +100,8 @@ class Texas(Dataset):
 # ==========================================
 if __name__ == "__main__":
     # Initialize the train and test datasets
-    texas_train = Texas100(root='./data/texas100', train=True, download=True)
-    texas_test = Texas100(root='./data/texas100', train=False, download=True)
+    texas_train = Texas(root='./data/texas100', train=True, download=True)
+    texas_test = Texas(root='./data/texas100', train=False, download=True)
 
     # Output dataset sizes to verify the 80/20 split
     print(f"Training samples: {len(texas_train)}")

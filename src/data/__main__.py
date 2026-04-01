@@ -3,7 +3,7 @@ import pathlib
 import sys
 PATH_REPO = pathlib.Path(__file__).parent.parent.parent
 sys.path.append(str(PATH_REPO))
-from . import CIFAR10, CIFAR100, SVHN, FashionMNIST, ImageNet, TinyImageNet, ImageNet1K, Purchase, Texas, News
+from . import CIFAR10, CIFAR100, SVHN, FashionMNIST, ImageNet, TinyImageNet, ImageNet1K, Purchase, Texas, News, GTSRB
 from src.utils import gather_settings
 
 
@@ -25,6 +25,10 @@ def main():
     root = os.path.join(settings.datasets_folder, 'fmnist')
     FashionMNIST(root=root, train=True, download=True, transform=None)
     FashionMNIST(root=root, train=False, download=True, transform=None)
+    print('Downloading GTSRB...')
+    root = os.path.join(settings.datasets_folder, 'gtsrb')
+    GTSRB(root=root, train=True, download=True, transform=None)
+    GTSRB(root=root, train=False, download=True, transform=None)
     print('Downloading TinyImageNet...')
     root = os.path.join(settings.datasets_folder, 'tinyimagenet')
     TinyImageNet(root=root, train=True, transform=None)
@@ -38,16 +42,17 @@ def main():
     ImageNet1K(root=root, split='train', download=True, transform=None)
     ImageNet1K(root=root, split='val', download=True, transform=None)
     print('Downloading Purchase100...')
-    root = os.path.join(settings.datasets_folder, 'purchase100')
+    root = os.path.join(settings.datasets_folder, 'purchase')
     Purchase(root=root, train=True, transform=None, download=True)
     Purchase(root=root, train=False, transform=None, download=True)
     print('Downloading Texas100...')
-    root = os.path.join(settings.datasets_folder, 'texas100')
+    root = os.path.join(settings.datasets_folder, 'texas')
     Texas(root=root, train=True, transform=None, download=True)
     Texas(root=root, train=False, transform=None, download=True)
     print('Downloading News20...')
-    News(train=True, transform=None, download=True)
-    News(train=False, transform=None, download=True)
+    root = os.path.join(settings.datasets_folder, 'news')
+    News(root=root, train=True, transform=None, download=True)
+    News(root=root, train=False, transform=None, download=True)
     print('Done!')
 
 if __name__=='__main__':

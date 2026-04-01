@@ -12,6 +12,7 @@ from .cinic import Cinic10
 from .imagenet import ImageNet
 from .imagenet1k import ImageNet1K
 from .tinyimagenet import TinyImageNet
+from .gtsrb import GTSRB
 from .purchase import Purchase
 from .texas import Texas
 from .news import News
@@ -129,6 +130,19 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
         train_transform.transforms.append(normalize)
         # Setup test transforms for Tiny ImageNet
         test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+    elif dataset == 'gtsrb':
+        mean, std = get_dataset_mean_std(dataset)
+        normalize = transforms.Normalize(mean=mean, std=std)
+        # Setup train transforms for GTSRB
+        train_transform = transforms.Compose([])
+        train_transform.transforms.append(transforms.Resize((32, 32)))
+        if augment:
+            train_transform.transforms.append(transforms.RandomHorizontalFlip())
+            train_transform.transforms.append(transforms.RandomRotation(10))
+        train_transform.transforms.append(transforms.ToTensor())
+        train_transform.transforms.append(normalize)
+        # Setup test transforms for GTSRB
+        test_transform = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(), normalize])
     elif dataset == 'purchase':
         train_transform = None
         test_transform = None
@@ -174,17 +188,24 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
         test_dataset = ImageNet1K(root=root, split='val', download=True, transform=test_transform)
     elif dataset == 'tinyimagenet':
         root = os.path.join(datasets_folder, 'tinyimagenet')
-        train_dataset = TinyImageNet(root=root, train=True, transform=train_transform)
-        test_dataset = TinyImageNet(root=root, train=False, transform=test_transform)
+        train_dataset = TinyImageNet(root=root, train=True, transform=train_transform, download=True)
+        test_dataset = TinyImageNet(root=root, train=False, transform=test_transform, download=True)
     elif dataset == 'purchase':
+        root = os.path.join(datasets_folder, 'purchase')
         train_dataset = Purchase(root=root, train=True, transform=train_transform, download=True)
         test_dataset = Purchase(root=root, train=False, transform=test_transform, download=True)
     elif dataset == 'texas':
+        root = os.path.join(datasets_folder, 'texas')
         train_dataset = Texas(root=root, train=True, transform=train_transform, download=True)
         test_dataset = Texas(root=root, train=False, transform=test_transform, download=True)
     elif dataset == 'news':
-        train_dataset = News(train=True, transform=train_transform)
-        test_dataset = News(train=False, transform=test_transform)
+        root = os.path.join(datasets_folder, 'news')
+        train_dataset = News(root=root, train=True, transform=train_transform, download=True)
+        test_dataset = News(root=root, train=False, transform=test_transform, download=True)
+    elif dataset == 'gtsrb':
+        root = os.path.join(datasets_folder, 'gtsrb')
+        train_dataset = GTSRB(root=root, train=True, transform=train_transform, download=True)
+        test_dataset = GTSRB(root=root, train=False, transform=test_transform, download=True)
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
 

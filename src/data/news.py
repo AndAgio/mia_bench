@@ -1,64 +1,110 @@
+import os
 import torch
 import numpy as np
+import scipy.sparse as sp
 from torch.utils.data import Dataset, DataLoader
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-class News20(Dataset):
-    def __init__(self, train=True, transform=None, max_features=134410, download=True):
+class News(Dataset):
+    def __init__(self, root, train=True, transform=None, max_features=134410, download=True):
         """
         Args:
+            root (str): Directory where the dataset will be stored.
             train (bool): If True, loads the training set; otherwise, loads the test set.
             transform (callable, optional): A function/transform to apply to the features.
             max_features (int): The exact number of TF-IDF dimensions to match the paper.
             download (bool): If True, downloads the dataset if it is not found locally.
         """
+        self.root = root
         self.train = train
         self.transform = transform
         self.max_features = max_features
         self.download = download
 
-        # Load the dataset and apply TF-IDF
+        # Create the root directory if it doesn't exist
+        if not os.path.exists(self.root):
+            os.makedirs(self.root, exist_ok=True)
+
+        # Load the dataset (either from cache or by processing it)
         self._load_data()
 
     def _load_data(self):
-        """Fetches the 20 Newsgroups text data and applies TF-IDF vectorization."""
+        """Loads data from a cached .npz file, or generates it via TF-IDF if missing."""
         
         subset = 'train' if self.train else 'test'
-        print(f"Loading 20 Newsgroups '{subset}' split...")
+        
+        # Define a unique filename for the cached features
+        cache_file = os.path.join(self.root, f"news20_{subset}_{self.max_features}.npz")
+        
+        # ==========================================
+        # FAST PATH: Load from cached .npz file
+        # ==========================================
+        if os.path.exists(cache_file):
+            print(f"Loading cached '{subset}' split from {cache_file}...")
+            loader = np.load(cache_file)
+            
+            # Reconstruct the scipy sparse CSR matrix
+            self.samples_sparse = sp.csr_matrix(
+                (loader['data'], loader['indices'], loader['indptr']), 
+                shape=loader['shape']
+            )
+            
+            # Load the targets
+            self.targets = torch.tensor(loader['targets'], dtype=torch.long)
+            self.targets_list = self.targets.tolist()
+            print(f"Data loaded from cache! Shape: {self.samples_sparse.shape}")
+            return
+
+        # ==========================================
+        # SLOW PATH: Download, fit TF-IDF, and cache
+        # ==========================================
+        print(f"Cache not found. Generating '{subset}' split using TF-IDF...")
         
         try:
             # 1. Fetch the raw text data for the requested split
             data = fetch_20newsgroups(
+                data_home=self.root,
                 subset=subset, 
                 download_if_missing=self.download
             )
             
-            # 2. Build the TF-IDF vocabulary space using the full dataset.
-            # We fit on 'all' to ensure train and test features align perfectly.
-            print("Building the TF-IDF vocabulary space...")
+            # 2. Build the TF-IDF vocabulary space using the full dataset
+            print("Building the TF-IDF vocabulary space (this may take a moment)...")
             full_data = fetch_20newsgroups(
+                data_home=self.root,
                 subset='all', 
                 download_if_missing=self.download
             )
         except IOError:
             raise FileNotFoundError(
-                "The 20 Newsgroups dataset was not found on disk. "
+                f"The 20 Newsgroups dataset was not found in {self.root}. "
                 "Please set `download=True` to download it."
             )
         
         self.vectorizer = TfidfVectorizer(max_features=self.max_features)
         self.vectorizer.fit(full_data.data)
         
-        # 3. Transform the specific subset (train or test) into a sparse TF-IDF matrix
+        # 3. Transform the specific subset
         print("Applying TF-IDF transformation...")
         self.samples_sparse = self.vectorizer.transform(data.data)
         
-        # 4. Extract labels
+        # 4. Save the sparse matrix components and targets to an .npz file for next time
+        print(f"Caching features to {cache_file}...")
+        np.savez(
+            cache_file,
+            data=self.samples_sparse.data,
+            indices=self.samples_sparse.indices,
+            indptr=self.samples_sparse.indptr,
+            shape=self.samples_sparse.shape,
+            targets=data.target
+        )
+        
+        # 5. Extract labels for the current run
         self.targets = torch.tensor(data.target, dtype=torch.long)
         self.targets_list = self.targets.tolist()
         
-        print(f"Data loaded! Shape: {self.samples_sparse.shape}")
+        print(f"Data generated and cached! Shape: {self.samples_sparse.shape}")
 
     def __len__(self):
         """Returns the number of samples in the dataset."""
@@ -90,22 +136,13 @@ class News20(Dataset):
 # ==========================================
 if __name__ == "__main__":
     try:
-        # Initialize the train and test datasets with the optional download parameter
-        news_train = News20(train=True, download=True)
-        news_test = News20(train=False, download=True)
-
-        # Output dataset sizes
-        print(f"Training samples: {len(news_train)}")
-        print(f"Testing samples: {len(news_test)}")
-
-        # Fetch DataLoaders
-        train_loader = news_train.get_dataloader(batch_size=64, shuffle=True)
-        test_loader = news_test.get_dataloader(batch_size=64, shuffle=False)
+        # Run 1: Will download the text, apply TF-IDF, and save the .npz files
+        print("--- FIRST RUN (Generates Cache) ---")
+        news_train = News(root='./data/news', train=True, download=True)
         
-        # Grab one batch to check shapes
-        features, labels = next(iter(train_loader))
-        print(f"Batch features shape: {features.shape}")
-        print(f"Batch labels shape: {labels.shape}")
-        
+        # Run 2: Will instantly load from the .npz files it just created
+        print("\n--- SECOND RUN (Loads from Cache) ---")
+        news_train_cached = News(root='./data/news', train=True, download=False)
+
     except FileNotFoundError as e:
         print(e)

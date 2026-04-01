@@ -104,8 +104,8 @@ class Purchase(Dataset):
 # ==========================================
 if __name__ == "__main__":
     # Initialize the train and test datasets
-    purchase_train = Purchase100(root='./data/purchase100', train=True, download=True)
-    purchase_test = Purchase100(root='./data/purchase100', train=False, download=True)
+    purchase_train = Purchase(root='./data/purchase100', train=True, download=True)
+    purchase_test = Purchase(root='./data/purchase100', train=False, download=True)
 
     # Output dataset sizes to verify the 80/20 split
     print(f"Training samples: {len(purchase_train)}")
