@@ -16,8 +16,22 @@ from .gtsrb import GTSRB
 from .purchase import Purchase
 from .texas import Texas
 from .news import News
-from .helpers import MultiDatasets, IndexedDataset
+from .helpers import (
+    MultiDatasets,
+    MySubset,
+    MyOriginalIndexSubset,
+    IndexedDataset,
+    MergedIndexedDataset,
+    SampleMetricTracker,
+    build_merged_dataset,
+    split_merged_dataset_into_chunks,
+    get_stable_index_from_item,
+    get_metric_for_sample,
+    subset_by_original_indices,
+    sample_subset_by_available_original_indices,
+)
 
+from .helpers import MyConcatDataset
 
 from src.utils.variables import DEFAULT_DATASETS_FOLDER
 from src.utils.configs import get_dataset_info_from_name
@@ -212,63 +226,97 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
 
-    # Optionally split the training set into train/val while preserving original indices
-    val_created = False
-    if val_split is not None and val_split == 0:
-        logger.print_it("val_split is set to 0, skipping creation of validation split...")
-    elif val_split is not None and (0 < val_split < 1):
-        n_train = len(train_dataset)
-        full_indices = list(range(n_train))
-        k = int(n_train * val_split)
-        rng = np.random.default_rng(seed=seed)
-        val_indices = rng.choice(full_indices, k, replace=False).tolist()
-        val_idx = sorted(val_indices)
-        logger.print_it(f"Dataset getter: val_seed={seed}; val_n={len(val_idx)}; val_indices_sample={val_idx[:10]}")
-        
-        train_idx = [i for i in full_indices if i not in set(val_idx)]
 
-        # Create separate dataset instances (deepcopy) so we can use different transforms
-        train_ds_copy = copy.deepcopy(train_dataset)
-        val_ds_copy = copy.deepcopy(train_dataset)
-        # Ensure train keeps augmentation and val uses the test transforms
-        try:
-            train_ds_copy.transform = train_transform
-            val_ds_copy.transform = test_transform
-        except NameError:
-            # In case transforms aren't available on the dataset object, ignore
-            pass
-
-        # Create Subsets that preserve original indices in `.indices`
-        train_dataset = Subset(train_ds_copy, train_idx)
-        val_dataset = Subset(val_ds_copy, val_idx)
-        val_created = True
-    elif val_split is not None and (val_split >= 1 or val_split < 0):
-        raise ValueError(f"Invalid val_split={val_split}. Must be >0 and <=1 for fraction or >=1 for absolute number of samples.")
-    else:
-        raise ValueError(f"Invalid val_split={val_split}. Must be a positive number or None.")
-
-    info = get_dataset_info_from_name(dataset=dataset)
-
-    if val_created:
-        printer_func('Gathered dataset "{}": Training samples = {} '
-                        '& Validation samples = {} & Testing samples = {}'.format(dataset,
-                                                                                    len(train_dataset),
-                                                                                    len(val_dataset),
-                                                                                    len(test_dataset)))
-    else:
-        printer_func('Gathered dataset "{}": Training samples = {} '
-                        '& Testing samples = {}'.format(dataset,
-                                                        len(train_dataset),
-                                                        len(test_dataset)))
-
+    # Merge the train and test datasets into a single dataset with a global index space, while preserving original indices
+    merged_dataset = build_merged_dataset([train_dataset, test_dataset],
+                                            dataset_names=['train', 'test'])
+    logger.print_it(f"Loaded dataset '{dataset}' with {len(train_dataset)} training samples and {len(test_dataset)} testing samples. Merged dataset has {len(merged_dataset)} samples in total.")
+    # The merged dataset allows us to keep track of original indices across train/test splits, which is crucial for mapping back to precomputed per-sample statistics (e.g., memorization scores) that are typically computed on the original training set.
+    # Now split the merged dataset between defender and attacker
+    percentage_for_defender = 0.5
+    percentage_for_attacker = 0.5
+    # 5b) By fractions
+    chunks_frac, _ = split_merged_dataset_into_chunks(
+        merged_dataset=merged_dataset,
+        chunk_fractions=[percentage_for_defender*0.75, percentage_for_attacker*0.1, percentage_for_defender*0.15,
+                         percentage_for_attacker*0.75, percentage_for_attacker*0.25],
+        sampling_weights=[1.0 for _ in range(len(merged_dataset))],  # uniform sampling
+        seed=seed
+    )
+    defender_train = chunks_frac[0]
+    defender_val = chunks_frac[1]
+    defender_test = chunks_frac[2]
+    attacker_train = chunks_frac[3]
+    attacker_test = chunks_frac[4]
     data = MultiDatasets()
-    data.add(train_dataset, 'train')
-    if val_created:
-        data.add(val_dataset, 'val')
-    data.add(test_dataset, 'test')
+    data.add(defender_train, 'defender_train')
+    data.add(defender_val, 'defender_val')
+    data.add(defender_test, 'defender_test')
+    data.add(attacker_train, 'attacker_train')
+    data.add(attacker_test, 'attacker_test')
+    info = get_dataset_info_from_name(dataset=dataset)
     data.add_info(info)
     data.wrap(IndexedDataset)  # Wrap all datasets to preserve original indices
     return data
+
+
+    # # Optionally split the training set into train/val while preserving original indices
+    # val_created = False
+    # if val_split is not None and val_split == 0:
+    #     logger.print_it("val_split is set to 0, skipping creation of validation split...")
+    # elif val_split is not None and (0 < val_split < 1):
+    #     n_train = len(train_dataset)
+    #     full_indices = list(range(n_train))
+    #     k = int(n_train * val_split)
+    #     rng = np.random.default_rng(seed=seed)
+    #     val_indices = rng.choice(full_indices, k, replace=False).tolist()
+    #     val_idx = sorted(val_indices)
+    #     # logger.print_it(f"Dataset getter: val_seed={seed}; val_n={len(val_idx)}; val_indices_sample={val_idx[:10]}")
+        
+    #     train_idx = [i for i in full_indices if i not in set(val_idx)]
+
+    #     # Create separate dataset instances (deepcopy) so we can use different transforms
+    #     train_ds_copy = copy.deepcopy(train_dataset)
+    #     val_ds_copy = copy.deepcopy(train_dataset)
+    #     # Ensure train keeps augmentation and val uses the test transforms
+    #     try:
+    #         train_ds_copy.transform = train_transform
+    #         val_ds_copy.transform = test_transform
+    #     except NameError:
+    #         # In case transforms aren't available on the dataset object, ignore
+    #         pass
+
+    #     # Create Subsets that preserve original indices in `.indices`
+    #     train_dataset = Subset(train_ds_copy, train_idx)
+    #     val_dataset = Subset(val_ds_copy, val_idx)
+    #     val_created = True
+    # elif val_split is not None and (val_split >= 1 or val_split < 0):
+    #     raise ValueError(f"Invalid val_split={val_split}. Must be >0 and <=1 for fraction or >=1 for absolute number of samples.")
+    # else:
+    #     raise ValueError(f"Invalid val_split={val_split}. Must be a positive number or None.")
+
+    # info = get_dataset_info_from_name(dataset=dataset)
+
+    # if val_created:
+    #     printer_func('Gathered dataset "{}": Training samples = {} '
+    #                     '& Validation samples = {} & Testing samples = {}'.format(dataset,
+    #                                                                                 len(train_dataset),
+    #                                                                                 len(val_dataset),
+    #                                                                                 len(test_dataset)))
+    # else:
+    #     printer_func('Gathered dataset "{}": Training samples = {} '
+    #                     '& Testing samples = {}'.format(dataset,
+    #                                                     len(train_dataset),
+    #                                                     len(test_dataset)))
+
+    # data = MultiDatasets()
+    # data.add(train_dataset, 'train')
+    # if val_created:
+    #     data.add(val_dataset, 'val')
+    # data.add(test_dataset, 'test')
+    # data.add_info(info)
+    # data.wrap(IndexedDataset)  # Wrap all datasets to preserve original indices
+    # return data
 
 def wrap_datasets_with_indices(data: MultiDatasets):
     """Wrap all datasets in `data` with `IndexedDataset` to preserve original indices."""

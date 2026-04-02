@@ -33,6 +33,17 @@ class AuditingDatasetManager(Loggable):
 
     def _sample(self, n_samples_to_pick_from_train: int, n_samples_to_pick_from_test: int):
         self.logger.print_it(f"Sampling auditing dataset with {n_samples_to_pick_from_train} samples picked from train and {n_samples_to_pick_from_test} samples picked from test...")
+        defender_train_original_sample_indexes = self.original_datasets.get('defender_train').get_all_original_indices() 
+        defender_test_original_sample_indexes = self.original_datasets.get('defender_test').get_all_original_indices()
+        member_original_sample_indexes = self._rng.choice(defender_train_original_sample_indexes,
+                                                        n_samples_to_pick_from_train,
+                                                        replace=False).tolist()
+        non_member_original_sample_indexes = self._rng.choice(defender_test_original_sample_indexes,
+                                                            n_samples_to_pick_from_test,
+                                                            replace=False).tolist()
+        
+        
+
         member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('train'))), 
                                         n_samples_to_pick_from_train,
                                         replace=False).tolist()
