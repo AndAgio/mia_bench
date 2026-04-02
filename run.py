@@ -12,7 +12,7 @@ def main():
     settings = gather_settings()
     experiment_configs, exp_out_folder = setup_configs_and_folder_from_settings(settings)
 
-    defender_class = get_defender_class(settings.defense_mode)
+    defender_class = get_defender_class(settings.defender_mode)
     defender = defender_class(defender_configs=experiment_configs.defender)
     trained_defender_model, defender_stats = defender.train_model(train_configs=experiment_configs.defender.train, return_stats=True)
     defender.defend_model(device=experiment_configs.defender.train.device)
@@ -22,7 +22,7 @@ def main():
     # victim = Victim(victim_configs=experiment_configs.victim)
     # victim_model, victim_stats = victim.train_model(train_configs=experiment_configs.victim.train, return_stats=True)
 
-    attacker_class = get_attacker_class(settings.attack_mode)
+    attacker_class = get_attacker_class(settings.attacker_mode)
     attacker = attacker_class(defender_model=defender_model,
                             defender_dataset=defender.get_dataset(),
                             attacker_configs=experiment_configs.attacker)

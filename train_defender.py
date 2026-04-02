@@ -26,7 +26,7 @@ def main():
     print(f"Device name: {get_device(experiment_configs.defender.train.device)}")
     print("=========================================================\n\n")
 
-    defender_class = get_defender_class(settings.defense_mode)
+    defender_class = get_defender_class(settings.defender_mode)
     defender = defender_class(defender_configs=experiment_configs.defender)
     trained_defender_model, defender_stats = defender.train_model(train_configs=experiment_configs.defender.train, return_stats=True)
     defender.defend_model(device=experiment_configs.defender.train.device)

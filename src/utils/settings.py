@@ -75,7 +75,7 @@ def gather_settings():
                                 help='random seed (default:12345)')
         
         # Shared MIA parameters
-        parser.add_argument("--defense_mode", default="none",
+        parser.add_argument("--defender_mode", default="none",
                                 choices=['none', 'no', 'vanilla',
                                         "dp", "differential_privacy", "differential-privacy", 
                                         'mem_guard', 'memguard', 'mem-guard',
@@ -211,7 +211,7 @@ def gather_settings():
         
 
         # Shared MIA parameters
-        parser.add_argument("--attack_mode", default="quantile",
+        parser.add_argument("--attacker_mode", default="quantile",
                                 choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust', "lira", "quantile",
                                         "neural_feat", "neural_prob", "neural_logit", 
                                         'rmia_loss', 'rmia_confidence', 'rmia_entropy', 
@@ -235,130 +235,130 @@ def gather_settings():
         parser.add_argument('--shadow_test_perc', type=float, default=0.5,
                                 help='Percentage of shadow dataset samples that are coming from the testing set')
         # RobustMIA parameters
-        parser.add_argument('--random_population_size', type=int, default=1000,
+        parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
                                 help='Number of samples in Z to select randomly for LR computation')
-        parser.add_argument('--robust_alphas', nargs="+", type=float, default=0.5,
+        parser.add_argument('--attacker_robust_alphas', nargs="+", type=float, default=0.5,
                                 help='Set of alphas to be used in the RobustMIA attack')
-        parser.add_argument('--robust_gamma', type=float, default=1,
+        parser.add_argument('--attacker_robust_gamma', type=float, default=1,
                                 help='Gamma value to be used in the RobustMIA attack')
         # Quantile MIA parameters
-        parser.add_argument('--n_quantile', type=int, default=100,
+        parser.add_argument('--attacker_quantile_n', type=int, default=100,
                                 help='Number of quantiles')
-        parser.add_argument('--low_quantile', type=float, default=0.01,
+        parser.add_argument('--attacker_quantile_low', type=float, default=0.01,
                                 help='Lowest quantile in the quantile MIA attack')
-        parser.add_argument('--high_quantile', type=float, default=0.99,
+        parser.add_argument('--attacker_quantile_high', type=float, default=0.99,
                                 help='Highest quantile in the quantile MIA attack')
-        parser.add_argument('--quantile_alpha', type=float, default=0.05,
+        parser.add_argument('--attacker_quantile_alpha', type=float, default=0.05,
                                 help='Alpha to be used in the Quantile MIA attack')
-        parser.add_argument("--quantile_use_logscale", action="store_true", default=False,
+        parser.add_argument("--attacker_quantile_use_logscale", action="store_true", default=False,
                                 help="use logscale for quantile MIA attack",)
-        parser.add_argument("--quantile_use_gaussian", action="store_true", default=False,
+        parser.add_argument("--attacker_quantile_use_gaussian", action="store_true", default=False,
                                 help="use use_gaussian for quantile MIA attack",)
         # Neural MIA parameters
-        parser.add_argument('--neural_model_layers', type=int, nargs="+", default=[64, 32],
+        parser.add_argument('--attacker_neural_model_layers', type=int, nargs="+", default=[64, 32],
                                 help='List of hidden layer sizes for the neural MIA attacker model')
-        parser.add_argument('--neural_model_epochs', type=int, default=20,
+        parser.add_argument('--attacker_neural_model_epochs', type=int, default=20,
                                 help='Number of epochs to train the neural MIA attacker model')
-        parser.add_argument('--neural_model_lr', type=float, default=0.01,
+        parser.add_argument('--attacker_neural_model_lr', type=float, default=0.01,
                                 help='Learning rate to train the neural MIA attacker model')
         # Attack-R MIA parameters
-        parser.add_argument('--r_alpha', type=float, default=0.05,
+        parser.add_argument('--attacker_rmia_alpha', type=float, default=0.05,
                                 help='Alpha to be used in the Attack-R MIA attack')
         # Attack-P MIA parameters
-        parser.add_argument('--p_alpha', type=float, default=0.05,
+        parser.add_argument('--attacker_pmia_alpha', type=float, default=0.05,
                                 help='Alpha to be used in the Attack-P MIA attack')
         # Boundary MIA parameters
-        parser.add_argument('--bound_n_queries', type=int, default=1000,
+        parser.add_argument('--attacker_boundary_n_queries', type=int, default=1000,
                                 help='Number of queries to train the attack regressor in the Boundary MIA attack')
-        parser.add_argument('--bound_norm', type=str, default='l2',
+        parser.add_argument('--attacker_boundary_norm', type=str, default='l2',
                                 help='Norm to use for the hopskip steps in the Boundary MIA attack')
-        parser.add_argument('--bound_qeba_reduction_factor', type=int, default=8,
+        parser.add_argument('--attacker_boundary_qeba_reduction_factor', type=int, default=8,
                                 help='Reduction factor for QEBA (spatial/dct variants)')
-        parser.add_argument('--bound_quantile', type=float, default=0.5,
+        parser.add_argument('--attacker_boundary_quantile', type=float, default=0.5,
                                 help='Quantile to use for the unsupervised variant of the Boundary MIA attack')
         # Noise Robustness MIA parameters
-        parser.add_argument('--noise_robust_n_queries', type=int, default=5000,
+        parser.add_argument('--attacker_noise_robust_n_queries', type=int, default=5000,
                                 help='Number of noisy copies to create for each sample in the Noise Robustness MIA attack')
-        parser.add_argument('--noise_robust_sigmas', type=float, nargs="+", default=[0.01, 0.05, 0.1, 0.15, 0.2, 0.25], #[0.1, 0.2, 0.3, 0.4, 0.5], #[0.001, 0.002, 0.005, 0.008, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2],
+        parser.add_argument('--attacker_noise_robust_sigmas', type=float, nargs="+", default=[0.01, 0.05, 0.1, 0.15, 0.2, 0.25], #[0.1, 0.2, 0.3, 0.4, 0.5], #[0.001, 0.002, 0.005, 0.008, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2],
                                 help='Standard deviations of the gaussian noise to be added in the Noise Robustness MIA attack')
         # OSLO MIA parameters
-        parser.add_argument('--oslo_n_models', type=int, default=10,
+        parser.add_argument('--attacker_oslo_n_models', type=int, default=10,
                                 help='Number of shadow models to be trained for the OSLO MIA attack')
-        parser.add_argument('--oslo_same_arch', action='store_true', default=False,
+        parser.add_argument('--attacker_oslo_same_arch', action='store_true', default=False,
                                 help='Whether to use the same architecture for all shadow models or not')
-        parser.add_argument('--oslo_source_models_ratio', type=float, default=0.75,
+        parser.add_argument('--attacker_oslo_source_models_ratio', type=float, default=0.75,
                                 help='Ratio of shadow models to use as source models for the attack (the rest will be used as validation models)')
-        parser.add_argument('--oslo_K', type=int, default=10,
+        parser.add_argument('--attacker_oslo_K', type=int, default=10,
                                 help='Number of attack sub-procedures for the OSLO MIA attack')
-        parser.add_argument('--oslo_N', type=int, default=1000,
+        parser.add_argument('--attacker_oslo_N', type=int, default=1000,
                                 help='Number of attack iterations per sub-procedure for the OSLO MIA attack')
-        parser.add_argument('--oslo_max_epsilon', type=float, default=4/255,
+        parser.add_argument('--attacker_oslo_max_epsilon', type=float, default=4/255,
                                 help='Maximum perturbation for the OSLO MIA attack')
-        parser.add_argument('--oslo_threshold', type=float, default=0.01,
+        parser.add_argument('--attacker_oslo_threshold', type=float, default=0.01,
                                 help='Decision threshold for the OSLO MIA attack')
         # DHAttack MIA parameters
-        parser.add_argument('--dh_n_models', type=int, default=10,
+        parser.add_argument('--attacker_dh_n_models', type=int, default=10,
                                 help='Number of shadow models to be trained for the DHAttack MIA attack')
-        parser.add_argument('--dh_n_queries', type=int, default=1000,
+        parser.add_argument('--attacker_dh_n_queries', type=int, default=1000,
                                 help='Number of queries to train the attack regressor in the DHAttack MIA attack')
         # YOQO MIA parameters
-        parser.add_argument('--yoqo_alpha', type=float, default=2,
+        parser.add_argument('--attacker_yoqo_alpha', type=float, default=2,
                                 help='Alpha parameter for the YOQO MIA attack')
-        parser.add_argument('--yoqo_gamma', type=float, default=5,
+        parser.add_argument('--attacker_yoqo_gamma', type=float, default=5,
                                 help='Gamma parameter for the YOQO MIA attack')
-        parser.add_argument('--yoqo_adv_opt_max_iter', type=int, default=100,
+        parser.add_argument('--attacker_yoqo_adv_opt_max_iter', type=int, default=100,
                                 help='Maximum number of iterations for the adversarial optimization in the YOQO MIA attack')
-        parser.add_argument('--yoqo_adv_opt_lr', type=float, default=0.01,
+        parser.add_argument('--attacker_yoqo_adv_opt_lr', type=float, default=0.01,
                                 help='Learning rate for the adversarial optimization in the YOQO MIA attack')
-        parser.add_argument('--yoqo_adv_opt_loss_threshold', type=float, default=6,
+        parser.add_argument('--attacker_yoqo_adv_opt_loss_threshold', type=float, default=6,
                                 help='Loss threshold for the adversarial optimization in the YOQO MIA attack')
 
         # Attacker training parameters
-        parser.add_argument("--att_model", default="resnet18",
+        parser.add_argument("--attacker_model", default="resnet18",
                                 choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
                                         'wideresnet_16_8', 'wideresnet_28_2', 'wideresnet_28_10', 'wideresnet_50_2', 'wideresnet_101_2',
                                         "inception_v3", 
                                         "vgg11", "vgg13", "vgg16", "vgg19", 
                                         "mobile_small", "mobile_large", 
                                         "vit"])
-        parser.add_argument('--att_optimizer', type=str, required=False, default='sgd',
+        parser.add_argument('--attacker_optimizer', type=str, required=False, default='sgd',
                                 help='optimizer')
-        parser.add_argument('--att_epochs', type=int, default=100,
+        parser.add_argument('--attacker_epochs', type=int, default=100,
                                 help='Max number of epochs to train')
-        parser.add_argument('--att_batch_size', type=int, required=False, default=256,
+        parser.add_argument('--attacker_batch_size', type=int, required=False, default=256,
                                 help='input batch size for training')
-        parser.add_argument('--att_loss', type=str, required=False, default='crossentropy',
+        parser.add_argument('--attacker_loss', type=str, required=False, default='crossentropy',
                                 help='loss to be used for training', choices=['crossentropy'])
-        parser.add_argument('--att_lr', type=float, required=False, default=0.01,
+        parser.add_argument('--attacker_lr', type=float, required=False, default=0.01,
                                 help='learning rate')
-        parser.add_argument('--att_lr_sched', type=str, required=False, default='cosine',
+        parser.add_argument('--attacker_lr_sched', type=str, required=False, default='cosine',
                                 help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
-        parser.add_argument('--att_lr_step_size', type=int, required=False, default=50,
+        parser.add_argument('--attacker_lr_step_size', type=int, required=False, default=50,
                                 help='step size in epochs for the step, warmup step lr schedulers')
-        parser.add_argument('--att_lr_step_gamma', type=float, required=False, default=0.1,
+        parser.add_argument('--attacker_lr_step_gamma', type=float, required=False, default=0.1,
                                 help='decrease multiplying factor for the step, warmup step lr schedulers')
-        parser.add_argument('--att_lr_warmup_multiplier', type=float, required=False, default=1,
+        parser.add_argument('--attacker_lr_warmup_multiplier', type=float, required=False, default=1,
                                 help='multiplicative factor for the warmup phase of warmup step, warmup exp, warmup cosine lr schedulers')
-        parser.add_argument('--att_lr_warmup_epochs', type=int, required=False, default=10,
+        parser.add_argument('--attacker_lr_warmup_epochs', type=int, required=False, default=10,
                                 help='number of epochs to use as warmup in warmup step, warmup exp, warmup cosine lr schedulers')
-        parser.add_argument('--att_lr_exp_gamma', type=float, required=False, default=0.98,
+        parser.add_argument('--attacker_lr_exp_gamma', type=float, required=False, default=0.98,
                                 help='decrease multiplying factor for the exp, warmup exp lr schedulers')
-        parser.add_argument('--att_lr_cycle_step', type=int, required=False, default=40,
+        parser.add_argument('--attacker_lr_cycle_step', type=int, required=False, default=40,
                                 help='number of epochs in each warmup and restart cycle of the warmup cosine lr schedulers')
-        parser.add_argument('--att_lr_cycle_gamma', type=float, required=False, default=1,
+        parser.add_argument('--attacker_lr_cycle_gamma', type=float, required=False, default=1,
                                 help='dacaying factor to be applied in each warmup and restart cycle of the warmup cosine lr schedulers')
-        parser.add_argument('--att_lr_cosine_min', type=float, required=False, default=0.0001,
+        parser.add_argument('--attacker_lr_cosine_min', type=float, required=False, default=0.0001,
                                 help='minmum learning rate to use in warmup cosine and cosine lr schedulers')
-        parser.add_argument('--att_lr_step_milestones', nargs="+", type=int, default=[60, 120],
+        parser.add_argument('--attacker_lr_step_milestones', nargs="+", type=int, default=[60, 120],
                                 help='Set of milestones to be used to decay lr in multistep lr scheduler')
 
-        parser.add_argument('--att_weight_decay', type=float, required=False, default=5e-4,
+        parser.add_argument('--attacker_weight_decay', type=float, required=False, default=5e-4,
                                 help='weight decay')
-        parser.add_argument('--att_momentum', type=float, required=False, default=0.9,
+        parser.add_argument('--attacker_momentum', type=float, required=False, default=0.9,
                                 help='momentum')
-        parser.add_argument('--att_nesterov', action="store_true", default=False,
+        parser.add_argument('--attacker_nesterov', action="store_true", default=False,
                                 help='nesterov')
-        parser.add_argument('--att_seed', type=int, default=12345,
+        parser.add_argument('--attacker_seed', type=int, default=12345,
                                 help='random seed (default:12345)')
         # Differential Privacy parameters for attacker model
         # parser.add_argument("--att_use_dp", action="store_true", default=False,

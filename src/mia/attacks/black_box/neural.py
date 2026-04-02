@@ -107,12 +107,12 @@ class NeuralMIA(BaseMIA):
             prev_dim = hidden_dim
         # Final output layer (1 logit for binary classification)
         layers.append(nn.Linear(prev_dim, 1))
-        attack_model = nn.Sequential(*layers)
+        attacker_model = nn.Sequential(*layers)
         start_training = time.time()
-        attack_model = self.train_attack_model(model=attack_model,
+        attacker_model = self.train_attacker_model(model=attacker_model,
                                                 train_loader=train_loader,
                                                 device=train_config.device)
-        self.attack_model = attack_model
+        self.attacker_model = attacker_model
         stop = time.time()
         h, m, s = convert_to_hms(stop-start_training)
         self.logger.print_it(f"Neural MIA attacker: training of the attacking model completed in {h}:{m:02d}:{s:02d}.")
@@ -127,9 +127,9 @@ class NeuralMIA(BaseMIA):
         start = time.time()
         if isinstance(device, str):
             device = NeuralMIA.get_device(dev_str=device)
-        self.attack_model.to(device)
+        self.attacker_model.to(device)
         self.defender_model.to(device)
-        self.attack_model.eval()
+        self.attacker_model.eval()
         self.defender_model.eval()
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         scores = np.zeros((len(audit_dataset), ))
@@ -139,7 +139,7 @@ class NeuralMIA(BaseMIA):
                                                 device=device,
                                                 mode=self.attack_configs.neural_input_mode)
             with torch.no_grad():
-                output = self.attack_model(feature.to(device)).detach().cpu().item()
+                output = self.attacker_model(feature.to(device)).detach().cpu().item()
                 scores[sample_index] = output
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
@@ -149,7 +149,7 @@ class NeuralMIA(BaseMIA):
         self.logger.print_it('Neural MIA attacker: Obtained AUC score is: {}'.format(metrics['auc']))
         return metrics
 
-    def train_attack_model(self, model: nn.Module, train_loader: DataLoader, device: Union[torch.device, str] = 'cpu'):
+    def train_attacker_model(self, model: nn.Module, train_loader: DataLoader, device: Union[torch.device, str] = 'cpu'):
         self.logger.print_it('Neural MIA attacker: training the attacking model. This may take a while...')
         if isinstance(device, str):
             device = NeuralMIA.get_device(dev_str=device)

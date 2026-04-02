@@ -322,20 +322,20 @@ elif MODE == 'run_attack':
                                 text += f"--defender_lr_{key} {val} "
                             else:
                                 text += f"{val} "
-                text += f"--att_model={defender_model} "\
-                        f"--att_epochs={cfg['training']['epochs']} --att_batch_size={cfg['training']['batch_size']} "\
-                        f"--att_optimizer={cfg['optimizer']['name']} --att_lr={cfg['optimizer']['lr']} --att_weight_decay={cfg['optimizer']['weight_decay']} --att_momentum={cfg['optimizer']['momentum']} {'--att_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
-                        f"--att_lr_sched={cfg['scheduler']['name']} "
+                text += f"--attacker_model={defender_model} "\
+                        f"--attacker_epochs={cfg['training']['epochs']} --attacker_batch_size={cfg['training']['batch_size']} "\
+                        f"--attacker_optimizer={cfg['optimizer']['name']} --attacker_lr={cfg['optimizer']['lr']} --attacker_weight_decay={cfg['optimizer']['weight_decay']} --attacker_momentum={cfg['optimizer']['momentum']} {'--attacker_nesterov' if cfg['optimizer']['nesterov'] else ''} "\
+                        f"--attacker_lr_sched={cfg['scheduler']['name']} "
                 for key, value in cfg['scheduler']['extra'].items():
                     if not isinstance(value, list):
-                        text += f"--att_lr_{key}={value} " 
+                        text += f"--attacker_lr_{key}={value} " 
                     else:
                         for ind, val in enumerate(value):
                             if ind == 0:
-                                text += f"--att_lr_{key} {val} "
+                                text += f"--attacker_lr_{key} {val} "
                             else:
                                 text += f"{val} "
-                text += f"--attack_mode={attack} "\
+                text += f"--attacker_mode={attack} "\
                         f"--n_shadows={1 if 'pmia' in attack or 'quantile' in attack else N_SHADOWS} "\
                         f"--n_samples_per_shadow_dataset={5000  if 'pmia' in attack else SAMPLES_SHADOW} "\
                         f"--n_auditing_samples={SAMPLES_AUDIT} "\

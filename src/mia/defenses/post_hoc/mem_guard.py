@@ -26,7 +26,7 @@ class MemGuardDefender(BaseDefender):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.logger.print_it('MemGuard Defender: fitting shadow attack model...')
-        shadow_model = self.fit_shadow_attack_model(device=device)
+        shadow_model = self.fit_shadow_attacker_model(device=device)
         self.logger.print_it('MemGuard Defender: building defense layer...')
         self.defended_model = MemGuard(victim=self.trained_model,
                                         membership_model=shadow_model,
@@ -57,7 +57,7 @@ class MemGuardDefender(BaseDefender):
             x, _, _ = self._sort_with_index(x)
         return x, labels.float()
 
-    def fit_shadow_attack_model(self, device: Union[str, torch.device]):
+    def fit_shadow_attacker_model(self, device: Union[str, torch.device]):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         shadow_attacker_model = AttackNet(

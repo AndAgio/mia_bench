@@ -31,32 +31,32 @@ class SchedulerConfigs:
     
 def build_scheduler_configs_from_settings(settings: Any, mode: str = 'defender') -> SchedulerConfigs:
     assert mode in ['defender', 'attacker'], f"Mode '{mode}' not available to build LR scheduler configurations!"
-    name = settings.defender_lr_sched if mode == 'defender' else settings.att_lr_sched
-    total_epochs = settings.defender_epochs if mode == 'defender' else settings.att_epochs
+    name = settings.defender_lr_sched if mode == 'defender' else settings.attacker_lr_sched
+    total_epochs = settings.defender_epochs if mode == 'defender' else settings.attacker_epochs
     extra = {}
     if name == 'warmup_step':
-        extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.att_lr_step_size
-        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.att_lr_step_gamma
-        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.att_lr_warmup_multiplier
-        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.att_lr_warmup_epochs
+        extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.attacker_lr_step_size
+        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.attacker_lr_step_gamma
+        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.attacker_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.attacker_lr_warmup_epochs
     elif name == 'warmup_exp':
-        extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.att_lr_exp_gamma
-        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.att_lr_warmup_multiplier
-        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.att_lr_warmup_epochs
+        extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.attacker_lr_exp_gamma
+        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.attacker_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.attacker_lr_warmup_epochs
     elif name == 'warmup_cosine':
-        extra['cycle_step'] = settings.defender_lr_cycle_step if mode == 'defender' else settings.att_lr_cycle_step
-        extra['cycle_gamma'] = settings.defender_lr_cycle_gamma if mode == 'defender' else settings.att_lr_cycle_gamma
-        extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.att_lr_cosine_min
+        extra['cycle_step'] = settings.defender_lr_cycle_step if mode == 'defender' else settings.attacker_lr_cycle_step
+        extra['cycle_gamma'] = settings.defender_lr_cycle_gamma if mode == 'defender' else settings.attacker_lr_cycle_gamma
+        extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.attacker_lr_cosine_min
     elif name == 'step':
-        extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.att_lr_step_size
-        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.att_lr_step_gamma
+        extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.attacker_lr_step_size
+        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.attacker_lr_step_gamma
     elif name == 'multistep':
         extra['step_milestones'] = settings.defender_lr_step_milestones  if mode == 'defender' else settings.defender_lr_step_milestones
-        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.att_lr_step_gamma
+        extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.attacker_lr_step_gamma
     elif name == 'exp':
-        extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.att_lr_exp_gamma
+        extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.attacker_lr_exp_gamma
     elif name == 'cosine':
-        extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.att_lr_cosine_min
+        extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.attacker_lr_cosine_min
     else:
         raise ValueError(f"Learning rate scheduler '{name}' not available!")
     return SchedulerConfigs(name=name,
@@ -571,15 +571,18 @@ class ExperimentConfigs:
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
     assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
-        attacker_settings = ['dataset', 'val_split', 'attacker_model', 'attack_mode', 
-                            'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
-                            'random_population_size', 'robust_alphas', 'robust_gamma', 
-                            'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian',
-                            'neural_model_layers', 'neural_model_epochs', 'neural_model_lr',
-                            'r_alpha']
-        relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
-        if settings.attack_mode == 'quantile':
-            relevant_settings.pop('n_shadows')
+        attacker_settings = ['dataset', 'val_split',
+                            'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', ]
+        relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('attacker_') or k in attacker_settings}
+        # attacker_settings = ['dataset', 'val_split', 'attacker_model', 'attacker_mode', 
+        #                     'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
+        #                     'attacker_robust_rand_pop_size', 'attacker_robust_alphas', 'attacker_robust_gamma', 
+        #                     'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian',
+        #                     'neural_model_layers', 'neural_model_epochs', 'neural_model_lr',
+        #                     'r_alpha']
+        # relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
+        # if settings.attacker_mode == 'quantile':
+        #     relevant_settings.pop('n_shadows')
     elif mode == 'defender':
         defender_settings = ['dataset', 'val_split', 'defender_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('defender_') or k in defender_settings}
@@ -643,53 +646,53 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
 
-    if settings.defense_mode in ['no', 'none', 'vanilla']:
+    if settings.defender_mode in ['no', 'none', 'vanilla']:
         defender_defense_configs = NoDefenseConfigs()
-    elif settings.defense_mode == 'dp':
+    elif settings.defender_mode == 'dp':
         defender_defense_configs = DPDefenseConfigs(noise_multiplier=settings.defender_dp_noise_multiplier,
                                                     max_grad_norm=settings.defender_dp_max_grad_norm,
                                                     clip_per_layer=settings.defender_dp_clip_per_layer,
                                                     grad_sample_mode=settings.defender_dp_grad_sample_mode)
-    elif settings.defense_mode in ['mem_guard', 'memguard', 'mem-guard']:
+    elif settings.defender_mode in ['mem_guard', 'memguard', 'mem-guard']:
         defender_defense_configs = MemGuardDefenseConfigs(shadow_attacker_model_layers=settings.defender_mem_guard_shadow_model_layers,
                                                         shadow_attacker_model_epochs=settings.defender_mem_guard_shadow_model_epochs,
                                                         shadow_attacker_model_lr=settings.defender_mem_guard_shadow_model_lr,
                                                         budget=settings.defender_mem_guard_budget)
-    elif settings.defense_mode in ['relax_loss', 'relaxloss', 'relax-loss']:
+    elif settings.defender_mode in ['relax_loss', 'relaxloss', 'relax-loss']:
         defender_defense_configs = RelaxLossDefenseConfigs(relax_alpha=settings.defender_relax_loss_alpha)
-    elif settings.defense_mode in ['adv_reg', 'advreg', 'adv-reg']:
+    elif settings.defender_mode in ['adv_reg', 'advreg', 'adv-reg']:
         defender_defense_configs = AdvRegDefenseConfigs(shadow_attacker_model_layers=settings.defender_adv_reg_shadow_attacker_model_layers,
                                                         adv_lambda=settings.defender_adv_reg_lambda,
                                                         shadow_attacker_k=settings.defender_adv_reg_shadow_attacker_k)
-    elif settings.defense_mode in ['mixup']:
+    elif settings.defender_mode in ['mixup']:
         defender_defense_configs = MixupDefenseConfigs(alpha=settings.defender_mixup_alpha)
-    elif settings.defense_mode in ['hamp_train', 'hamp_test', 'hamp_full', 'hamp']:
-        if settings.defense_mode == 'hamp_train':
+    elif settings.defender_mode in ['hamp_train', 'hamp_test', 'hamp_full', 'hamp']:
+        if settings.defender_mode == 'hamp_train':
             hamp_mode = 'train_only'
-        elif settings.defense_mode == 'hamp_test':
+        elif settings.defender_mode == 'hamp_test':
             hamp_mode = 'test_only'
-        elif settings.defense_mode in ['hamp_full', 'hamp']:
+        elif settings.defender_mode in ['hamp_full', 'hamp']:
             hamp_mode = 'full'
         else:
-            raise ValueError('Hamp defense mode "{}" not recognized!'.format(settings.defense_mode))
+            raise ValueError('Hamp defense mode "{}" not recognized!'.format(settings.defender_mode))
         defender_defense_configs = HampDefenseConfigs(mode=hamp_mode,
                                                     gamma=settings.defender_hamp_gamma,
                                                     alpha=settings.defender_hamp_alpha)
-    elif settings.defense_mode in ['selena']:
+    elif settings.defender_mode in ['selena']:
         defender_defense_configs = SelenaDefenseConfigs(K=settings.defender_selena_K,
                                                         L=settings.defender_selena_L)
-    elif settings.defense_mode in ['mist', 'mist_mixup', 'mist-mixup']:
-        mixup = settings.defense_mode in ['mist_mixup', 'mist-mixup']
+    elif settings.defender_mode in ['mist', 'mist_mixup', 'mist-mixup']:
+        mixup = settings.defender_mode in ['mist_mixup', 'mist-mixup']
         defender_defense_configs = MistDefenseConfigs(num_submodels=settings.defender_mist_num_submodels,
                                                     split_method=settings.defender_mist_split_method,
                                                     submodel_epochs=settings.defender_mist_submodel_epochs,
                                                     lmbd=settings.defender_mist_lambda,
                                                     mixup=mixup,
                                                     alpha_mixup=settings.defender_mixup_alpha if mixup else 0.0)
-    elif settings.defense_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
+    elif settings.defender_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
         defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
                                                                 warmup_epochs=settings.defender_weighted_smoothing_warmup_epochs)
-    elif settings.defense_mode in ['purifier']:
+    elif settings.defender_mode in ['purifier']:
         defender_defense_configs = PurifierDefenseConfigs(reformer_latent_dim=settings.defender_purifier_reformer_latent_dim,
                                                         reformer_hidden_dim=settings.defender_purifier_reformer_hidden_dim,
                                                         reformer_epochs=settings.defender_purifier_reformer_epochs,
@@ -698,11 +701,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         reformer_lambda=settings.defender_purifier_reformer_lambda,
                                                         pindex_size=settings.defender_purifier_pindex_size,
                                                         swap_threshold=settings.defender_purifier_swap_threshold)
-    elif settings.defense_mode in ['mmd', 'mmd_mixup', 'mmd-mixup']:
+    elif settings.defender_mode in ['mmd', 'mmd_mixup', 'mmd-mixup']:
         defender_defense_configs = MmdDefenseConfigs(lmbd=settings.defender_mmd_lambda,
-                                                    use_mixup=True if settings.defense_mode in ['mmd_mixup', 'mmd-mixup'] else False,
+                                                    use_mixup=True if settings.defender_mode in ['mmd_mixup', 'mmd-mixup'] else False,
                                                     mixup_alpha=settings.defender_mixup_alpha)
-    elif settings.defense_mode in ['ldl']:
+    elif settings.defender_mode in ['ldl']:
         if settings.dataset in ["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet", "gtsrb"]:
             noise_type = "normal"
         elif settings.dataset in ["purchase", "news", "texas"]:
@@ -710,7 +713,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         defender_defense_configs = LdlDefenseConfigs(n_queries=settings.defender_ldl_n_queries,
                                                     noise_type=noise_type,
                                                     noise_scale=settings.defender_ldl_noise_scale)
-    elif settings.defense_mode in ['data_augmentation', 'data-augmentation', 'dataaug', 'data-aug']:
+    elif settings.defender_mode in ['data_augmentation', 'data-augmentation', 'dataaug', 'data-aug']:
         defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip,
                                                                 rotation=settings.defender_augment_rotation,
                                                                 random_crop=settings.defender_augment_random_crop,
@@ -718,7 +721,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                                 jitter_hue=settings.defender_augment_jitter_hue,
                                                                 perspective_distortion_scale=settings.defender_augment_perspective_distortion_scale)
     else:
-        raise ValueError('Defense mode "{}" not recognized!'.format(settings.defense_mode))
+        raise ValueError('Defense mode "{}" not recognized!'.format(settings.defender_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
                                     dataset=defender_dataset_configs,
                                     log=defender_log_configs,
@@ -734,151 +737,151 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     attacker_log_configs = LogConfigs(name='attacker',
                                     log_folder=exp_log_folder,
                                     log_mode='smart')
-    attacker_model_configs = ModelConfigs(model_name=settings.att_model,
+    attacker_model_configs = ModelConfigs(model_name=settings.attacker_model,
                                             im_channels=defender_dataset_configs.im_channels,
                                             num_classes=defender_dataset_configs.num_classes,
                                             im_size=defender_dataset_configs.im_size)
-    attacker_optimizer_configs = OptimizerConfigs(name=settings.att_optimizer,
-                                                    lr=settings.att_lr,
-                                                    weight_decay=settings.att_weight_decay,
-                                                    momentum=settings.att_momentum,
-                                                    nesterov=settings.att_nesterov,)
+    attacker_optimizer_configs = OptimizerConfigs(name=settings.attacker_optimizer,
+                                                    lr=settings.attacker_lr,
+                                                    weight_decay=settings.attacker_weight_decay,
+                                                    momentum=settings.attacker_momentum,
+                                                    nesterov=settings.attacker_nesterov,)
     attacker_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='attacker')
     attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
                                             scheduler_config=attacker_scheduler_configs,
                                             # dp_config=attacker_dp_config,
-                                            batch_size=settings.att_batch_size,
-                                            loss=settings.att_loss,
+                                            batch_size=settings.attacker_batch_size,
+                                            loss=settings.attacker_loss,
                                             metrics=settings.perf_metrics,
                                             metric_to_track=settings.perf_metric_to_track,
                                             device=settings.device,
                                             distributed=settings.distributed,
-                                            seed=settings.att_seed,
+                                            seed=settings.attacker_seed,
                                             resume=settings.resume,
                                             ckpts_folder=attacker_ckpts_folder,
                                             resume_ckpts_folder=attacker_resume_ckpts_folder)
     attacker_auditing_configs = AuditingDataConfigs(n_auditing_samples=settings.n_auditing_samples,
                                                 in_perc=settings.audit_in_perc,
-                                                seed=settings.att_seed)
+                                                seed=settings.attacker_seed)
     attacker_shadow_configs = ShadowDataConfigs(n_shadow_datasets=settings.n_shadows,
                                                 n_samples_per_dataset=settings.n_samples_per_shadow_dataset,
                                                 mode='online',
                                                 test_perc=settings.shadow_test_perc,
-                                                seed=settings.att_seed)
+                                                seed=settings.attacker_seed)
 
-    if settings.attack_mode in ['online_robust', 'offline_robust', 'on_robust', 'off_robust']:
-        robust_mode = 'online' if settings.attack_mode in ['online_robust', 'on_robust'] else 'offline'
+    if settings.attacker_mode in ['online_robust', 'offline_robust', 'on_robust', 'off_robust']:
+        robust_mode = 'online' if settings.attacker_mode in ['online_robust', 'on_robust'] else 'offline'
         attack_configs = RobustMiaConfigs(mode=robust_mode,
-                                        alpha=settings.robust_alphas,
-                                        gamma=settings.robust_gamma,
-                                        random_pop_size=settings.random_population_size)
+                                        alpha=settings.attacker_robust_alphas,
+                                        gamma=settings.attacker_robust_gamma,
+                                        random_pop_size=settings.attacker_robust_rand_pop_size)
         attacker_shadow_configs.mode = robust_mode
-    elif settings.attack_mode == 'lira':
+    elif settings.attacker_mode == 'lira':
         attack_configs = LiraMiaConfigs(mode='online')
-    elif settings.attack_mode == 'quantile':
+    elif settings.attacker_mode == 'quantile':
         attacker_train_configs.metric_to_track = "quantile_coverage"
         attacker_train_configs.metrics = ["quantile_coverage"]
         attack_configs = QuantileMiaConfigs(mode='offline',
-                                            n_quantile=settings.n_quantile,
-                                            low_quantile=settings.low_quantile,
-                                            high_quantile=settings.high_quantile,
-                                            use_logscale=settings.quantile_use_logscale,
-                                            use_gaussian=settings.quantile_use_gaussian,
-                                            quantile_alpha=settings.quantile_alpha)
+                                            n_quantile=settings.attacker_quantile_n,
+                                            low_quantile=settings.attacker_quantile_low,
+                                            high_quantile=settings.attacker_quantile_high,
+                                            use_logscale=settings.attacker_quantile_use_logscale,
+                                            use_gaussian=settings.attacker_quantile_use_gaussian,
+                                            quantile_alpha=settings.attacker_quantile_alpha)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attack_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
-        neural_input_mode = settings.attack_mode.split('_')[-1]
+    elif settings.attacker_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
+        neural_input_mode = settings.attacker_mode.split('_')[-1]
         attack_configs = NeuralMiaConfigs(mode='online',
                                         neural_input_mode=neural_input_mode,
-                                        model_layers=settings.neural_model_layers,
-                                        model_epochs=settings.neural_model_epochs,
-                                        model_lr=settings.neural_model_lr)
-    elif settings.attack_mode in ['rmia_loss', 'rmia_confidence', 'rmia_entropy']:
-        score_type = settings.attack_mode.split('_')[-1]
+                                        model_layers=settings.attacker_neural_model_layers,
+                                        model_epochs=settings.attacker_neural_model_epochs,
+                                        model_lr=settings.attacker_neural_model_lr)
+    elif settings.attacker_mode in ['rmia_loss', 'rmia_confidence', 'rmia_entropy']:
+        score_type = settings.attacker_mode.split('_')[-1]
         attack_configs = AttackRMiaConfigs(mode='offline',
-                                        r_alpha=settings.r_alpha,
+                                        r_alpha=settings.attacker_rmia_alpha,
                                         r_score_type=score_type)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attack_mode in ['pmia_loss', 'pmia_confidence', 'pmia_entropy']:
-        score_type = settings.attack_mode.split('_')[-1]
+    elif settings.attacker_mode in ['pmia_loss', 'pmia_confidence', 'pmia_entropy']:
+        score_type = settings.attacker_mode.split('_')[-1]
         attack_configs = AttackPMiaConfigs(mode='offline',
-                                        p_alpha=settings.p_alpha,
+                                        p_alpha=settings.attacker_pmia_alpha,
                                         p_score_type=score_type)
         attacker_shadow_configs.n_shadow_datasets = 1
         attacker_shadow_configs.mode = 'offline'
         attacker_shadow_configs.test_perc = 1.0
-    elif settings.attack_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
-        if settings.attack_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop']:
+    elif settings.attacker_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
+        if settings.attacker_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop']:
             bound_mode = 'hop_skip_jump'
-        elif settings.attack_mode in ['sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
+        elif settings.attacker_mode in ['sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
             bound_mode = 'qeba'
-            qeba_reduction_mode = settings.attack_mode.split('-')[-1] if '-' in settings.attack_mode else 'spatial'
+            qeba_reduction_mode = settings.attacker_mode.split('-')[-1] if '-' in settings.attacker_mode else 'spatial'
             qeba_configs = QebaConfigs(reduction_mode=qeba_reduction_mode,
-                                        reduction_factor=settings.bound_qeba_reduction_factor)
+                                        reduction_factor=settings.attacker_boundary_qeba_reduction_factor)
         else:
-            raise ValueError('Supervised Boundary Attack mode "{}" not recognized!'.format(settings.attack_mode))
-        boundary_configs = BoundaryMiaConfigs(n_queries=settings.bound_n_queries,
+            raise ValueError('Supervised Boundary Attack mode "{}" not recognized!'.format(settings.attacker_mode))
+        boundary_configs = BoundaryMiaConfigs(n_queries=settings.attacker_boundary_n_queries,
                                             mode=bound_mode,
-                                            norm=settings.bound_norm,
+                                            norm=settings.attacker_boundary_norm,
                                             qeba=qeba_configs if bound_mode == 'qeba' else None)
         attack_configs = SupervisedBoundaryAttackConfig(boundary=boundary_configs,
                                                         mode='offline')
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attack_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
-        if settings.attack_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop']:
+    elif settings.attacker_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
+        if settings.attacker_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop']:
             bound_mode = 'hop_skip_jump'
-        elif settings.attack_mode in ['uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
+        elif settings.attacker_mode in ['uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
             bound_mode = 'qeba'
-            qeba_reduction_mode = settings.attack_mode.split('-')[-1] if '-' in settings.attack_mode else 'spatial'
+            qeba_reduction_mode = settings.attacker_mode.split('-')[-1] if '-' in settings.attacker_mode else 'spatial'
             qeba_configs = QebaConfigs(reduction_mode=qeba_reduction_mode,
-                                        reduction_factor=settings.bound_qeba_reduction_factor)
+                                        reduction_factor=settings.attacker_boundary_qeba_reduction_factor)
         else:
-            raise ValueError('Unsupervised Boundary Attack mode "{}" not recognized!'.format(settings.attack_mode))
-        boundary_configs = BoundaryMiaConfigs(n_queries=settings.bound_n_queries,
+            raise ValueError('Unsupervised Boundary Attack mode "{}" not recognized!'.format(settings.attacker_mode))
+        boundary_configs = BoundaryMiaConfigs(n_queries=settings.attacker_boundary_n_queries,
                                         mode=bound_mode,
-                                        norm=settings.bound_norm,
+                                        norm=settings.attacker_boundary_norm,
                                         qeba=qeba_configs if bound_mode == 'qeba' else None)
         attack_configs = UnsupervisedBoundaryAttackConfig(boundary=boundary_configs,
                                                         mode='offline',
-                                                        quantile=settings.bound_quantile)
+                                                        quantile=settings.attacker_boundary_quantile)
         attacker_shadow_configs.mode = 'offline'
     
-    elif settings.attack_mode in ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']:
-        attack_configs = NoiseRobustnessAttackConfig(n_queries=settings.noise_robust_n_queries,
-                                                    sigmas=settings.noise_robust_sigmas)
+    elif settings.attacker_mode in ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']:
+        attack_configs = NoiseRobustnessAttackConfig(n_queries=settings.attacker_noise_robust_n_queries,
+                                                    sigmas=settings.attacker_noise_robust_sigmas)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attack_mode in ['transfer_loss', 'transfer_confidence', 'transfer_entropy']:
-        feature_mode = settings.attack_mode.split('_')[-1]
+    elif settings.attacker_mode in ['transfer_loss', 'transfer_confidence', 'transfer_entropy']:
+        feature_mode = settings.attacker_mode.split('_')[-1]
         attack_configs = TransferAttackConfig(feature_mode=feature_mode)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attack_mode in ['oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm']:
-        ga_mode = settings.attack_mode.split('_')[-1] if '_' in settings.attack_mode else 'difgsm'
-        attack_configs = OsloAttackConfig(n_models=settings.oslo_n_models,
-                                        same_arch=settings.oslo_same_arch,
-                                        source_models_ratio=settings.oslo_source_models_ratio,
-                                        K=settings.oslo_K,
-                                        N=settings.oslo_N,
-                                        max_epsilon=settings.oslo_max_epsilon,
+    elif settings.attacker_mode in ['oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm']:
+        ga_mode = settings.attacker_mode.split('_')[-1] if '_' in settings.attacker_mode else 'difgsm'
+        attack_configs = OsloAttackConfig(n_models=settings.attacker_oslo_n_models,
+                                        same_arch=settings.attacker_oslo_same_arch,
+                                        source_models_ratio=settings.attacker_oslo_source_models_ratio,
+                                        K=settings.attacker_oslo_K,
+                                        N=settings.attacker_oslo_N,
+                                        max_epsilon=settings.attacker_oslo_max_epsilon,
                                         ga_mode=ga_mode,
-                                        threshold=settings.oslo_threshold)
+                                        threshold=settings.attacker_oslo_threshold)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attack_mode in ['dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black', 'dh-attack_random']:
-        fixed_input_mode = settings.attack_mode.split('_')[-1] if '_' in settings.attack_mode else 'white'
-        attack_configs = DHAttackConfig(n_models=settings.dh_n_models,
-                                        n_queries=settings.dh_n_queries,
+    elif settings.attacker_mode in ['dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black', 'dh-attack_random']:
+        fixed_input_mode = settings.attacker_mode.split('_')[-1] if '_' in settings.attacker_mode else 'white'
+        attack_configs = DHAttackConfig(n_models=settings.attacker_dh_n_models,
+                                        n_queries=settings.attacker_dh_n_queries,
                                         fixed_input_mode=fixed_input_mode)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attack_mode in ['online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo']:
-        yoqo_mode = 'online' if settings.attack_mode in ['online_yoqo', 'on_yoqo'] else 'offline'
+    elif settings.attacker_mode in ['online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo']:
+        yoqo_mode = 'online' if settings.attacker_mode in ['online_yoqo', 'on_yoqo'] else 'offline'
         attack_configs = YoqoAttackConfig(mode=yoqo_mode,
-                                        adv_opt_max_iter=settings.yoqo_adv_opt_max_iter,
-                                        adv_opt_lr=settings.yoqo_adv_opt_lr,
-                                        adv_opt_loss_threshold=settings.yoqo_adv_opt_loss_threshold,
-                                        alpha=settings.yoqo_alpha,
-                                        gamma=settings.yoqo_gamma)
+                                        adv_opt_max_iter=settings.attacker_yoqo_adv_opt_max_iter,
+                                        adv_opt_lr=settings.attacker_yoqo_adv_opt_lr,
+                                        adv_opt_loss_threshold=settings.attacker_yoqo_adv_opt_loss_threshold,
+                                        alpha=settings.attacker_yoqo_alpha,
+                                        gamma=settings.attacker_yoqo_gamma)
         attacker_shadow_configs.mode = yoqo_mode
     else:
-        raise ValueError('Attack mode "{}" not recognized!'.format(settings.attack_mode))
+        raise ValueError('Attack mode "{}" not recognized!'.format(settings.attacker_mode))
     attacker_configs = AttackerConfigs(hash=attacker_hash,
                                         log=attacker_log_configs,
                                         model=attacker_model_configs,

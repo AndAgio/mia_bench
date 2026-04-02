@@ -121,7 +121,7 @@ Example A — Quantile attack on CIFAR-10 (fast, minimal shadows)
 python download_all_datasets.py
 
 # run a short end-to-end experiment: defender + attack (quantile)
-python run.py --attack_mode quantile --dataset cifar10 --defender_model resnet18 --att_model resnet18 --defender_epochs 10 --att_epochs 5 --n_shadows 1 --n_samples_per_shadow_dataset 2000 --n_auditing_samples 1000 --device 0
+python run.py --attacker_mode quantile --dataset cifar10 --defender_model resnet18 --attacker_model resnet18 --defender_epochs 10 --attacker_epochs 5 --n_shadows 1 --n_samples_per_shadow_dataset 2000 --n_auditing_samples 1000 --device 0
 ```
 
 Example B — LiRA attack on TinyImageNet (larger experiment)
@@ -129,17 +129,17 @@ Example B — LiRA attack on TinyImageNet (larger experiment)
 ```bash
 # run a larger experiment for LiRA on TinyImageNet
 python run.py \
-	--attack_mode lira \
+	--attacker_mode lira \
 	--dataset tinyimagenet \
 	--defender_model resnet50 \
-	--att_model resnet50 \
+	--attacker_model resnet50 \
 	--defender_epochs 90 \
-	--att_epochs 30 \
+	--attacker_epochs 30 \
 	--n_shadows 50 \
 	--n_samples_per_shadow_dataset 10000 \
 	--n_auditing_samples 5000 \
 	--defender_batch_size 256 \
-	--att_batch_size 256 \
+	--attacker_batch_size 256 \
 	--device 0
 ```
 
@@ -158,8 +158,8 @@ Below are the most commonly used flags. See `src/utils/settings.py` for the full
 - `--defender_epochs`, `--defender_batch_size`: defender training schedule and batch size
 - `--defender_lr`, `--defender_lr_sched`: defender learning rate and scheduler
 - `--defender_use_dp`, `--defender_dp_noise_multiplier`, `--defender_dp_max_grad_norm`, `--defender_dp_clip_per_layer`: differential privacy training options for the defender
-- `--att_model`, `--att_epochs`, `--att_batch_size`, `--att_lr`: attacker model and training settings
-- `--attack_mode`: attack strategy (`quantile`, `lira`, `neural_feat`, `rmia_loss`, `pmia_confidence`, ...)
+- `--attacker_model`, `--attacker_epochs`, `--attacker_batch_size`, `--attacker_lr`: attacker model and training settings
+- `--attacker_mode`: attack strategy (`quantile`, `lira`, `neural_feat`, `rmia_loss`, `pmia_confidence`, ...)
 - `--n_shadows`, `--n_samples_per_shadow_dataset`: number of shadow datasets/models and their size (some attacks override these defaults)
 - `--n_auditing_samples`, `--audit_in_perc`: auditing set size and in-percentage
 - `--device`: device to use (`0`, `1`, `cpu`, `mps`)
