@@ -12,7 +12,7 @@ def gather_settings():
         
         # Dataset parameters
         parser.add_argument("--dataset", type=str, default="cifar100",
-                                choices=["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet",
+                                choices=["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet", "gtsrb",
                                         "purchase", "texas", "news"],)
         parser.add_argument("--val_split", type=float, default=0.2,
                                 help="percentage of training data to use for validation during defender model training",)

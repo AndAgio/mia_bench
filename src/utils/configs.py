@@ -176,6 +176,8 @@ def get_im_size_from_name(dataset: str):
         im_size = (28, 28)
     elif dataset == 'cinic10':
         im_size = (32, 32)
+    elif dataset == 'gtsrb':
+        im_size = (32, 32)
     elif dataset == 'imagenet':
         im_size = (224, 224)
     elif dataset == 'tinyimagenet':
@@ -200,6 +202,8 @@ def get_im_channels_from_name(dataset: str):
     elif dataset == 'imagenet':
         im_channels = 3
     elif dataset == 'tinyimagenet':
+        im_channels = 3
+    elif dataset == 'gtsrb':
         im_channels = 3
     elif dataset == 'news':
         im_channels = 134,410
@@ -226,6 +230,8 @@ def get_num_classes_from_name(dataset: str):
         num_classes = 1000
     elif dataset == 'tinyimagenet':
         num_classes = 200
+    elif dataset == 'gtsrb':
+        num_classes = 43
     elif dataset == 'news':
         num_classes = 20
     elif dataset == 'purchase':
@@ -697,9 +703,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     use_mixup=True if settings.defense_mode in ['mmd_mixup', 'mmd-mixup'] else False,
                                                     mixup_alpha=settings.defender_mixup_alpha)
     elif settings.defense_mode in ['ldl']:
-        if settings.dataset in ["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet"]:
+        if settings.dataset in ["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet", "gtsrb"]:
             noise_type = "normal"
-        elif settings.dataset in []:
+        elif settings.dataset in ["purchase", "news", "texas"]:
             noise_type = "bernoulli"
         defender_defense_configs = LdlDefenseConfigs(n_queries=settings.defender_ldl_n_queries,
                                                     noise_type=noise_type,

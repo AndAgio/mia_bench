@@ -42,6 +42,9 @@ def get_dataset_mean_std(dataset: str):
     elif dataset == 'tinyimagenet':
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
+    elif dataset == 'gtsrb':
+        mean = [0.3403, 0.3121, 0.3214]
+        std = [0.2724, 0.2608, 0.2669]
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
     return mean, std
