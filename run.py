@@ -24,7 +24,6 @@ def main():
 
     attacker_class = get_attacker_class(settings.attacker_mode)
     attacker = attacker_class(defender_model=defender_model,
-                            defender_dataset=defender.get_dataset(),
                             attacker_configs=experiment_configs.attacker)
     attacker.optimize(train_config=experiment_configs.attacker.train)
     attacker.measure_effectiveness(device=experiment_configs.attacker.train.device)

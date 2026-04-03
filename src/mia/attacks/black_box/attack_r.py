@@ -26,7 +26,7 @@ class AttackRMIA(BaseMIA):
         self.name = f"Attack-R {self.attack_configs.r_score_type} attacker"
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it(f"{self.name}: sampling of shadow datasets...")
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
+        self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)

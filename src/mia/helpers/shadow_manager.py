@@ -17,10 +17,10 @@ class ShadowManager(Loggable):
         self.shadow_data = shadow_data
         self.shadow_models = shadow_models
 
-    def sample_shadow_datasets(self, original_datasets: MultiDatasets, auditing_dataset: AuditingDatasetManager, shadow_configs: ShadowDataConfigs, attacker_hash: str):
+    def sample_shadow_datasets(self, attacker_data_distribution: MultiDatasets, auditing_dataset: AuditingDatasetManager, shadow_configs: ShadowDataConfigs, attacker_hash: str):
         if self.shadow_models is not None:
             assert shadow_configs.n_shadow_datasets == self.shadow_models.get_num_models(), f"Number of shadow datasets you're trying to sample does not match the number of shadow models already built!"
-        self.shadow_data = ShadowDatasetsManager(original_datasets=original_datasets,
+        self.shadow_data = ShadowDatasetsManager(attacker_data_distribution=attacker_data_distribution,
                                                 auditing_dataset=auditing_dataset,
                                                 shadow_configs=shadow_configs,
                                                 attacker_hash=attacker_hash,
@@ -67,7 +67,7 @@ class ShadowManager(Loggable):
     def get_all_models(self):
         return self.shadow_models.get_all()
     
-    def get_all_datasets(self, labels: str = 'mia'):
+    def get_all_datasets(self, labels: str = 'original'):
         return self.shadow_data.get_all(labels=labels)
     
     def get_model(self, index: int):
@@ -76,7 +76,7 @@ class ShadowManager(Loggable):
     def update_model(self, index: int, model: torch.nn.Module):
         self.shadow_models.update(index=index, model=model)
     
-    def get_dataset(self, index: int, labels: str = 'mia'):
+    def get_dataset(self, index: int, labels: str = 'original'):
         return self.shadow_data.get(index=index,
                                     labels=labels)
     
@@ -92,14 +92,22 @@ class ShadowManager(Loggable):
     def get_n_datasets(self):
         return self.shadow_data.get_num_dataset()
     
-    def get_all_in_dataset_for_sample_id(self, id: int, split: str = 'all', labels: str = 'original'):
+
+    def get_all_in_dataset_for_sample_id(self, id: int, labels: str = 'original'):
         return self.shadow_data.get_shadow_datasets_containing_sample_id(id=id,
-                                                                        split=split,
                                                                         labels=labels)
+
+    # def get_all_in_dataset_for_sample_id(self, id: int, split: str = 'all', labels: str = 'original'):
+    #     return self.shadow_data.get_shadow_datasets_containing_sample_id(id=id,
+    #                                                                     split=split,
+    #                                                                     labels=labels)
     
-    def find_all_in_dataset_indices_for_sample_id(self, id: int, split: str = 'all'):
-        return self.shadow_data.find_shadow_datasets_containing_sample_id(id=id,
-                                                                        split=split)
+    def find_all_in_dataset_indices_for_sample_id(self, id: int):
+        return self.shadow_data.find_shadow_datasets_containing_sample_id(id=id)
+
+    # def find_all_in_dataset_indices_for_sample_id(self, id: int, split: str = 'all'):
+    #     return self.shadow_data.find_shadow_datasets_containing_sample_id(id=id,
+    #                                                                     split=split)
     
     def sample_random_population_indices(self, num_data: int = None):
         return self.shadow_data.sample_random_indices(num_data=num_data)

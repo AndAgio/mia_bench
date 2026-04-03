@@ -97,6 +97,7 @@ class MyOriginalIndexSubset(Dataset[_T_co]):
         self.base_dataset = self._resolve_base(dataset)
         # original IDs currently available in `dataset` order
         self.orig_indices = self._resolve_orig_indices(dataset)
+        print(f"self.orig_indices: {self.orig_indices}")
 
         # map original_id -> local position(s) inside provided dataset
         inv_map = {}
@@ -142,6 +143,8 @@ class MyOriginalIndexSubset(Dataset[_T_co]):
                 continue
             if isinstance(base, IndexedDataset):
                 indices = [base.orig_indices[i] for i in indices]
+            if isinstance(base, MyConcatDataset):
+                indices = base.get_all_original_indices()  # type: ignore[attr-defined]
             break
         return indices
 
@@ -771,7 +774,7 @@ def split_merged_dataset_into_chunks(merged_dataset: Dataset,
     for s in sizes:
         ids = ordered_indices[cursor:cursor+s]
         cursor += s
-        chunks.append(MySubset(merged_dataset, ids))
+        chunks.append(MyOriginalIndexSubset(merged_dataset, ids, strict=True, return_indexed_tuple=True))
         indices_per_chunk.append(ids)
 
     if return_chunk_indices:

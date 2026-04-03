@@ -1,7 +1,7 @@
 from typing import Union
 
 import torch
-from src.data import get_dataset
+from src.data import get_defender_datas
 from src.models import get_model
 from src.trainer.train_manager import TrainManager
 from src.utils.configs import TrainConfigs, DefenderConfigs
@@ -14,11 +14,12 @@ class BaseDefender(Loggable):
         logger=get_logger_from_configs(defender_configs.log)
         super().__init__(logger=logger)
         self.defender_hash = defender_configs.hash
-        self.dataset_configs = defender_configs.dataset
+        self.dataset_configs = defender_configs.dataset.base
         self.model_configs = defender_configs.model
-        self.dataset = get_dataset(dataset=self.dataset_configs.name,
+        self.dataset = get_defender_datas(dataset=self.dataset_configs.name,
                                 datasets_folder=self.dataset_configs.data_folder,
-                                val_split=self.dataset_configs.val_split,
+                                def_split=self.dataset_configs.def_split,
+                                att_split=self.dataset_configs.att_split,
                                 seed=self.dataset_configs.seed,
                                 augment=self.dataset_configs.data_augmentation,
                                 logger=self.logger)

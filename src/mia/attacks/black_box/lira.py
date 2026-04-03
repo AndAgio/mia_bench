@@ -15,13 +15,12 @@ class LiRA(BaseMIA):
     # Implementation of Membership inference attacks from first principles (https://ieeexplore.ieee.org/abstract/document/9833649).
     def __init__(self, 
                 defender_model: torch.nn.Module,
-                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with LiRA!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('LiRA attacker: sampling of shadow datasets...')
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
+        self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)

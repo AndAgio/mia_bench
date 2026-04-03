@@ -64,21 +64,8 @@ def get_dataset_mean_std(dataset: str):
     return mean, std
 
 
-def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, val_split: float = 0.2, seed: int= 12345, augment: bool = False, logger: callable = None):
-    """Return dataset splits packed into a `MultiDatasets` object.
-
-    Parameters:
-    - val_split: if >0 and <=1 treated as fraction of training set to use as validation; if >=1 treated as absolute number of samples.
-    - val_indices: explicit list of indices (w.r.t. original training set ordering) to use as validation. If provided, overrides `val_split`.
-    - val_seed: seed used when sampling a validation split randomly (deterministic if `val_shuffle` is True). If `None` and `rng` is provided, the external RNG will be used.
-    - val_shuffle: whether to shuffle training indices before taking a split.
-    - rng: optional `random.Random`-like instance (with `.shuffle(list)` and `.randint(a,b)`) to be used for sampling. If not provided, a `random.Random(val_seed)` instance is used when `val_seed` is provided, otherwise the module-level `random` is used.
-    - report_seed: if True, the function prints either the explicit `val_seed` (when used) or a small sample integer from the used RNG so that you can compare RNG states across scripts.
-
-    The function preserves original training indices for `val` by creating `torch.utils.data.Subset`
-    instances whose `.indices` attribute corresponds to the indices in the original full training set. This
-    allows mapping back to precomputed per-sample statistics (e.g., memorization scores).
-    """
+def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, augment: bool = False, logger: callable = None):
+    """Import and return the appropriate dataset based on the provided name."""
     printer_func = print if logger is None else logger.print_it
     printer_func('Gathering dataset "{}". This may take a while...'.format(dataset))
     # Image Preprocessing
@@ -225,38 +212,103 @@ def get_dataset(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, va
         test_dataset = GTSRB(root=root, train=False, transform=test_transform, download=True)
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
-
-
     # Merge the train and test datasets into a single dataset with a global index space, while preserving original indices
     merged_dataset = build_merged_dataset([train_dataset, test_dataset],
                                             dataset_names=['train', 'test'])
     logger.print_it(f"Loaded dataset '{dataset}' with {len(train_dataset)} training samples and {len(test_dataset)} testing samples. Merged dataset has {len(merged_dataset)} samples in total.")
+    return merged_dataset
+
+def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, def_split: float = 0.5, att_split: float = 0.5, seed: int= 12345, augment: bool = False, logger: callable = None):
+    """Return dataset splits packed into a `MultiDatasets` object.
+
+    Parameters:
+    - val_split: if >0 and <=1 treated as fraction of training set to use as validation; if >=1 treated as absolute number of samples.
+    - val_indices: explicit list of indices (w.r.t. original training set ordering) to use as validation. If provided, overrides `val_split`.
+    - val_seed: seed used when sampling a validation split randomly (deterministic if `val_shuffle` is True). If `None` and `rng` is provided, the external RNG will be used.
+    - val_shuffle: whether to shuffle training indices before taking a split.
+    - rng: optional `random.Random`-like instance (with `.shuffle(list)` and `.randint(a,b)`) to be used for sampling. If not provided, a `random.Random(val_seed)` instance is used when `val_seed` is provided, otherwise the module-level `random` is used.
+    - report_seed: if True, the function prints either the explicit `val_seed` (when used) or a small sample integer from the used RNG so that you can compare RNG states across scripts.
+
+    The function preserves original training indices for `val` by creating `torch.utils.data.Subset`
+    instances whose `.indices` attribute corresponds to the indices in the original full training set. This
+    allows mapping back to precomputed per-sample statistics (e.g., memorization scores).
+    """
+    merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, augment=augment, logger=logger)
     # The merged dataset allows us to keep track of original indices across train/test splits, which is crucial for mapping back to precomputed per-sample statistics (e.g., memorization scores) that are typically computed on the original training set.
     # Now split the merged dataset between defender and attacker
-    percentage_for_defender = 0.5
-    percentage_for_attacker = 0.5
+    percentage_for_defender = def_split
+    percentage_for_attacker = att_split
     # 5b) By fractions
-    chunks_frac, _ = split_merged_dataset_into_chunks(
+    chunks_frac, chunks_frac_ids = split_merged_dataset_into_chunks(
         merged_dataset=merged_dataset,
         chunk_fractions=[percentage_for_defender*0.75, percentage_for_attacker*0.1, percentage_for_defender*0.15,
-                         percentage_for_attacker*0.75, percentage_for_attacker*0.25],
+                        percentage_for_attacker],
         sampling_weights=[1.0 for _ in range(len(merged_dataset))],  # uniform sampling
         seed=seed
     )
+
+    printer_func = print if logger is None else logger.print_it
+    printer_func(f"Defender dataset split:")
+    printer_func(f"  - Defender training set: {len(chunks_frac[0])} samples where first 10 indices are {chunks_frac_ids[0][:10]}")
+    printer_func(f"  - Defender validation set: {len(chunks_frac[1])} samples where first 10 indices are {chunks_frac_ids[1][:10]}")
+    printer_func(f"  - Defender testing set: {len(chunks_frac[2])} samples where first 10 indices are {chunks_frac_ids[2][:10]}")
+    printer_func(f"Attacker dataset split:")
+    printer_func(f"  - Attacker dataset: {len(chunks_frac[3])} samples where first 10 indices are {chunks_frac_ids[3][:10]}")
+
     defender_train = chunks_frac[0]
     defender_val = chunks_frac[1]
     defender_test = chunks_frac[2]
-    attacker_train = chunks_frac[3]
-    attacker_test = chunks_frac[4]
     data = MultiDatasets()
-    data.add(defender_train, 'defender_train')
-    data.add(defender_val, 'defender_val')
-    data.add(defender_test, 'defender_test')
-    data.add(attacker_train, 'attacker_train')
-    data.add(attacker_test, 'attacker_test')
+    data.add(defender_train, 'train')
+    data.add(defender_val, 'val')
+    data.add(defender_test, 'test')
     info = get_dataset_info_from_name(dataset=dataset)
     data.add_info(info)
-    data.wrap(IndexedDataset)  # Wrap all datasets to preserve original indices
+    return data
+
+
+def get_attacker_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, def_split: float = 0.5, att_split: float = 0.5, seed: int= 12345, augment: bool = False, logger: callable = None):
+    """Return dataset splits packed into a `MultiDatasets` object.
+
+    Parameters:
+    - val_split: if >0 and <=1 treated as fraction of training set to use as validation; if >=1 treated as absolute number of samples.
+    - val_indices: explicit list of indices (w.r.t. original training set ordering) to use as validation. If provided, overrides `val_split`.
+    - val_seed: seed used when sampling a validation split randomly (deterministic if `val_shuffle` is True). If `None` and `rng` is provided, the external RNG will be used.
+    - val_shuffle: whether to shuffle training indices before taking a split.
+    - rng: optional `random.Random`-like instance (with `.shuffle(list)` and `.randint(a,b)`) to be used for sampling. If not provided, a `random.Random(val_seed)` instance is used when `val_seed` is provided, otherwise the module-level `random` is used.
+    - report_seed: if True, the function prints either the explicit `val_seed` (when used) or a small sample integer from the used RNG so that you can compare RNG states across scripts.
+
+    The function preserves original training indices for `val` by creating `torch.utils.data.Subset`
+    instances whose `.indices` attribute corresponds to the indices in the original full training set. This
+    allows mapping back to precomputed per-sample statistics (e.g., memorization scores).
+    """
+    merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, augment=augment, logger=logger)
+    # The merged dataset allows us to keep track of original indices across train/test splits, which is crucial for mapping back to precomputed per-sample statistics (e.g., memorization scores) that are typically computed on the original training set.
+    # Now split the merged dataset between defender and attacker
+    percentage_for_defender = def_split
+    percentage_for_attacker = att_split
+    # 5b) By fractions
+    chunks_frac, chunks_frac_ids = split_merged_dataset_into_chunks(
+        merged_dataset=merged_dataset,
+        chunk_fractions=[percentage_for_defender*0.75, percentage_for_attacker*0.1, percentage_for_defender*0.15,
+                        percentage_for_attacker],
+        sampling_weights=[1.0 for _ in range(len(merged_dataset))],  # uniform sampling
+        seed=seed
+    )
+
+    printer_func = print if logger is None else logger.print_it
+    printer_func(f"Defender dataset split:")
+    printer_func(f"  - Defender training set: {len(chunks_frac[0])} samples where first 10 indices are {chunks_frac_ids[0][:10]}")
+    printer_func(f"  - Defender validation set: {len(chunks_frac[1])} samples where first 10 indices are {chunks_frac_ids[1][:10]}")
+    printer_func(f"  - Defender testing set: {len(chunks_frac[2])} samples where first 10 indices are {chunks_frac_ids[2][:10]}")
+    printer_func(f"Attacker dataset split:")
+    printer_func(f"  - Attacker dataset: {len(chunks_frac[3])} samples where first 10 indices are {chunks_frac_ids[3][:10]}")
+
+    attacker_data = chunks_frac[3]
+    data = MultiDatasets()
+    data.add(attacker_data, 'all')
+    info = get_dataset_info_from_name(dataset=dataset)
+    data.add_info(info)
     return data
 
 

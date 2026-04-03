@@ -14,9 +14,16 @@ def gather_settings():
         parser.add_argument("--dataset", type=str, default="cifar100",
                                 choices=["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet", "gtsrb",
                                         "purchase", "texas", "news"],)
-        parser.add_argument("--val_split", type=float, default=0.2,
-                                help="percentage of training data to use for validation during defender model training",)
-        
+        # parser.add_argument("--val_split", type=float, default=0.2,
+        #                         help="percentage of training data to use for validation during defender model training",)
+        parser.add_argument("--defender_data_split_perc", type=float, default=0.5,
+                                help="percentage of the whole dataset to be assigned to the defender for model training. It will be split into training, validation, and testing sets.",)
+        parser.add_argument("--attacker_data_split_perc", type=float, default=0.5,
+                                help="percentage of the whole dataset to be assigned to the attacker for building the shadow datasets via sampling.",)
+        parser.add_argument('--seed', type=int, default=12345,
+                                help='random seed (default:12345)')
+
+
         # Model parameters
         parser.add_argument("--defender_model", default="resnet18",
                                 choices=["resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
@@ -71,8 +78,6 @@ def gather_settings():
                                 help='momentum')
         parser.add_argument('--defender_nesterov', action="store_true", default=False,
                                 help='nesterov')
-        parser.add_argument('--defender_seed', type=int, default=12345,
-                                help='random seed (default:12345)')
         
         # Shared MIA parameters
         parser.add_argument("--defender_mode", default="none",
@@ -358,8 +363,6 @@ def gather_settings():
                                 help='momentum')
         parser.add_argument('--attacker_nesterov', action="store_true", default=False,
                                 help='nesterov')
-        parser.add_argument('--attacker_seed', type=int, default=12345,
-                                help='random seed (default:12345)')
         # Differential Privacy parameters for attacker model
         # parser.add_argument("--att_use_dp", action="store_true", default=False,
         #                         help="enable Differential Privacy for attacker model training",)

@@ -23,15 +23,14 @@ class Yoqo(BaseMIA):
     # Implementation of YOQO of "You only query once: An efficient label-only membership inference attack" (https://tianweiz07.github.io/Papers/24-iclr-1.pdf).
     def __init__(self, 
                 defender_model: torch.nn.Module,
-                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         assert self.shadow_configs.mode == self.attack_configs.mode, f"Whenever working with YOQO the mode for shadow datasets and attack should be the same!"
         self.mode = self.attack_configs.mode
         self.logger.print_it(f"Working with YOQO in {self.mode.upper()} mode!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('YOQO attacker: sampling of shadow datasets...')
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
+        self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)

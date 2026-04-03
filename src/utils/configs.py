@@ -147,7 +147,9 @@ class DatasetConfigs:
     num_classes: Optional[int] = None
     info: Optional[dict] = None
     seed: int = 12345
-    val_split: float = 0.2
+    # Percentages of the dataset to use for the defender and attacker after merging
+    def_split: float = 0.5
+    att_split: float = 0.5
 
     def __post_init__(self):
         if self.im_size is None:
@@ -256,11 +258,18 @@ class AuditingDataConfigs:
 class ShadowDataConfigs:
     # Mandatory arguments
     n_shadow_datasets: int
-    n_samples_per_dataset: int
+    # n_samples_per_dataset: int
     mode: str
     # Optional arguments with default values
-    test_perc: Optional[float] = 0.5
+    # test_perc: Optional[float] = 0.5
     seed: Optional[int] = 12345
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class FullDataConfigs:
+    base: DatasetConfigs
+    auditing: AuditingDataConfigs
+    shadow: ShadowDataConfigs
 
 
 # @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -543,8 +552,8 @@ DefenseConfigs = Annotated[
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class DefenderConfigs:
     hash: str
-    dataset: DatasetConfigs
     log: LogConfigs
+    dataset: FullDataConfigs
     model: ModelConfigs
     train: TrainConfigs
     defense: DefenseConfigs
@@ -554,10 +563,9 @@ class DefenderConfigs:
 class AttackerConfigs:
     hash: str
     log: LogConfigs
+    dataset: FullDataConfigs
     model: ModelConfigs
     train: TrainConfigs
-    audit: AuditingDataConfigs
-    shadow: ShadowDataConfigs
     attack: AttackConfigs
 
 
@@ -617,8 +625,21 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     defender_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation,
-                                            seed=settings.defender_seed,
-                                            val_split=settings.val_split)
+                                            seed=settings.seed,
+                                            def_split=settings.defender_data_split_perc,
+                                            att_split=settings.attacker_data_split_perc)
+    attacker_auditing_configs = AuditingDataConfigs(n_auditing_samples=settings.n_auditing_samples,
+                                                in_perc=settings.audit_in_perc,
+                                                seed=settings.seed)
+    attacker_shadow_configs = ShadowDataConfigs(n_shadow_datasets=settings.n_shadows,
+                                                n_samples_per_dataset=settings.n_samples_per_shadow_dataset,
+                                                mode='online',
+                                                test_perc=settings.shadow_test_perc,
+                                                seed=settings.seed)
+    full_data_configs = FullDataConfigs(base=defender_dataset_configs,
+                                        auditing=attacker_auditing_configs,
+                                        shadow=attacker_shadow_configs)
+
     if settings.dataset in ['texas', 'purchase', 'news']:
         assert settings.defender_model in ['tabular_mlp'], f"Dataset '{settings.dataset}' only supports tabular models! Please change the defender model or the dataset."
         assert settings.attacker_model in ['tabular_mlp'], f"Dataset '{settings.dataset}' only supports tabular models! Please change the attacker model or the dataset."
@@ -638,7 +659,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         batch_size=settings.defender_batch_size,
                                         device=settings.device,
                                         distributed=settings.distributed,
-                                        seed=settings.defender_seed,
+                                        seed=settings.seed,
                                         resume=settings.resume,
                                         ckpts_folder=defender_ckpts_folder,
                                         resume_ckpts_folder=defender_resume_ckpts_folder)
@@ -723,7 +744,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defender_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,
-                                    dataset=defender_dataset_configs,
+                                    dataset=full_data_configs,
                                     log=defender_log_configs,
                                     model=defender_model_configs,
                                     train=defender_train_configs,
@@ -756,18 +777,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                             metric_to_track=settings.perf_metric_to_track,
                                             device=settings.device,
                                             distributed=settings.distributed,
-                                            seed=settings.attacker_seed,
+                                            seed=settings.seed,
                                             resume=settings.resume,
                                             ckpts_folder=attacker_ckpts_folder,
                                             resume_ckpts_folder=attacker_resume_ckpts_folder)
-    attacker_auditing_configs = AuditingDataConfigs(n_auditing_samples=settings.n_auditing_samples,
-                                                in_perc=settings.audit_in_perc,
-                                                seed=settings.attacker_seed)
-    attacker_shadow_configs = ShadowDataConfigs(n_shadow_datasets=settings.n_shadows,
-                                                n_samples_per_dataset=settings.n_samples_per_shadow_dataset,
-                                                mode='online',
-                                                test_perc=settings.shadow_test_perc,
-                                                seed=settings.attacker_seed)
+    
 
     if settings.attacker_mode in ['online_robust', 'offline_robust', 'on_robust', 'off_robust']:
         robust_mode = 'online' if settings.attacker_mode in ['online_robust', 'on_robust'] else 'offline'
@@ -884,10 +898,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attacker_mode))
     attacker_configs = AttackerConfigs(hash=attacker_hash,
                                         log=attacker_log_configs,
+                                        dataset=full_data_configs,
                                         model=attacker_model_configs,
                                         train=attacker_train_configs,
-                                        audit=attacker_auditing_configs,
-                                        shadow=attacker_shadow_configs,
                                         attack=attack_configs)
     
     experiment_configs = ExperimentConfigs(hash=exp_hash,

@@ -18,16 +18,15 @@ class QuantileMIA(BaseMIA):
     # Implementation of Scalable membership inference attacks via quantile regression (https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html).
     def __init__(self, 
                 defender_model: torch.nn.Module,
-                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Quantile MIA!")
         if self.shadow_configs.n_shadow_datasets != 1:
             self.logger.print_it(f"Quantile MIA attacker [WARNING]: when using quantile MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
             self.shadow_configs.n_shadow_datasets = 1
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
-        self.shadow_manager.sample_shadow_datasets(original_datasets=self.defender_dataset,
+        self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)

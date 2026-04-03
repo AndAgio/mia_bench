@@ -6,7 +6,7 @@ import copy
 import torch
 from typing import Union
 from torch.utils.data import Subset, ConcatDataset
-from src.data.helpers import MultiDatasets, MyConcatDataset
+from src.data.helpers import MultiDatasets, MyConcatDataset, MyOriginalIndexSubset
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager, FixedLabelDataset
 from src.utils.configs import ShadowDataConfigs
 from src.utils.log import Loggable, MyLogger
@@ -17,16 +17,18 @@ MAX_SAMPLES_PER_SHADOW_DATASET = 100000
 
 class ShadowDatasetsManager(Loggable):
     def __init__(self,
-                original_datasets: MultiDatasets, 
+                attacker_data_distribution: MultiDatasets, 
                 auditing_dataset: AuditingDatasetManager,
                 shadow_configs: ShadowDataConfigs,
                 attacker_hash: str,
                 logger: MyLogger = None):
         super().__init__(logger=logger)
-        assert original_datasets is not None
-        assert original_datasets.n_splits() >= 2
-        self.original_datasets = original_datasets
-        assert 'train' in original_datasets.get_ids() and 'test' in original_datasets.get_ids()
+        assert 'all' in attacker_data_distribution.get_ids(), f"Attacker data distribution should contain a split with id 'all' containing all the data available for the attacker to build shadow datasets from! Found splits with ids {attacker_data_distribution.get_ids()} instead!"
+        self.attacker_data_distribution = attacker_data_distribution
+        # assert original_datasets is not None
+        # assert original_datasets.n_splits() >= 2
+        # self.original_datasets = original_datasets
+        # assert 'train' in original_datasets.get_ids() and 'test' in original_datasets.get_ids()
 
         assert shadow_configs.mode in ['online', 'offline']
         self.mode = shadow_configs.mode
@@ -35,29 +37,36 @@ class ShadowDatasetsManager(Loggable):
         assert auditing_dataset.get_all_ids() is not None
         assert auditing_dataset.get_all_ids() != []
         self.auditing_indices = auditing_dataset.get_all_ids()
+        assert self.auditing_indices == auditing_dataset.get('original').get_all_original_indices(), f"Auditing indices should match the original auditing dataset indices! Found {self.auditing_indices} and {auditing_dataset.get('original').get_all_original_indices()} instead!"
         self.auditing_dataset = auditing_dataset
 
+        n_shadow_samples = math.ceil(len(attacker_data_distribution.get('all'))*0.75)
+        n_auditing_samples = len(self.auditing_indices)
         if self.mode == 'online':
-            if not shadow_configs.n_samples_per_dataset > len(self.auditing_indices):
-                self.logger.print_it(f"Number of samples per shadow dataset should be larger than number of auditing samples in online mode! Resetting n_samples_per_dataset to {len(self.auditing_indices)*2}...")
-                shadow_configs.n_samples_per_dataset = len(self.auditing_indices) * 2
-                self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
+            assert n_shadow_samples > n_auditing_samples, f"In ONLINE shadow dataset mode, the number of samples available for shadow dataset sampling should be larger than the number of auditing samples! Found {n_shadow_samples} shadow samples and {n_auditing_samples} auditing samples instead!"
+        self.n_samples_per_dataset = n_shadow_samples
 
-        assert 0 < shadow_configs.n_shadow_datasets <= MAX_SHADOW_DATASETS 
+        # if self.mode == 'online':
+        #     if not shadow_configs.n_samples_per_dataset > len(self.auditing_indices):
+        #         self.logger.print_it(f"Number of samples per shadow dataset should be larger than number of auditing samples in online mode! Resetting n_samples_per_dataset to {len(self.auditing_indices)*2}...")
+        #         shadow_configs.n_samples_per_dataset = len(self.auditing_indices) * 2
+        #         self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
+
+        assert 0 < shadow_configs.n_shadow_datasets <= MAX_SHADOW_DATASETS, f"Number of shadow datasets should be between 1 and {MAX_SHADOW_DATASETS}! Found {shadow_configs.n_shadow_datasets} instead!" 
         self.n_shadow_datasets = shadow_configs.n_shadow_datasets
-        assert 0 < shadow_configs.n_samples_per_dataset <= MAX_SAMPLES_PER_SHADOW_DATASET
-        self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
-        assert 0 <= shadow_configs.test_perc <= 1
-        self.test_perc = shadow_configs.test_perc
+        # assert 0 < shadow_configs.n_samples_per_dataset <= MAX_SAMPLES_PER_SHADOW_DATASET
+        # self.n_samples_per_dataset = shadow_configs.n_samples_per_dataset
+        # assert 0 <= shadow_configs.test_perc <= 1
+        # self.test_perc = shadow_configs.test_perc
 
         self.seed = shadow_configs.seed
         self._rng = np.random.default_rng(seed=self.seed)
 
         self.attacker_hash = attacker_hash
 
-        self.basic_dictionary = {'train_ids': None, 
-                            'test_ids': None,
-                            'all_ids': None}
+        # self.basic_dictionary = {'train_ids': None, 
+        #                     'test_ids': None,
+        #                     'all_ids': None}
         self.shadow_datasets_map = None
         start = time.time()
         self.logger.print_it(f"Sampling, refining and checking {self.n_shadow_datasets} shadow datasets. This may take a while...")
@@ -84,15 +93,13 @@ class ShadowDatasetsManager(Loggable):
             self.logger.print_it(f"Shadow datasets map sampled and stored successfully to {shadow_datasets_path}!")
 
     def _sample(self):
-        train_data = self.original_datasets.get('train')
-        test_data = self.original_datasets.get('test')
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
         if self.mode == 'online':
             # Use a set for fast membership checks and avoid rebuilding 'ids' on every small change.
             assert self.n_samples_per_dataset > len(self.auditing_indices), f"Number of samples per shadow dataset should be larger than number of auditing samples in online mode!"
             in_indices_to_add = copy.deepcopy(self.auditing_indices)
             in_indices_set = set(in_indices_to_add)
-            train_len = len(train_data)
+            train_len = len(self.attacker_data_distribution.get('all')) # Assuming 'all' contains the combined data of train and test
             s = time.time()
             self.logger.print_it(f"Refining online shadow datasets for all {len(in_indices_to_add)} samples. This may take a while...")
             for _, index_to_add in enumerate(in_indices_to_add):
@@ -100,66 +107,121 @@ class ShadowDatasetsManager(Loggable):
                 datasets_to_modify = self._rng.choice(np.arange(self.n_shadow_datasets), n_datasets_to_randomly_sample, replace=False).tolist()
                 for dataset_to_modify in datasets_to_modify:
                     # Select replacement candidates excluding auditing indices using set membership (O(1)).
-                    if index_to_add < train_len:
-                        candidates = shadow_datasets_indices[dataset_to_modify]['tr_ids']
-                    else:
-                        candidates = shadow_datasets_indices[dataset_to_modify]['te_ids']
+                    candidates = shadow_datasets_indices[dataset_to_modify]
                     indices_to_replace_from = [i for i in candidates if i not in in_indices_set]
                     if not indices_to_replace_from:
                         continue
                     # Ensure scalar Python int from numpy choice
                     index_to_substitute = int(self._rng.choice(indices_to_replace_from, 1, replace=False)[0])
-                    if index_to_add < train_len:
-                        shadow_datasets_indices[dataset_to_modify]['tr_ids'].remove(index_to_substitute)
-                        shadow_datasets_indices[dataset_to_modify]['tr_ids'].append(index_to_add)
-                    else:
-                        shadow_datasets_indices[dataset_to_modify]['te_ids'].remove(index_to_substitute)
-                        shadow_datasets_indices[dataset_to_modify]['te_ids'].append(index_to_add)
+                    shadow_datasets_indices[dataset_to_modify].remove(index_to_substitute)
+                    shadow_datasets_indices[dataset_to_modify].append(index_to_add)
             self.logger.print_it(f"Refinement executed in {time.time() - s} seconds.")
-            # Rebuild combined ids once per dataset instead of on every modification
-            for dataset_idx in range(self.n_shadow_datasets):
-                shadow_datasets_indices[dataset_idx]['ids'] = shadow_datasets_indices[dataset_idx]['tr_ids'] + shadow_datasets_indices[dataset_idx]['te_ids']
         elif self.mode == 'offline':
             pass
         else:
             raise ValueError(f"Mode should be either online or offline! Found '{self.mode}' instead!")
         # Copying correct indices to final map
-        self.shadow_datasets_map = {i: copy.deepcopy(self.basic_dictionary) for i in range(self.n_shadow_datasets)}
-        for index in range(self.n_shadow_datasets):
-            self.shadow_datasets_map[index]['train_ids'] = copy.deepcopy(shadow_datasets_indices[index]['tr_ids'])
-            self.shadow_datasets_map[index]['test_ids'] = copy.deepcopy(shadow_datasets_indices[index]['te_ids'])
-            self.shadow_datasets_map[index]['all_ids'] = copy.deepcopy(shadow_datasets_indices[index]['ids'])
+        self.shadow_datasets_map = {i: copy.deepcopy(shadow_datasets_indices[i]) for i in range(self.n_shadow_datasets)}
         # Checking for correctness
         assert self.check_in_out_correctness(), f"Something went wrong with shadow dataset sampling!"
         self.logger.print_it(f"Shadow datasets are OK for {self.mode} mode!")
 
+
+    # def _sample(self):
+    #     train_data = self.original_datasets.get('train')
+    #     test_data = self.original_datasets.get('test')
+    #     shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
+    #     if self.mode == 'online':
+    #         # Use a set for fast membership checks and avoid rebuilding 'ids' on every small change.
+    #         assert self.n_samples_per_dataset > len(self.auditing_indices), f"Number of samples per shadow dataset should be larger than number of auditing samples in online mode!"
+    #         in_indices_to_add = copy.deepcopy(self.auditing_indices)
+    #         in_indices_set = set(in_indices_to_add)
+    #         train_len = len(train_data)
+    #         s = time.time()
+    #         self.logger.print_it(f"Refining online shadow datasets for all {len(in_indices_to_add)} samples. This may take a while...")
+    #         for _, index_to_add in enumerate(in_indices_to_add):
+    #             n_datasets_to_randomly_sample = math.floor(self.n_shadow_datasets / 2)
+    #             datasets_to_modify = self._rng.choice(np.arange(self.n_shadow_datasets), n_datasets_to_randomly_sample, replace=False).tolist()
+    #             for dataset_to_modify in datasets_to_modify:
+    #                 # Select replacement candidates excluding auditing indices using set membership (O(1)).
+    #                 if index_to_add < train_len:
+    #                     candidates = shadow_datasets_indices[dataset_to_modify]['tr_ids']
+    #                 else:
+    #                     candidates = shadow_datasets_indices[dataset_to_modify]['te_ids']
+    #                 indices_to_replace_from = [i for i in candidates if i not in in_indices_set]
+    #                 if not indices_to_replace_from:
+    #                     continue
+    #                 # Ensure scalar Python int from numpy choice
+    #                 index_to_substitute = int(self._rng.choice(indices_to_replace_from, 1, replace=False)[0])
+    #                 if index_to_add < train_len:
+    #                     shadow_datasets_indices[dataset_to_modify]['tr_ids'].remove(index_to_substitute)
+    #                     shadow_datasets_indices[dataset_to_modify]['tr_ids'].append(index_to_add)
+    #                 else:
+    #                     shadow_datasets_indices[dataset_to_modify]['te_ids'].remove(index_to_substitute)
+    #                     shadow_datasets_indices[dataset_to_modify]['te_ids'].append(index_to_add)
+    #         self.logger.print_it(f"Refinement executed in {time.time() - s} seconds.")
+    #         # Rebuild combined ids once per dataset instead of on every modification
+    #         for dataset_idx in range(self.n_shadow_datasets):
+    #             shadow_datasets_indices[dataset_idx]['ids'] = shadow_datasets_indices[dataset_idx]['tr_ids'] + shadow_datasets_indices[dataset_idx]['te_ids']
+    #     elif self.mode == 'offline':
+    #         pass
+    #     else:
+    #         raise ValueError(f"Mode should be either online or offline! Found '{self.mode}' instead!")
+    #     # Copying correct indices to final map
+    #     self.shadow_datasets_map = {i: copy.deepcopy(self.basic_dictionary) for i in range(self.n_shadow_datasets)}
+    #     for index in range(self.n_shadow_datasets):
+    #         self.shadow_datasets_map[index]['train_ids'] = copy.deepcopy(shadow_datasets_indices[index]['tr_ids'])
+    #         self.shadow_datasets_map[index]['test_ids'] = copy.deepcopy(shadow_datasets_indices[index]['te_ids'])
+    #         self.shadow_datasets_map[index]['all_ids'] = copy.deepcopy(shadow_datasets_indices[index]['ids'])
+    #     # Checking for correctness
+    #     assert self.check_in_out_correctness(), f"Something went wrong with shadow dataset sampling!"
+    #     self.logger.print_it(f"Shadow datasets are OK for {self.mode} mode!")
+
     def sample_indices_for_offline_shadow_datasets(self):
-        train_data = self.original_datasets.get('train')
-        test_data = self.original_datasets.get('test')
+        available_indices = self.attacker_data_distribution.get('all').get_all_original_indices()
         indices_to_avoid = copy.deepcopy(self.auditing_indices)
-        available_indices_train = [i for i in range(len(train_data)) if i not in indices_to_avoid]
-        available_indices_test = [i for i in range(len(train_data),len(test_data)+len(train_data)) if i not in indices_to_avoid]
-        n_samples_from_victim_train = math.floor(self.n_samples_per_dataset * (1 - self.test_perc))
-        n_samples_from_victim_test = self.n_samples_per_dataset - n_samples_from_victim_train
+        available_indices = [i for i in available_indices if i not in indices_to_avoid]
         shadow_datasets_indices = {i: {} for i in range(self.n_shadow_datasets)}
         s = time.time()
         self.logger.print_it(f"Sampling all {self.n_shadow_datasets} shadow datasets...")
         for i in range(self.n_shadow_datasets):
             self.logger.print_it_same_line(f'Sampling shadow dataset {i+1}/{self.n_shadow_datasets}...', console_only=True)
-            train_indexes = self._rng.choice(available_indices_train,
-                                            n_samples_from_victim_train,
+            all_indexes = self._rng.choice(available_indices,
+                                            self.n_samples_per_dataset,
                                             replace=False).tolist()
-            test_indexes = self._rng.choice(available_indices_test,
-                                            n_samples_from_victim_test,
-                                            replace=False).tolist()
-            all_indexes = train_indexes + test_indexes
-            shadow_datasets_indices[i] = {'tr_ids': train_indexes,
-                                        'te_ids': test_indexes,
-                                        'ids': all_indexes}
+            shadow_datasets_indices[i] = all_indexes
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Sampling executed in {time.time() - s} seconds.")
         return shadow_datasets_indices
+
+    # def sample_indices_for_offline_shadow_datasets(self):
+    #     train_data = self.original_datasets.get('train')
+    #     test_data = self.original_datasets.get('test')
+    #     indices_to_avoid = copy.deepcopy(self.auditing_indices)
+    #     available_indices_train = [i for i in range(len(train_data)) if i not in indices_to_avoid]
+    #     available_indices_test = [i for i in range(len(train_data),len(test_data)+len(train_data)) if i not in indices_to_avoid]
+    #     n_samples_from_victim_train = math.floor(self.n_samples_per_dataset * (1 - self.test_perc))
+    #     n_samples_from_victim_test = self.n_samples_per_dataset - n_samples_from_victim_train
+    #     shadow_datasets_indices = {i: {} for i in range(self.n_shadow_datasets)}
+    #     s = time.time()
+    #     self.logger.print_it(f"Sampling all {self.n_shadow_datasets} shadow datasets...")
+    #     for i in range(self.n_shadow_datasets):
+    #         self.logger.print_it_same_line(f'Sampling shadow dataset {i+1}/{self.n_shadow_datasets}...', console_only=True)
+    #         train_indexes = self._rng.choice(available_indices_train,
+    #                                         n_samples_from_victim_train,
+    #                                         replace=False).tolist()
+    #         test_indexes = self._rng.choice(available_indices_test,
+    #                                         n_samples_from_victim_test,
+    #                                         replace=False).tolist()
+    #         all_indexes = train_indexes + test_indexes
+    #         shadow_datasets_indices[i] = {'tr_ids': train_indexes,
+    #                                     'te_ids': test_indexes,
+    #                                     'ids': all_indexes}
+    #     self.logger.set_logger_newline(console_only=True)
+    #     self.logger.print_it(f"Sampling executed in {time.time() - s} seconds.")
+    #     return shadow_datasets_indices
     
+
     def check_in_out_correctness(self):
         if self.mode == 'online':
             expected_num_ins = math.floor(self.n_shadow_datasets / 2)
@@ -169,7 +231,6 @@ class ShadowDatasetsManager(Loggable):
             expected_num_outs = self.n_shadow_datasets
         else:
             raise ValueError(f"Mode should be either online or offline! Found '{self.mode}' instead!")
-        train_data = self.original_datasets.get('train')
         found_outcomes = []
         s = time.time()
         self.logger.print_it(f"Checking correctness of shadow datasets in {self.mode} mode for all {len(self.auditing_indices)} samples. This may take a while...")
@@ -177,77 +238,134 @@ class ShadowDatasetsManager(Loggable):
             self.logger.print_it_same_line(f'Checking correctness for sample {k+1}/{len(self.auditing_indices)}...', console_only=True)
             n_ins_found = 0
             n_outs_found = 0
-            n_ins_found_all = 0
-            n_outs_found_all = 0
             for shadow_index in range(self.n_shadow_datasets):
-                if index < len(train_data):
-                    if index in self.shadow_datasets_map[shadow_index]['train_ids']:
-                        n_ins_found += 1
-                    else:
-                        n_outs_found += 1
+                if index in self.shadow_datasets_map[shadow_index]:
+                    n_ins_found += 1
                 else:
-                    if index in self.shadow_datasets_map[shadow_index]['test_ids']:
-                        n_ins_found += 1
-                    else:
-                        n_outs_found += 1
-                if index in self.shadow_datasets_map[shadow_index]['all_ids']:
-                    n_ins_found_all += 1
-                else:
-                    n_outs_found_all += 1
+                    n_outs_found += 1
             outcome = [n_ins_found == expected_num_ins,
-                        n_outs_found == expected_num_outs,
-                        n_ins_found_all == expected_num_ins,
-                        n_outs_found_all == expected_num_outs]
+                        n_outs_found == expected_num_outs]
             found_outcomes += outcome
         final_outcome_str = 'positive' if all(found_outcomes) else 'negative'
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Checking executed in {time.time() - s} seconds with {final_outcome_str} outcome.")
         return all(found_outcomes)
 
+    # def check_in_out_correctness(self):
+    #     if self.mode == 'online':
+    #         expected_num_ins = math.floor(self.n_shadow_datasets / 2)
+    #         expected_num_outs = self.n_shadow_datasets - expected_num_ins
+    #     elif self.mode == 'offline':
+    #         expected_num_ins = 0
+    #         expected_num_outs = self.n_shadow_datasets
+    #     else:
+    #         raise ValueError(f"Mode should be either online or offline! Found '{self.mode}' instead!")
+    #     train_data = self.original_datasets.get('train')
+    #     found_outcomes = []
+    #     s = time.time()
+    #     self.logger.print_it(f"Checking correctness of shadow datasets in {self.mode} mode for all {len(self.auditing_indices)} samples. This may take a while...")
+    #     for k, index in enumerate(self.auditing_indices):
+    #         self.logger.print_it_same_line(f'Checking correctness for sample {k+1}/{len(self.auditing_indices)}...', console_only=True)
+    #         n_ins_found = 0
+    #         n_outs_found = 0
+    #         n_ins_found_all = 0
+    #         n_outs_found_all = 0
+    #         for shadow_index in range(self.n_shadow_datasets):
+    #             if index < len(train_data):
+    #                 if index in self.shadow_datasets_map[shadow_index]['train_ids']:
+    #                     n_ins_found += 1
+    #                 else:
+    #                     n_outs_found += 1
+    #             else:
+    #                 if index in self.shadow_datasets_map[shadow_index]['test_ids']:
+    #                     n_ins_found += 1
+    #                 else:
+    #                     n_outs_found += 1
+    #             if index in self.shadow_datasets_map[shadow_index]['all_ids']:
+    #                 n_ins_found_all += 1
+    #             else:
+    #                 n_outs_found_all += 1
+    #         outcome = [n_ins_found == expected_num_ins,
+    #                     n_outs_found == expected_num_outs,
+    #                     n_ins_found_all == expected_num_ins,
+    #                     n_outs_found_all == expected_num_outs]
+    #         found_outcomes += outcome
+    #     final_outcome_str = 'positive' if all(found_outcomes) else 'negative'
+    #     self.logger.set_logger_newline(console_only=True)
+    #     self.logger.print_it(f"Checking executed in {time.time() - s} seconds with {final_outcome_str} outcome.")
+    #     return all(found_outcomes)
+
     def sample_random_indices(self, num_data: int = 1000):
-        train_data = self.original_datasets.get('train')
-        test_data = self.original_datasets.get('test')
         indices_to_avoid = copy.deepcopy(self.auditing_indices)
-        available_indices_train = [i for i in range(len(train_data)) if i not in indices_to_avoid]
-        n_samples_from_victim_train = math.floor(num_data * (1 - self.test_perc))
-        n_samples_from_victim_test = num_data - n_samples_from_victim_train
+        available_indices = self.attacker_data_distribution.get('all').get_all_original_indices()
+        available_indices = [i for i in available_indices if i not in indices_to_avoid]
         self.logger.print_it(f"Sampling random sample dataset...")
-        train_indexes = self._rng.choice(available_indices_train,
-                                        n_samples_from_victim_train,
+        sampled_indices = self._rng.choice(available_indices,
+                                        num_data,
                                         replace=False).tolist()
-        test_indexes = self._rng.choice(np.arange(len(train_data),len(test_data)+len(train_data)),
-                                        n_samples_from_victim_test,
-                                        replace=False).tolist()
-        all_indexes = train_indexes + test_indexes
-        indices = {'train_ids': train_indexes,
-                    'test_ids': test_indexes,
-                    'all_ids': all_indexes}
-        return indices
-    
+        return sampled_indices
+
+    # def sample_random_indices(self, num_data: int = 1000):
+    #     train_data = self.original_datasets.get('train')
+    #     test_data = self.original_datasets.get('test')
+    #     indices_to_avoid = copy.deepcopy(self.auditing_indices)
+    #     available_indices_train = [i for i in range(len(train_data)) if i not in indices_to_avoid]
+    #     n_samples_from_victim_train = math.floor(num_data * (1 - self.test_perc))
+    #     n_samples_from_victim_test = num_data - n_samples_from_victim_train
+    #     self.logger.print_it(f"Sampling random sample dataset...")
+    #     train_indexes = self._rng.choice(available_indices_train,
+    #                                     n_samples_from_victim_train,
+    #                                     replace=False).tolist()
+    #     test_indexes = self._rng.choice(np.arange(len(train_data),len(test_data)+len(train_data)),
+    #                                     n_samples_from_victim_test,
+    #                                     replace=False).tolist()
+    #     all_indexes = train_indexes + test_indexes
+    #     indices = {'train_ids': train_indexes,
+    #                 'test_ids': test_indexes,
+    #                 'all_ids': all_indexes}
+    #     return indices
+
     def get_random_population(self, indices: dict = None, num_data: int = None, labels: str = 'original'):
         assert labels in ['mia', 'original', 'shadow'], f"Labels mode should be either mia, original or shadow! Found {labels} instead!"
-        original_train_data = self.original_datasets.get('train')
-        original_test_data = self.original_datasets.get('test')
         if indices is None:
             assert 0 < num_data <= 1000, f"Number of data to sample random population should be between 1 and 1000, received {num_data} instead!"
             indices = self.sample_random_indices(num_data=num_data)
-        if labels == 'mia':
-            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
-            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
-            train_data = Subset(original_train_data, indices['train_ids'])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
-            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
-                                    FixedLabelDataset(test_data, fixed_label=0),])
-        elif labels == 'original':
+        if labels == 'original':
             # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
             # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
-            train_data = Subset(original_train_data, indices['train_ids'])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
-            return MyConcatDataset([train_data,test_data])
+            return MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+                                        original_indices=indices,
+                                        strict=True,
+                                        return_indexed_tuple=True)
         elif labels == 'shadow':
             raise ValueError('Labels mode shadow is not supported for random population sampling! This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. Therefore, we want to learn to classify all their training data as members. This does not make sense when sampling random populations that are not associated to any shadow dataset!')
         else:
             raise ValueError('Labels mode should be either mia, original or shadow!')
+    
+    # def get_random_population(self, indices: dict = None, num_data: int = None, labels: str = 'original'):
+    #     assert labels in ['mia', 'original', 'shadow'], f"Labels mode should be either mia, original or shadow! Found {labels} instead!"
+    #     original_train_data = self.original_datasets.get('train')
+    #     original_test_data = self.original_datasets.get('test')
+    #     if indices is None:
+    #         assert 0 < num_data <= 1000, f"Number of data to sample random population should be between 1 and 1000, received {num_data} instead!"
+    #         indices = self.sample_random_indices(num_data=num_data)
+    #     if labels == 'mia':
+    #         # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
+    #         # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
+    #         train_data = Subset(original_train_data, indices['train_ids'])
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
+    #         return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+    #                                 FixedLabelDataset(test_data, fixed_label=0),])
+    #     elif labels == 'original':
+    #         # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+    #         # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
+    #         train_data = Subset(original_train_data, indices['train_ids'])
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in indices['test_ids']])
+    #         return MyConcatDataset([train_data,test_data])
+    #     elif labels == 'shadow':
+    #         raise ValueError('Labels mode shadow is not supported for random population sampling! This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. Therefore, we want to learn to classify all their training data as members. This does not make sense when sampling random populations that are not associated to any shadow dataset!')
+    #     else:
+    #         raise ValueError('Labels mode should be either mia, original or shadow!')
 
     def get_map(self, index: int):
         assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get map with id {index}"
@@ -258,60 +376,130 @@ class ShadowDatasetsManager(Loggable):
             assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to set map with id {index}"
         self.shadow_datasets_map[index] = new_map
     
-    def get(self, index: int, labels: str = 'mia'):
+    def get(self, index: int, labels: str = 'original'):
         assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
-        assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to get shadow dataset with id {index}!"
-        original_train_data = self.original_datasets.get('train')
-        original_test_data = self.original_datasets.get('test')
-        if labels == 'mia':
-            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
-            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
-            train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
-            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
-                                    FixedLabelDataset(test_data, fixed_label=0),])
-        elif labels == 'original':
+        assert labels in ['original', 'shadow'], f"Invalid labels mode {labels} found when trying to get shadow dataset with id {index}!"
+        if labels == 'original':
             # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
             # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
-            train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
-            return MyConcatDataset([train_data,test_data])
+            # # print(f"self.attacker_data_distribution.get('all'): {self.attacker_data_distribution.get('all')}")
+            # # print(f"self.attacker_data_distribution.get('all').get_all_original_indices(): {self.attacker_data_distribution.get('all').get_all_original_indices()}")
+            # # print(f"self.shadow_datasets_map[index]: {self.shadow_datasets_map[index]}")
+            # sampling_outcome = [True if idx in self.attacker_data_distribution.get('all').get_all_original_indices() else False for idx in self.shadow_datasets_map[index]]
+            # # print(f"Sampling outcome for shadow dataset with index {index}: {sampling_outcome}")
+            # shadow_dist_indices = self.attacker_data_distribution.get('all').get_all_original_indices()
+            # auditing_samples_indices = self.auditing_dataset.get_all_ids()
+            # shadow_ids = [i for i in self.shadow_datasets_map[index] if i in shadow_dist_indices]
+            # auditing_ids = [i for i in self.shadow_datasets_map[index] if i in auditing_samples_indices]
+            # data_one = MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+            #                             original_indices=shadow_ids,
+            #                             strict=True,
+            #                             return_indexed_tuple=True)
+            # sampling_outcome = [True if idx in self.auditing_dataset.get_all_ids() else False for idx in auditing_ids]
+            # print(f"Sampling outcome over auditing dataset for shadow dataset with index {index}: {sampling_outcome}")
+            # print(f"self.auditing_dataset.get(labels=labels).get_all_original_indices(): {self.auditing_dataset.get(labels=labels).get_all_original_indices()}")
+            # data_two = MyOriginalIndexSubset(dataset=self.auditing_dataset.get(labels=labels),
+            #                                 original_indices=auditing_ids,
+            #                                 strict=True,
+            #                                 return_indexed_tuple=True)
+            # return MyConcatDataset([data_one, data_two])
+        
+            data_one = MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+                                        original_indices=self.shadow_datasets_map[index],
+                                        strict=False,
+                                        return_indexed_tuple=True)
+            data_two = MyOriginalIndexSubset(dataset=self.auditing_dataset.get(labels=labels),
+                                            original_indices=self.shadow_datasets_map[index],
+                                            strict=False,
+                                            return_indexed_tuple=True)
+            data_full = MyConcatDataset([data_one, data_two])
+            print(f"len(self.shadow_datasets_map[index]): {len(self.shadow_datasets_map[index])}")
+            print(f"len(data_full): {len(data_full)}")
+            return data_full
         elif labels == 'shadow':
             # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as members (1) regardless of their original membership. 
             # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
             # Therefore, we want to learn to classify all their training data as members.
-            train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
-            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
-                                    FixedLabelDataset(test_data, fixed_label=1),])
+            shadow_dist_indices = self.attacker_data_distribution.get('all').get_all_original_indices()
+            auditing_samples_indices = self.auditing_dataset.get_all_ids()
+            shadow_ids = [i for i in self.shadow_datasets_map[index] if i in shadow_dist_indices]
+            auditing_ids = [i for i in self.shadow_datasets_map[index] if i in auditing_samples_indices]
+            data_one = MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+                                        original_indices=shadow_ids,
+                                        strict=True,
+                                        return_indexed_tuple=True)
+            data_two = MyOriginalIndexSubset(dataset=self.auditing_dataset.get(labels=labels),
+                                            original_indices=auditing_ids,
+                                            strict=True,
+                                            return_indexed_tuple=True)
+            return MyConcatDataset([FixedLabelDataset(data_one, fixed_label=1),
+                                    FixedLabelDataset(data_two, fixed_label=1),])
+            # return FixedLabelDataset(MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+            #                                                 original_indices=self.shadow_datasets_map[index],
+            #                                                 strict=True,
+            #                                                 return_indexed_tuple=True),
+            #                         fixed_label=1)
         else:
-            raise ValueError('Labels mode should be either mia, original or shadow!')
+            raise ValueError('Labels mode should be either original or shadow!')
+
+    # def get(self, index: int, labels: str = 'original'):
+    #     assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
+    #     assert labels in ['original', 'shadow'], f"Invalid labels mode {labels} found when trying to get shadow dataset with id {index}!"
+    #     original_train_data = self.original_datasets.get('train')
+    #     original_test_data = self.original_datasets.get('test')
+    #     if labels == 'original':
+    #         # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+    #         # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
+    #         train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
+    #         return MyConcatDataset([train_data,test_data])
+    #     elif labels == 'shadow':
+    #         # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as members (1) regardless of their original membership. 
+    #         # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
+    #         # Therefore, we want to learn to classify all their training data as members.
+    #         train_data = Subset(original_train_data, self.shadow_datasets_map[index]['train_ids'])
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in self.shadow_datasets_map[index]['test_ids']])
+    #         return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+    #                                 FixedLabelDataset(test_data, fixed_label=1),])
+    #     else:
+    #         raise ValueError('Labels mode should be either original or shadow!')
         
 
-    def get_by_indices(self, indices: list[int], labels: str = 'mia'):
+    def get_by_indices(self, indices: list[int], labels: str = 'original'):
         datasets = MultiDatasets()
         for index in indices:
             datasets.add(self.get(index, labels=labels), index)
         return datasets
 
-    def get_all(self, labels: str = 'mia'):
+    def get_all(self, labels: str = 'original'):
         datasets = MultiDatasets()
         for index in range(self.n_shadow_datasets):
             datasets.add(self.get(index, labels=labels), index)
         return datasets
     
-    def find_shadow_datasets_containing_sample_id(self, id: int, split: str = 'train'):
+    def find_shadow_datasets_containing_sample_id(self, id: int):
         indices_found = []
-        assert split in ['train', 'test', 'all']
-        field = 'train_ids' if split == 'train' else 'test_ids' if split == 'test' else 'all_ids'
         for index in range(self.n_shadow_datasets):
-            if id in self.shadow_datasets_map[index][field]:
+            if id in self.shadow_datasets_map[index]:
                 indices_found.append(index)
         return indices_found
     
-    def get_shadow_datasets_containing_sample_id(self, id: int, split: str = 'train', labels: str = 'mia'):
-        return self.get_by_indices(self.find_shadow_datasets_containing_sample_id(id=id, split=split),
+    # def find_shadow_datasets_containing_sample_id(self, id: int, split: str = 'train'):
+    #     indices_found = []
+    #     assert split in ['train', 'test', 'all']
+    #     field = 'train_ids' if split == 'train' else 'test_ids' if split == 'test' else 'all_ids'
+    #     for index in range(self.n_shadow_datasets):
+    #         if id in self.shadow_datasets_map[index][field]:
+    #             indices_found.append(index)
+    #     return indices_found
+    
+    def get_shadow_datasets_containing_sample_id(self, id: int, labels: str = 'original'):
+        return self.get_by_indices(self.find_shadow_datasets_containing_sample_id(id=id),
                                     labels=labels)
+
+    # def get_shadow_datasets_containing_sample_id(self, id: int, split: str = 'train', labels: str = 'mia'):
+    #     return self.get_by_indices(self.find_shadow_datasets_containing_sample_id(id=id, split=split),
+    #                                 labels=labels)
     
     def get_num_dataset(self):
         return len(self.shadow_datasets_map.keys())
@@ -325,82 +513,157 @@ class ShadowDatasetsManager(Loggable):
     def get_all_samples_ids(self):
         all_ids = []
         for index in range(self.n_shadow_datasets):
-            all_ids += self.shadow_datasets_map[index]['all_ids']
+            all_ids += self.shadow_datasets_map[index]
         return list(set(all_ids))
-    
+
+    # def get_all_samples_ids(self):
+    #     all_ids = []
+    #     for index in range(self.n_shadow_datasets):
+    #         all_ids += self.shadow_datasets_map[index]['all_ids']
+    #     return list(set(all_ids))
+
     def get_all_samples_in_all_shadow_datasets(self, labels: str = 'original'):
-        assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to get all samples in all shadow datasets!"
-        original_train_data = self.original_datasets.get('train')
-        original_test_data = self.original_datasets.get('test')
-        all_train_indices = list(set().union(*[self.shadow_datasets_map[index]['train_ids'] for index in range(self.n_shadow_datasets)]))
-        all_test_indices = list(set().union(*[self.shadow_datasets_map[index]['test_ids'] for index in range(self.n_shadow_datasets)]))
-        if labels == 'mia':
-            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
-            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
-            train_data = Subset(original_train_data, all_train_indices)
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
-            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
-                                    FixedLabelDataset(test_data, fixed_label=0),])
-        elif labels == 'original':
+        assert labels in ['original', 'shadow'], f"Invalid labels mode {labels} found when trying to get all samples in all shadow datasets!"
+        all_indices = list(set().union(*[self.shadow_datasets_map[index] for index in range(self.n_shadow_datasets)]))
+        if labels == 'original':
             # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
             # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
-            train_data = Subset(original_train_data, all_train_indices)
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
-            return MyConcatDataset([train_data,test_data])
+            shadow_dist_indices = self.attacker_data_distribution.get('all').get_all_original_indices()
+            auditing_samples_indices = self.auditing_dataset.get_all_ids()
+            shadow_ids = [i for i in all_indices if i in shadow_dist_indices]
+            auditing_ids = [i for i in all_indices if i in auditing_samples_indices]
+            data_one = MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+                                        original_indices=shadow_ids,
+                                        strict=True,
+                                        return_indexed_tuple=True)
+            data_two = MyOriginalIndexSubset(dataset=self.auditing_dataset.get(labels=labels),
+                                            original_indices=auditing_ids,
+                                            strict=True,
+                                            return_indexed_tuple=True)
+            return MyConcatDataset([data_one, data_two])
         elif labels == 'shadow':
             # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as members (1) regardless of their original membership. 
             # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
             # Therefore, we want to learn to classify all their training data as members.
-            train_data = Subset(original_train_data, all_train_indices)
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
-            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
-                                    FixedLabelDataset(test_data, fixed_label=1),])
+            shadow_dist_indices = self.attacker_data_distribution.get('all').get_all_original_indices()
+            auditing_samples_indices = self.auditing_dataset.get_all_ids()
+            shadow_ids = [i for i in all_indices if i in shadow_dist_indices]
+            auditing_ids = [i for i in all_indices if i in auditing_samples_indices]
+            data_one = MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+                                        original_indices=shadow_ids,
+                                        strict=True,
+                                        return_indexed_tuple=True)
+            data_two = MyOriginalIndexSubset(dataset=self.auditing_dataset.get(labels=labels),
+                                            original_indices=auditing_ids,
+                                            strict=True,
+                                            return_indexed_tuple=True)
+            return MyConcatDataset([FixedLabelDataset(data_one, fixed_label=1),
+                                    FixedLabelDataset(data_two, fixed_label=1),])
         else:
             raise ValueError('Labels mode should be either mia, original or shadow!')
+    
+    # def get_all_samples_in_all_shadow_datasets(self, labels: str = 'original'):
+    #     assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to get all samples in all shadow datasets!"
+    #     original_train_data = self.original_datasets.get('train')
+    #     original_test_data = self.original_datasets.get('test')
+    #     all_train_indices = list(set().union(*[self.shadow_datasets_map[index]['train_ids'] for index in range(self.n_shadow_datasets)]))
+    #     all_test_indices = list(set().union(*[self.shadow_datasets_map[index]['test_ids'] for index in range(self.n_shadow_datasets)]))
+    #     if labels == 'mia':
+    #         # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
+    #         # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
+    #         train_data = Subset(original_train_data, all_train_indices)
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
+    #         return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+    #                                 FixedLabelDataset(test_data, fixed_label=0),])
+    #     elif labels == 'original':
+    #         # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+    #         # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
+    #         train_data = Subset(original_train_data, all_train_indices)
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
+    #         return MyConcatDataset([train_data,test_data])
+    #     elif labels == 'shadow':
+    #         # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as members (1) regardless of their original membership. 
+    #         # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
+    #         # Therefore, we want to learn to classify all their training data as members.
+    #         train_data = Subset(original_train_data, all_train_indices)
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in all_test_indices])
+    #         return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+    #                                 FixedLabelDataset(test_data, fixed_label=1),])
+    #     else:
+    #         raise ValueError('Labels mode should be either mia, original or shadow!')
         
     def sample_outside_shadow_dataset(self, index: int, num_data: int, labels: str = 'original'):
         assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
-        assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to sample outside shadow dataset with id {index}!"
-        inside_ids = self.shadow_datasets_map[index]['all_ids']
-        original_train_data = self.original_datasets.get('train')
-        original_test_data = self.original_datasets.get('test')
+        assert labels in ['original', 'shadow'], f"Invalid labels mode {labels} found when trying to sample outside shadow dataset with id {index}!"
+        inside_ids = self.shadow_datasets_map[index]
+        all_available_data = self.attacker_data_distribution.get('all').get_all_original_indices()
         indices_to_avoid = copy.deepcopy(self.auditing_indices)
-        indices_original_train = [i for i in range(len(original_train_data)) if i not in indices_to_avoid]
-        indices_original_test = [i for i in range(len(original_train_data),len(original_test_data)+len(original_train_data))]
-        all_original_indexes = indices_original_train + indices_original_test
-        available_indices = [i for i in all_original_indexes if i not in inside_ids]
+        indices_train = [i for i in all_available_data if i not in indices_to_avoid]
+        available_indices = [i for i in indices_train if i not in inside_ids]
         assert len(available_indices) >= num_data, f"Not enough available data to sample outside shadow dataset! Requested {num_data} samples but only {len(available_indices)} are available."
         sampled_indices = self._rng.choice(available_indices, num_data, replace=False).tolist()
-        if labels == 'mia':
-            # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
-            # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
-            train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
-            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
-                                FixedLabelDataset(test_data, fixed_label=0),])
-        elif labels == 'original':
+        if labels == 'original':
             # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
             # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
-            train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
-            return MyConcatDataset([train_data,test_data])
+            return MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+                                        original_indices=sampled_indices,
+                                        strict=True,
+                                        return_indexed_tuple=True)
         elif labels == 'shadow':
             # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as non members (0) since we are sampling outside the shadow dataset selected with the index (regardless of their original membership). 
             # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
             # Therefore, we want to learn to classify all their training data as non members.
-            train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
-            test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
-            return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=0),
-                                    FixedLabelDataset(test_data, fixed_label=0),])
+            return FixedLabelDataset(MyOriginalIndexSubset(dataset=self.attacker_data_distribution.get('all'),
+                                                            original_indices=sampled_indices,
+                                                            strict=True,
+                                                            return_indexed_tuple=True),
+                                    fixed_label=0)
         else:
             raise ValueError('Labels mode should be either mia, original or shadow!')
 
-    def clone(self):
-        return ShadowDatasetsManager(original_datasets=self.original_datasets,
-                                    auditing_dataset=self.auditing_dataset,
-                                    shadow_configs=self.shadow_configs,
-                                    attacker_hash=self.attacker_hash,
-                                    logger=self.logger)
+    # def sample_outside_shadow_dataset(self, index: int, num_data: int, labels: str = 'original'):
+    #     assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
+    #     assert labels in ['mia', 'original', 'shadow'], f"Invalid labels mode {labels} found when trying to sample outside shadow dataset with id {index}!"
+    #     inside_ids = self.shadow_datasets_map[index]['all_ids']
+    #     original_train_data = self.original_datasets.get('train')
+    #     original_test_data = self.original_datasets.get('test')
+    #     indices_to_avoid = copy.deepcopy(self.auditing_indices)
+    #     indices_original_train = [i for i in range(len(original_train_data)) if i not in indices_to_avoid]
+    #     indices_original_test = [i for i in range(len(original_train_data),len(original_test_data)+len(original_train_data))]
+    #     all_original_indexes = indices_original_train + indices_original_test
+    #     available_indices = [i for i in all_original_indexes if i not in inside_ids]
+    #     assert len(available_indices) >= num_data, f"Not enough available data to sample outside shadow dataset! Requested {num_data} samples but only {len(available_indices)} are available."
+    #     sampled_indices = self._rng.choice(available_indices, num_data, replace=False).tolist()
+    #     if labels == 'mia':
+    #         # If using mia as a labeling mode, we return the shadow dataset with original samples labeled as members (1) and non-members (0) according to their original membership.
+    #         # This labeling mode is meant to be used when testing the performance of another model (trained for example on the original dataset) on this specific shadow dataset.
+    #         train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
+    #         return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=1),
+    #                             FixedLabelDataset(test_data, fixed_label=0),])
+    #     elif labels == 'original':
+    #         # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
+    #         # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
+    #         train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
+    #         return MyConcatDataset([train_data,test_data])
+    #     elif labels == 'shadow':
+    #         # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as non members (0) since we are sampling outside the shadow dataset selected with the index (regardless of their original membership). 
+    #         # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
+    #         # Therefore, we want to learn to classify all their training data as non members.
+    #         train_data = Subset(original_train_data, [id for id in sampled_indices if id < len(original_train_data)])
+    #         test_data = Subset(original_test_data, [id-len(original_train_data) for id in sampled_indices if id >= len(original_train_data)])
+    #         return MyConcatDataset([FixedLabelDataset(train_data, fixed_label=0),
+    #                                 FixedLabelDataset(test_data, fixed_label=0),])
+    #     else:
+    #         raise ValueError('Labels mode should be either mia, original or shadow!')
+
+    # def clone(self):
+    #     return ShadowDatasetsManager(original_datasets=self.original_datasets,
+    #                                 auditing_dataset=self.auditing_dataset,
+    #                                 shadow_configs=self.shadow_configs,
+    #                                 attacker_hash=self.attacker_hash,
+    #                                 logger=self.logger)
 
     # def clone_with_n_shadow_datasets(self, n_datasets: int):
     #     new_shadow_configs = copy.deepcopy(self.shadow_configs)

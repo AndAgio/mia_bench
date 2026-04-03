@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
+from src.data import get_defender_datas, get_attacker_datas
 from src.data.helpers import MultiDatasets
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
 from src.mia.helpers.results_manager import ResultManager
@@ -12,22 +13,47 @@ from src.utils.log import Loggable, get_logger_from_configs
 
 
 class BaseMIA(Loggable):
-    def __init__(self, defender_model: torch.nn.Module, defender_dataset: MultiDatasets, attacker_configs: AttackerConfigs):
+    def __init__(self, defender_model: torch.nn.Module, attacker_configs: AttackerConfigs):
         logger = get_logger_from_configs(attacker_configs.log)
         super().__init__(logger=logger)
         self.logger.print_it('Setting up and MIA attacker. First thing to do is sampling the auditing dataset...')
         self.defender_model = defender_model
-        self.defender_dataset = defender_dataset
-        self.seed = attacker_configs.audit.seed
-        self.audit_manager = AuditingDatasetManager(original_datasets=defender_dataset,
-                                                    configs=attacker_configs.audit,
+
+        self.base_dataset_configs = attacker_configs.dataset.base
+        self.audit_configs = attacker_configs.dataset.auditing
+        self.shadow_configs = attacker_configs.dataset.shadow
+        self.model_configs = attacker_configs.model
+        self.attack_configs = attacker_configs.attack
+        self.attacker_hash = attacker_configs.hash
+        self.seed = self.base_dataset_configs.seed
+
+        self.defender_datasets = get_defender_datas(dataset=self.base_dataset_configs.name,
+                                datasets_folder=self.base_dataset_configs.data_folder,
+                                def_split=self.base_dataset_configs.def_split,
+                                att_split=self.base_dataset_configs.att_split,
+                                seed=self.seed,
+                                augment=self.base_dataset_configs.data_augmentation,
+                                logger=self.logger)
+        self.attacker_data_distribution = get_attacker_datas(dataset=self.base_dataset_configs.name,
+                                                        datasets_folder=self.base_dataset_configs.data_folder,
+                                                        def_split=self.base_dataset_configs.def_split,
+                                                        att_split=self.base_dataset_configs.att_split,
+                                                        seed=self.seed,
+                                                        augment=self.base_dataset_configs.data_augmentation,
+                                                        logger=self.logger)
+        self.audit_manager = AuditingDatasetManager(defender_datasets=self.defender_datasets,
+                                                    configs=self.audit_configs,
                                                     logger=logger)
         self.results_manager = ResultManager()
-        self.audit_configs=attacker_configs.audit
-        self.shadow_configs=attacker_configs.shadow
-        self.model_configs=attacker_configs.model
-        self.attack_configs=attacker_configs.attack
-        self.attacker_hash = attacker_configs.hash
+
+        # self.defender_dataset = defender_dataset
+        # self.seed = attacker_configs.audit.seed
+        # self.audit_manager = AuditingDatasetManager(original_datasets=defender_dataset,
+        #                                             configs=attacker_configs.audit,
+        #                                             logger=logger)
+        # self.results_manager = ResultManager()
+        # self.audit_configs=attacker_configs.audit
+        # self.shadow_configs=attacker_configs.shadow
 
     def optimize(self):
         raise NotImplementedError('MIA should implement the method to optimize it!')
