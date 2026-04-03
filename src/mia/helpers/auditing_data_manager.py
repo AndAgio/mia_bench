@@ -21,6 +21,7 @@ class AuditingDatasetManager(Loggable):
         assert n_samples_to_pick_from_test < len(self.defender_datasets.get('test')), f"Trying to pick {n_samples_to_pick_from_test} samples from test but it only contains {len(self.defender_datasets.get('test'))} samples!"
         
         # TODO: add option to sample from the attacker dataset instead of the defender test dataset for the non-members, to be used when the number of non-members requested is large.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/42
         # assignees: AndAgio.
 
         self.n_auditing_samples = configs.n_auditing_samples
