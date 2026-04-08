@@ -209,6 +209,7 @@ class MistTrainManager(TrainManager):
             subset_indices = indices[start_idx:end_idx]
 
             #TODO: Refactor to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
+            #Issue URL: https://github.com/AndAgio/mia_bench/issues/44
             # assignees: AndAgio
 
             subset_dataset = torch.utils.data.Subset(self.train_loader.dataset, subset_indices)

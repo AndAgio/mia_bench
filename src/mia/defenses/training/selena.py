@@ -182,6 +182,7 @@ class SplitDataManager:
         indices = np.array(indices)
 
         #TODO: Refactor selena as well to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
+        #Issue URL: https://github.com/AndAgio/mia_bench/issues/46
         # assignees: AndAgio
 
         train_dataset = Subset(self.dataset.get('train'), indices=indices)

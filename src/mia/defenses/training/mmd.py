@@ -213,6 +213,7 @@ class MmdTrainManager(TrainManager):
                 freq = torch.count_nonzero(train_labels == label).item()
 
                 #TODO: Refactor also MMD to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
+                #Issue URL: https://github.com/AndAgio/mia_bench/issues/45
                 # assignees: AndAgio
 
                 subset_val = Subset(all_val_with_matching_class, torch.randperm(len(all_val_with_matching_class))[:freq])
