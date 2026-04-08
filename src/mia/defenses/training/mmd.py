@@ -1,10 +1,8 @@
-import time
 from typing import Union
 import torch
-from torch.utils.data import TensorDataset, DataLoader, ConcatDataset, Subset
+from torch.utils.data import DataLoader, ConcatDataset, Subset
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
-from src.data.helpers import FixedLabelDataset
 from src.utils.configs import DefenderConfigs, MmdDefenseConfigs, TrainConfigs
 from src.mia.defenses.base import BaseDefender
 from src.mia.defenses.training.mixup import mixup_data
@@ -213,6 +211,10 @@ class MmdTrainManager(TrainManager):
             for label in unique_labels:
                 all_val_with_matching_class = MmdTrainManager.get_subset_by_label(validation_data, label.item())
                 freq = torch.count_nonzero(train_labels == label).item()
+
+                #TODO: Refactor also MMD to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
+                # assignees: AndAgio
+
                 subset_val = Subset(all_val_with_matching_class, torch.randperm(len(all_val_with_matching_class))[:freq])
                 subsets_val.append(subset_val)
             sampled_val = ConcatDataset(subsets_val)

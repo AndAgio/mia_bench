@@ -1,12 +1,11 @@
 
 from typing import Union
 import time
-import math
 import torch
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
-from src.data.helpers import MultiDatasets, MyConcatDataset
+from src.data.helpers import MergedDataset
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
@@ -64,7 +63,8 @@ class SupervisedBoundaryMIA(BaseMIA):
         shadow_nonmember_dataset = self.shadow_manager.sample_outside_shadow_dataset(index=0,
                                                                                     num_data=len(shadow_member_dataset), 
                                                                                     labels='original')
-        self.regression_dataset = MyConcatDataset([shadow_member_dataset, shadow_nonmember_dataset])
+        datasets_list = [shadow_member_dataset, shadow_nonmember_dataset]
+        self.regression_dataset = MergedDataset(*datasets_list)
         mia_labels = torch.tensor([1] * len(shadow_member_dataset) + [0] * len(shadow_nonmember_dataset))
         # Iterate over the shadow dataset and compute noise robustness scores for all samples, keeping track of their membership status according to mia_labels
         dataloader = DataLoader(self.regression_dataset, batch_size=1, shuffle=True)

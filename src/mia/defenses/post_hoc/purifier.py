@@ -1,6 +1,7 @@
 from typing import Union
 import torch
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
+from src.data.helpers import SubsampledDataset
 from src.utils.configs import DefenderConfigs, PurifierDefenseConfigs, TrainConfigs
 from src.mia.defenses.base import BaseDefender
 
@@ -83,7 +84,9 @@ class PurifierDefender(BaseDefender):
     def build_pindex(self):
         Pindex = []
         Pindex_labels = []
-        p_dataset = Subset(self.dataset.get('train'), indices=range(self.purifier_configs.pindex_size))
+        p_dataset_indices = self.dataset.get('train').get_indices(mode='original')[:self.purifier_configs.pindex_size]
+        p_dataset = SubsampledDataset(self.dataset.get('train'), original_indices=p_dataset_indices, strict=True)
+        # p_dataset = Subset(self.dataset.get('train'), indices=range(self.purifier_configs.pindex_size))
         dataloader = DataLoader(p_dataset, batch_size=BATCH_SIZE, shuffle=False)
         with torch.no_grad():
             for (inputs, labels, _, _) in dataloader:

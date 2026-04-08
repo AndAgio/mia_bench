@@ -1,9 +1,6 @@
 from typing import Union
-import time
 import torch
 import numpy as np
-from torch.utils.data import TensorDataset, DataLoader, ConcatDataset
-from src.data.helpers import FixedLabelDataset
 from src.utils.configs import DefenderConfigs, LdlDefenseConfigs
 from src.mia.defenses.base import BaseDefender
 

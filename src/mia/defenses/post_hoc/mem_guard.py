@@ -2,7 +2,7 @@ from typing import Union
 import time
 import torch
 from torch.utils.data import TensorDataset, DataLoader, ConcatDataset
-from src.data.helpers import FixedLabelDataset
+from src.data.helpers import ConstantLabelDataset 
 from src.utils.configs import DefenderConfigs, MemGuardDefenseConfigs
 from src.mia.defenses.base import BaseDefender
 
@@ -64,10 +64,10 @@ class MemGuardDefender(BaseDefender):
             in_dim=self.model_configs.num_classes,
             hidden=self.mem_guard_configs.shadow_attacker_model_layers
         ).to(device)
-        attack_data = ConcatDataset([FixedLabelDataset(self.dataset.get('train'),
-                                                    fixed_label=1),
-                                    FixedLabelDataset(self.dataset.get('test'),
-                                                    fixed_label=0),])
+        attack_data = ConcatDataset([ConstantLabelDataset(self.dataset.get('train'),
+                                                    constant_label=1),
+                                    ConstantLabelDataset(self.dataset.get('test'),
+                                                    constant_label=0),])
         features = self.get_model_outputs(model=self.trained_model,
                                         data=attack_data,
                                         device=device)

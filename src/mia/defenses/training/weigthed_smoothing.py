@@ -1,6 +1,5 @@
 import time
 from typing import Union
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from src.data.helpers import IndexedDataset

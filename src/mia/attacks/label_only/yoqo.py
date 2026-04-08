@@ -1,19 +1,12 @@
-
-from tkinter import Image
 from typing import Union
 import time
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-from PIL import Image
-from scipy.stats import norm
-from sklearn.metrics import accuracy_score, roc_curve
-from src.data.helpers import MultiDatasets, MyConcatDataset
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
-import copy
 
 
 PROCESSING_BATCH_SIZE = 10
@@ -103,8 +96,7 @@ class Yoqo(BaseMIA):
         trained_in_shadow_models_for_sample = []
         trained_out_shadow_models_for_sample = []
         for index in audit_dataset_indices:
-            in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=index,
-                                                                                                split='all')
+            in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=index)
             out_models_indices = [index for index in all_models_indices if index not in in_models_indices]
             trained_in_shadow_models_for_sample.append(in_models_indices)
             trained_out_shadow_models_for_sample.append(out_models_indices)

@@ -1,5 +1,4 @@
 import torch
-from typing import Union
 from src.trainer.train_manager import TrainManager
 from src.mia.helpers.shadow_data_manager import ShadowDatasetsManager
 from src.mia.helpers.shadow_models_manager import ShadowModelsManager
@@ -96,18 +95,9 @@ class ShadowManager(Loggable):
     def get_all_in_dataset_for_sample_id(self, id: int, labels: str = 'original'):
         return self.shadow_data.get_shadow_datasets_containing_sample_id(id=id,
                                                                         labels=labels)
-
-    # def get_all_in_dataset_for_sample_id(self, id: int, split: str = 'all', labels: str = 'original'):
-    #     return self.shadow_data.get_shadow_datasets_containing_sample_id(id=id,
-    #                                                                     split=split,
-    #                                                                     labels=labels)
     
     def find_all_in_dataset_indices_for_sample_id(self, id: int):
         return self.shadow_data.find_shadow_datasets_containing_sample_id(id=id)
-
-    # def find_all_in_dataset_indices_for_sample_id(self, id: int, split: str = 'all'):
-    #     return self.shadow_data.find_shadow_datasets_containing_sample_id(id=id,
-    #                                                                     split=split)
     
     def sample_random_population_indices(self, num_data: int = None):
         return self.shadow_data.sample_random_indices(num_data=num_data)

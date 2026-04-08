@@ -7,8 +7,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from PIL import Image
 from scipy.stats import norm
-from sklearn.metrics import accuracy_score, roc_curve
-from src.data.helpers import MultiDatasets, MyConcatDataset
+from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs

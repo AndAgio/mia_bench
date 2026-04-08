@@ -237,8 +237,6 @@ def gather_settings():
                                 help='Number of shadow models and datasets to be used for MIAs requiring shadow models')
         parser.add_argument('--n_samples_per_shadow_dataset', type=int, default=5000,
                                 help='Number of samples to use for each shadow datasets on the attacker side')
-        parser.add_argument('--shadow_test_perc', type=float, default=0.5,
-                                help='Percentage of shadow dataset samples that are coming from the testing set')
         # RobustMIA parameters
         parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
                                 help='Number of samples in Z to select randomly for LR computation')

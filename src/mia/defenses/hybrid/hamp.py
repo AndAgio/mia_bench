@@ -1,5 +1,4 @@
 from typing import Union, Callable
-import numpy as np
 import torch
 from src.trainer.train_manager import TrainManager
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM

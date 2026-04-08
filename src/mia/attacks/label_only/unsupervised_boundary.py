@@ -4,7 +4,6 @@ import time
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
-from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs

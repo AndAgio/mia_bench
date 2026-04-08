@@ -1,12 +1,11 @@
 from typing import Union
 import numpy as np
 import torch
-from torch.utils.data import TensorDataset, DataLoader, Dataset
+from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 import torch.optim as optim
 import time
 from src.data.helpers import IndexedDataset
-from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
@@ -51,8 +50,7 @@ class NeuralMIA(BaseMIA):
         start_map = time.time()
         for enumerate_index, (_, _, _, sample_id) in enumerate(all_shadow_data):
             # self.logger.print_it_same_line(f"Processing sample {enumerate_index}/{len(all_indexed_shadow_data)} for attacking model dataset construction...")
-            in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=sample_id,
-                                                                                                split='all')
+            in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=sample_id)
             out_models_indices = [idx for idx in all_shadow_models_indices if idx not in in_models_indices]
             for in_ids in in_models_indices:
                 sample_label_map[(sample_id, in_ids)] = 1 # member

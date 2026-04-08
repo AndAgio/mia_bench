@@ -1,7 +1,6 @@
 import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
-from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
@@ -113,8 +112,7 @@ class RobustMIA(BaseMIA):
             trained_in_shadow_models_for_sample = []
             trained_out_shadow_models_for_sample = []
             for index in dataset_indices:
-                in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=index,
-                                                                                                    split='all')
+                in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=index)
                 out_models_indices = [index for index in all_models_indices if index not in in_models_indices]
                 trained_in_shadow_models_for_sample.append(in_models_indices)
                 trained_out_shadow_models_for_sample.append(out_models_indices)

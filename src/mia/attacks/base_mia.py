@@ -1,11 +1,10 @@
-from typing import Callable, Union
+from typing import Union
 import pathlib
 import torch
 import numpy as np
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 from src.data import get_defender_datas, get_attacker_datas
-from src.data.helpers import MultiDatasets
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
 from src.mia.helpers.results_manager import ResultManager
 from src.utils.configs import AttackerConfigs

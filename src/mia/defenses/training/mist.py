@@ -207,6 +207,10 @@ class MistTrainManager(TrainManager):
             start_idx = i * subset_size
             end_idx = (i + 1) * subset_size if i < self.mist_configs.num_submodels - 1 else total_size
             subset_indices = indices[start_idx:end_idx]
+
+            #TODO: Refactor to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
+            # assignees: AndAgio
+
             subset_dataset = torch.utils.data.Subset(self.train_loader.dataset, subset_indices)
             self.submodel_datasets[i] = subset_dataset
         self.logger.print_it(f"MIST TrainManager: split training data into {self.mist_configs.num_submodels} subsets for sub-models.")

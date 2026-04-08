@@ -1,7 +1,6 @@
 import math
 import numpy as np
-from torch.utils.data import Subset, ConcatDataset
-from src.data.helpers import MultiDatasets, FixedLabelDataset, MyOriginalIndexSubset, MyConcatDataset
+from src.data.helpers import MultiDatasets, ConstantLabelDataset, SubsampledDataset, MergedDataset
 from src.utils.configs import AuditingDataConfigs
 from src.utils.log import Loggable, MyLogger
 
@@ -37,8 +36,8 @@ class AuditingDatasetManager(Loggable):
 
     def _sample(self, n_samples_to_pick_from_train: int, n_samples_to_pick_from_test: int):
         self.logger.print_it(f"Sampling auditing dataset with {n_samples_to_pick_from_train} samples picked from train and {n_samples_to_pick_from_test} samples picked from test...")
-        defender_train_original_sample_indexes = self.defender_datasets.get('train').get_all_original_indices() 
-        defender_test_original_sample_indexes = self.defender_datasets.get('test').get_all_original_indices()
+        defender_train_original_sample_indexes = self.defender_datasets.get('train').get_indices(mode='original') 
+        defender_test_original_sample_indexes = self.defender_datasets.get('test').get_indices(mode='original')
         member_original_sample_indexes = self._rng.choice(defender_train_original_sample_indexes,
                                                         n_samples_to_pick_from_train,
                                                         replace=False).tolist()
@@ -46,37 +45,17 @@ class AuditingDatasetManager(Loggable):
                                                             n_samples_to_pick_from_test,
                                                             replace=False).tolist()
         self.in_ids = member_original_sample_indexes
-        self.in_auditing_dataset = MyOriginalIndexSubset(self.defender_datasets.get('train'), 
+        self.in_auditing_dataset = SubsampledDataset(self.defender_datasets.get('train'),
                                                         member_original_sample_indexes,
-                                                        strict=True,
-                                                        return_indexed_tuple=True)
+                                                        strict=True)
         self.out_ids = non_member_original_sample_indexes
-        self.out_auditing_dataset = MyOriginalIndexSubset(self.defender_datasets.get('test'),
-                                                        non_member_original_sample_indexes, 
-                                                        strict=True, 
-                                                        return_indexed_tuple=True)
+        self.out_auditing_dataset = SubsampledDataset(self.defender_datasets.get('test'),
+                                                        non_member_original_sample_indexes,
+                                                        strict=True)
         self.all_ids = member_original_sample_indexes + non_member_original_sample_indexes
-        self.full_auditing_dataset = MyConcatDataset([self.in_auditing_dataset, self.out_auditing_dataset])
-
-        # member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('train'))), 
-        #                                 n_samples_to_pick_from_train,
-        #                                 replace=False).tolist()
-        # non_member_indexes = self._rng.choice(np.arange(len(self.original_datasets.get('train')), len(self.original_datasets.get('test'))+len(self.original_datasets.get('train'))),
-        #                                     n_samples_to_pick_from_test,
-        #                                     replace=False).tolist()
-        # all_indexes = member_indexes + non_member_indexes
-        # self.in_auditing_dataset = Subset(self.original_datasets.get('train'),
-        #                                 member_indexes)
-        # self.in_ids = member_indexes
-        # self.out_auditing_dataset = Subset(self.original_datasets.get('test'),
-        #                                 [id-len(self.original_datasets.get('train')) for id in non_member_indexes])
-        # self.out_ids = [id-len(self.original_datasets.get('train')) for id in non_member_indexes]
-        # self.full_auditing_dataset = ConcatDataset([self.in_auditing_dataset, self.out_auditing_dataset])
-        # self.all_ids = all_indexes
-        # self.audit_dataset = ConcatDataset([FixedLabelDataset(self.in_auditing_dataset,
-        #                                                     fixed_label=1),
-        #                                     FixedLabelDataset(self.out_auditing_dataset,
-        #                                                     fixed_label=0),])
+        datas = [self.in_auditing_dataset, self.out_auditing_dataset]
+        self.full_auditing_dataset = MergedDataset(*datas)
+        assert self.full_auditing_dataset.get_indices(mode='original') == self.all_ids, f"Full auditing dataset original indices should match the combined in and out ids! Found {self.full_auditing_dataset.get_indices(mode='original')} and {self.all_ids} instead!"
     
     def get_original_dataset(self):
         return self.original_datasets
@@ -108,12 +87,14 @@ class AuditingDatasetManager(Loggable):
     def get(self, labels: str = 'mia'):
         self.logger.print_it(f"Getting auditing dataset with {labels} labels...")
         if labels == 'mia':
-            return MyConcatDataset([FixedLabelDataset(self.in_auditing_dataset,
-                                                    fixed_label=1),
-                                    FixedLabelDataset(self.out_auditing_dataset,
-                                                    fixed_label=0),])
+            datasets_to_merge = [ConstantLabelDataset(self.in_auditing_dataset,
+                                                    constant_label=1),
+                                ConstantLabelDataset(self.out_auditing_dataset,
+                                                    constant_label=0),]
+            return MergedDataset(*datasets_to_merge)
         elif labels == 'original':
-            return MyConcatDataset([self.in_auditing_dataset, self.out_auditing_dataset])
+            datasets_to_merge = [self.in_auditing_dataset, self.out_auditing_dataset]
+            return MergedDataset(*datasets_to_merge)
         else:
             raise ValueError('Labels mode should be either mia or original!')
 

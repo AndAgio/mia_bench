@@ -180,6 +180,10 @@ class SplitDataManager:
             if model_index not in self.exclusion_matrix[i, :]:
                 indices.append(i)
         indices = np.array(indices)
+
+        #TODO: Refactor selena as well to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
+        # assignees: AndAgio
+
         train_dataset = Subset(self.dataset.get('train'), indices=indices)
         dataset_to_return.add(train_dataset, id='train')
         try:

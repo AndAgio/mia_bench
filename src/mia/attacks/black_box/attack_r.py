@@ -1,9 +1,8 @@
-from typing import Callable, Union
+from typing import Union
 import numpy as np
 import torch
 import time
 from scipy.stats import norm
-from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
@@ -16,9 +15,8 @@ class AttackRMIA(BaseMIA):
     # Implementation of Attack-R in Enhanced Membership Inference Attacks against Machine Learning Models (https://arxiv.org/pdf/2111.09679).
     def __init__(self, 
                 defender_model: torch.nn.Module,
-                defender_dataset: MultiDatasets,
                 attacker_configs: AttackerConfigs):
-        super().__init__(defender_model=defender_model, defender_dataset=defender_dataset, attacker_configs=attacker_configs)
+        super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         assert self.shadow_configs.n_shadow_datasets >= 1, f"When using Attack-R MIA, at least 1 shadow dataset must be used!"
         assert self.shadow_configs.mode == 'offline', f"When using Attack-R MIA, only offline shadow datasets are supported!"
         assert self.attack_configs.r_score_type in ['loss', 'confidence', 'entropy'], f"When using Attack-R MIA, r_score_type must be one of ['loss', 'confidence', 'entropy']!"

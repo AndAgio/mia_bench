@@ -3,11 +3,9 @@ from typing import Union
 import time
 import math
 import torch
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 import numpy as np
 import scipy
-from sklearn.metrics import accuracy_score, roc_curve
-from src.data.helpers import MultiDatasets, MyConcatDataset
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
