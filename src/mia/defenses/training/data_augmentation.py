@@ -36,10 +36,6 @@ class DataAugmentationDefender(BaseDefender):
             augmentation_transforms.transforms.append(transforms.RandomHorizontalFlip(p=self.data_augmentation_configs.horizontal_flip))
         if self.data_augmentation_configs.rotation != 0:
             augmentation_transforms.transforms.append(transforms.RandomRotation(self.data_augmentation_configs.rotation))
-        if self.data_augmentation_configs.jitter_brightness != 0 or self.data_augmentation_configs.jitter_hue != 0:
-            augmentation_transforms.transforms.append(transforms.ColorJitter(brightness=self.data_augmentation_configs.jitter_brightness, hue=self.data_augmentation_configs.jitter_hue))
-        if self.data_augmentation_configs.perspective_distortion_scale != 0:
-            augmentation_transforms.transforms.append(transforms.RandomPerspective(distortion_scale=self.data_augmentation_configs.perspective_distortion_scale, p=0.5))
         if self.data_augmentation_configs.erase_prob > 0:
             augmentation_transforms.transforms.append(transforms.RandomErasing(p=self.data_augmentation_configs.erase_prob))
         return augmentation_transforms

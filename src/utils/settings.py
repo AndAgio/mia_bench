@@ -185,12 +185,6 @@ def gather_settings():
                                 help='probability of applying horizontal flip augmentation in the Data Augmentation defense')
         parser.add_argument('--defender_augment_rotation', type=float, default=10,
                                 help='degree of random rotation augmentation for the Data Augmentation defense')
-        parser.add_argument('--defender_augment_jitter_brightness', type=float, default=0.2,
-                                help='brightness jitter factor for the Color Jitter augmentation in the Data Augmentation defense')
-        parser.add_argument('--defender_augment_jitter_hue', type=float, default=0.2,
-                                help='hue jitter factor for the Color Jitter augmentation in the Data Augmentation defense')
-        parser.add_argument('--defender_augment_perspective_distortion_scale', type=float, default=0.2,
-                                help='distortion scale for the Random Perspective augmentation in the Data Augmentation defense')
         parser.add_argument('--defender_augment_erase_prob', type=float, default=0.5,
                                 help='probability of applying random erasing augmentation in the Data Augmentation defense')
 

@@ -495,9 +495,6 @@ class DataAugmentationDefenseConfigs:
     strategy: Literal["data_augmentation"] = "data_augmentation"
     horizontal_flip: float = 0.5
     rotation: int = 10
-    jitter_brightness: float = 0.2
-    jitter_hue: float = 0.2
-    perspective_distortion_scale: float = 0.2
     erase_prob: float = 0.5
 
 
@@ -682,9 +679,6 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.defender_mode in ['data_augmentation', 'augmentation', 'data-augmentation', 'aug', 'dataaug', 'data_aug', 'augment']:
         defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip_prob,
                                                                 rotation=settings.defender_augment_rotation,
-                                                                jitter_brightness=settings.defender_augment_jitter_brightness,
-                                                                jitter_hue=settings.defender_augment_jitter_hue,
-                                                                perspective_distortion_scale=settings.defender_augment_perspective_distortion_scale,
                                                                 erase_prob=settings.defender_augment_erase_prob,)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defender_mode))
