@@ -52,10 +52,6 @@ def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS
     printer_func = print if logger is None else logger.print_it
     printer_func('Gathering dataset "{}". This may take a while...'.format(dataset))
 
-    #TODO: Avoid using different transformations for the test dataset since it will be merged with the train dataset for the defender and attacker splits, rather data transformation will be implemented as a separate step after the split and as a defense mechanism.
-    #Issue URL: https://github.com/AndAgio/mia_bench/issues/43
-    # assignees: AndAgio
-
     # Image Preprocessing
     if dataset in ['cifar10', 'cifar100']:
         mean, std = get_dataset_mean_std(dataset)
