@@ -6,6 +6,13 @@ from src.utils.configs import DefenderConfigs, DataAugmentationDefenseConfigs, T
 from src.mia.defenses.base import BaseDefender
 from src.data.helpers import AugmentWrappedDataset
 
+# TODO: Enable attacker to also use data augmentation.
+# assignees: AndAgio
+
+
+# TODO: Enable data augmentation to be used together with other defenses, such as adversarial regularization or label smoothing.
+# assignees: AndAgio
+
 
 class DataAugmentationDefender(BaseDefender):
     # Implementation of Data Augmentation as a Defense approach.
