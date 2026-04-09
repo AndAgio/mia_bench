@@ -21,7 +21,6 @@ class BaseDefender(Loggable):
                                 def_split=self.dataset_configs.def_split,
                                 att_split=self.dataset_configs.att_split,
                                 seed=self.dataset_configs.seed,
-                                augment=self.dataset_configs.data_augmentation,
                                 logger=self.logger)
         self.untrained_model = get_model(model_name=self.model_configs.model_name,
                             im_channels=self.model_configs.im_channels,

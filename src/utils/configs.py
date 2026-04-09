@@ -140,7 +140,6 @@ class DatasetConfigs:
     name: str
     # Optional arguments with default values
     data_folder: pathlib.Path = DEFAULT_DATASETS_FOLDER
-    data_augmentation: bool = True
     im_size: Optional[Tuple[int, ...]] = None
     im_channels: Optional[int] = None
     num_classes: Optional[int] = None
@@ -494,12 +493,12 @@ class LdlDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class DataAugmentationDefenseConfigs:
     strategy: Literal["data_augmentation"] = "data_augmentation"
-    horizontal_flip: bool = False
+    horizontal_flip: float = 0.5
     rotation: int = 10
-    random_crop: int = 32
     jitter_brightness: float = 0.2
     jitter_hue: float = 0.2
     perspective_distortion_scale: float = 0.2
+    erase_prob: float = 0.5
 
 
 # One-of: only the selected strategy's fields are validated/available
@@ -573,7 +572,6 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     attacker_resume_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'resume_ckpts'
     defender_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
-                                            data_augmentation=settings.data_augmentation,
                                             seed=settings.seed,
                                             def_split=settings.defender_data_split_perc,
                                             att_split=settings.attacker_data_split_perc)
@@ -681,13 +679,13 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         defender_defense_configs = LdlDefenseConfigs(n_queries=settings.defender_ldl_n_queries,
                                                     noise_type=noise_type,
                                                     noise_scale=settings.defender_ldl_noise_scale)
-    elif settings.defender_mode in ['data_augmentation', 'data-augmentation', 'dataaug', 'data-aug']:
-        defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip,
+    elif settings.defender_mode in ['data_augmentation', 'augmentation', 'data-augmentation', 'aug', 'dataaug', 'data_aug', 'augment']:
+        defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip_prob,
                                                                 rotation=settings.defender_augment_rotation,
-                                                                random_crop=settings.defender_augment_random_crop,
                                                                 jitter_brightness=settings.defender_augment_jitter_brightness,
                                                                 jitter_hue=settings.defender_augment_jitter_hue,
-                                                                perspective_distortion_scale=settings.defender_augment_perspective_distortion_scale)
+                                                                perspective_distortion_scale=settings.defender_augment_perspective_distortion_scale,
+                                                                erase_prob=settings.defender_augment_erase_prob,)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defender_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,

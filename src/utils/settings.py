@@ -98,7 +98,7 @@ def gather_settings():
                                         'purifier',
                                         'mmd', 'mmd_mixup', 'mmd-mixup',
                                         'ldl',
-                                        'data_augmentation', 'augmentation', 'data-augmentation',])
+                                        'data_augmentation', 'augmentation', 'data-augmentation', 'aug', 'dataaug', 'data_aug', 'augment'],)
         # Differential Privacy parameters for defender model
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
         #                         help="enable Differential Privacy for defender model training",)
@@ -181,22 +181,20 @@ def gather_settings():
         parser.add_argument('--defender_ldl_noise_scale', type=float, default=0.1,
                                 help='Standard deviation of the noise to be added in the LDL defense layer')
         # Data Augmentation parameters for defender model
-        parser.add_argument('--defender_augment_horizontal_flip', action="store_true", default=False,
-                                help="whether to apply horizontal flip augmentation for the Data Augmentation defense",)
+        parser.add_argument('--defender_augment_horizontal_flip_prob', type=float, default=0.5,
+                                help='probability of applying horizontal flip augmentation in the Data Augmentation defense')
         parser.add_argument('--defender_augment_rotation', type=float, default=10,
                                 help='degree of random rotation augmentation for the Data Augmentation defense')
-        parser.add_argument('--defender_augment_random_crop', type=int, default=32,
-                                help="whether to apply random crop augmentation for the Data Augmentation defense",)
         parser.add_argument('--defender_augment_jitter_brightness', type=float, default=0.2,
                                 help='brightness jitter factor for the Color Jitter augmentation in the Data Augmentation defense')
         parser.add_argument('--defender_augment_jitter_hue', type=float, default=0.2,
                                 help='hue jitter factor for the Color Jitter augmentation in the Data Augmentation defense')
         parser.add_argument('--defender_augment_perspective_distortion_scale', type=float, default=0.2,
                                 help='distortion scale for the Random Perspective augmentation in the Data Augmentation defense')
-        parser.add_argument("--data_augmentation", action="store_true", default=False,
-                                help="augment data by flipping and cropping",)
-        
-        
+        parser.add_argument('--defender_augment_erase_prob', type=float, default=0.5,
+                                help='probability of applying random erasing augmentation in the Data Augmentation defense')
+
+
         # Hardware related settings
         parser.add_argument("--device", default='0',
                                 help="Set to 0 or 1 to enable CUDA training, cpu otherwise")

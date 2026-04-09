@@ -1,5 +1,6 @@
 import warnings
 from torch.utils.data import Dataset, ConcatDataset
+from torchvision import transforms
 from typing import List, Sequence, Any
 import numpy as np
 from collections import defaultdict
@@ -211,6 +212,34 @@ class ConstantLabelDataset(Dataset, IndexTrackingMixin):
             x, _ = _unpack_item(item)
             orig_idx = self.original_indices[idx]
         return x, self.constant_label, orig_idx, idx
+    
+
+class AugmentWrappedDataset(Dataset, IndexTrackingMixin):
+    """Wraps a dataset to apply additional transformations."""
+    def __init__(self, base_dataset: Dataset, extra_transform: transforms.Compose = None):
+        self.base_dataset = base_dataset
+        self.extra_transform = extra_transform
+        assert hasattr(base_dataset, 'original_indices'), "Base dataset must have 'original_indices' for tracking original indices in this project!"
+        self.original_indices = self.base_dataset.original_indices
+        assert hasattr(base_dataset, '_orig_to_local'), "Base dataset must have '_orig_to_local' mapping for tracking original indices in this project!"
+        self._orig_to_local = self.base_dataset._orig_to_local
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        item = self.base_dataset[idx]
+        if isinstance(item, (tuple, list)) and len(item) >= 3:
+            x, y, orig_idx = item[0], item[1], item[2]
+        else:
+            x, y = _unpack_item(item)
+            orig_idx = self.original_indices[idx]        
+        # 2. Apply the delayed transformations
+        if self.extra_transform:
+            x = self.extra_transform(x)
+            
+        return x, y, orig_idx, idx
+
 
 class MultiDatasets():
     def __init__(self, datasets: list[Dataset] = None, ids: list[str] = None, info: dict = None):
@@ -224,6 +253,12 @@ class MultiDatasets():
         
     def add(self, dataset: Dataset, id: str):
         self.datasets[id] = dataset
+
+    def update(self, dataset: Dataset, id: str):
+        if id in self.datasets.keys():
+            self.datasets[id] = dataset
+        else:
+            raise KeyError(f"ID '{id}' not in datasets managed by {self}! Use add() to add new datasets.")
     
     def remove(self, id: str):
         self.datasets.pop(id)

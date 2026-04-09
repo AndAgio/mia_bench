@@ -1,8 +1,10 @@
 
 from typing import Union
 import torch
+from torchvision import transforms
 from src.utils.configs import DefenderConfigs, DataAugmentationDefenseConfigs, TrainConfigs
 from src.mia.defenses.base import BaseDefender
+from src.data.helpers import AugmentWrappedDataset
 
 
 class DataAugmentationDefender(BaseDefender):
@@ -14,13 +16,12 @@ class DataAugmentationDefender(BaseDefender):
         self.data_augmentation_configs = defender_configs.defense
 
     def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
-        self.logger.print_it(f'DataAugmentation Defender: training defender model with relaxed loss and alpha {self.data_augmentation_configs.relax_alpha}...')
-        self.dataset = get_dataset(dataset=self.dataset_configs.name,
-                                datasets_folder=self.dataset_configs.data_folder,
-                                val_split=self.dataset_configs.val_split,
-                                seed=self.dataset_configs.seed,
-                                augment=self.dataset_configs.data_augmentation,
-                                logger=self.logger)
+        self.logger.print_it(f'DataAugmentation Defender: training defender model with augmentation configs: {self.data_augmentation_configs}...')
+        non_augmented_dataset = self.dataset.get('train')
+        augmented_dataset = AugmentWrappedDataset(base_dataset=non_augmented_dataset,
+                                                extra_transform=self.get_augmentations())
+        self.dataset.update(dataset=augmented_dataset,
+                            id='train')
         super().train_model(train_configs=train_configs, return_stats=return_stats)
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
@@ -28,3 +29,17 @@ class DataAugmentationDefender(BaseDefender):
         self.defended_model = self.trained_model
         return self.defended_model
 
+    def get_augmentations(self):
+        augmentation_transforms = transforms.Compose([])
+        assert self.data_augmentation_configs.horizontal_flip >= 0 and self.data_augmentation_configs.horizontal_flip <= 1, f"Invalid horizontal flip probability {self.data_augmentation_configs.horizontal_flip} for data augmentation defense!"
+        if self.data_augmentation_configs.horizontal_flip > 0:
+            augmentation_transforms.transforms.append(transforms.RandomHorizontalFlip(p=self.data_augmentation_configs.horizontal_flip))
+        if self.data_augmentation_configs.rotation != 0:
+            augmentation_transforms.transforms.append(transforms.RandomRotation(self.data_augmentation_configs.rotation))
+        if self.data_augmentation_configs.jitter_brightness != 0 or self.data_augmentation_configs.jitter_hue != 0:
+            augmentation_transforms.transforms.append(transforms.ColorJitter(brightness=self.data_augmentation_configs.jitter_brightness, hue=self.data_augmentation_configs.jitter_hue))
+        if self.data_augmentation_configs.perspective_distortion_scale != 0:
+            augmentation_transforms.transforms.append(transforms.RandomPerspective(distortion_scale=self.data_augmentation_configs.perspective_distortion_scale, p=0.5))
+        if self.data_augmentation_configs.erase_prob > 0:
+            augmentation_transforms.transforms.append(transforms.RandomErasing(p=self.data_augmentation_configs.erase_prob))
+        return augmentation_transforms

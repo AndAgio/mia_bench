@@ -47,7 +47,7 @@ def get_dataset_mean_std(dataset: str):
     return mean, std
 
 
-def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, augment: bool = False, logger: callable = None):
+def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, logger: callable = None):
     """Import and return the appropriate dataset based on the provided name."""
     printer_func = print if logger is None else logger.print_it
     printer_func('Gathering dataset "{}". This may take a while...'.format(dataset))
@@ -59,145 +59,88 @@ def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS
     # Image Preprocessing
     if dataset in ['cifar10', 'cifar100']:
         mean, std = get_dataset_mean_std(dataset)
-        # normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
-        #                                 std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
-        # Setup train transforms
-        train_transform = transforms.Compose([])
-        if augment:
-            train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
-            train_transform.transforms.append(transforms.RandomHorizontalFlip())
-            train_transform.transforms.append(transforms.RandomRotation(10))
-            train_transform.transforms.append(transforms.ColorJitter(brightness=0.2, hue=0.1))
-            train_transform.transforms.append(transforms.RandomPerspective(distortion_scale=0.2, p=0.5))
-        train_transform.transforms.append(transforms.ToTensor())
-        train_transform.transforms.append(transforms.Normalize(mean=mean, 
-                                                                std=std))
-        # Setup test transforms
-        test_transform = transforms.Compose([transforms.ToTensor(), 
-                                            transforms.Normalize(mean=mean, 
-                                                                std=std)])
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'svhn':
         mean, std = get_dataset_mean_std(dataset)
-        train_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
-        test_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'fmnist':
         mean, std = get_dataset_mean_std(dataset)
-        train_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
-        test_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'cinic10':
         mean, std = get_dataset_mean_std(dataset)
-        train_transform = transforms.Compose([])
-        if augment:
-            train_transform.transforms.append(transforms.RandomCrop(32, padding=4))
-            train_transform.transforms.append(transforms.RandomHorizontalFlip())
-            train_transform.transforms.append(transforms.RandomRotation(10))
-        train_transform.transforms.append(transforms.ToTensor())
-        train_transform.transforms.append(transforms.Normalize(mean=mean, 
-                                                                std=std))
-        test_transform = transforms.Compose([transforms.ToTensor(), 
-                                            transforms.Normalize(mean=mean, 
-                                                                std=std)])
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset in ['imagenet', 'imagenet1k']:
         mean, std = get_dataset_mean_std(dataset)
-        normalize = transforms.Normalize(mean=mean, std=std)
-        train_transform = transforms.Compose([])
-        train_transform.transforms.append(transforms.RandomResizedCrop(224))
-        if augment:
-            train_transform.transforms.append(transforms.RandomHorizontalFlip())
-        train_transform.transforms.append(transforms.ToTensor())
-        train_transform.transforms.append(normalize)
-        test_transform = transforms.Compose([transforms.Resize(256),
-                                                transforms.CenterCrop(224),
-                                                transforms.ToTensor(),
-                                                normalize])
+        transform = transforms.Compose([transforms.Resize(256),
+                                        transforms.CenterCrop(224),
+                                        transforms.ToTensor(),
+                                        transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'tinyimagenet':
         mean, std = get_dataset_mean_std(dataset)
-        normalize = transforms.Normalize(mean=mean, std=std)
-        # Setup train transforms for Tiny ImageNet
-        train_transform = transforms.Compose([])
-        if augment:
-            train_transform.transforms.append(transforms.RandomCrop(64, padding=4))
-            train_transform.transforms.append(transforms.RandomHorizontalFlip())
-        train_transform.transforms.append(transforms.ToTensor())
-        train_transform.transforms.append(normalize)
-        # Setup test transforms for Tiny ImageNet
-        test_transform = transforms.Compose([transforms.ToTensor(), normalize])
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'gtsrb':
         mean, std = get_dataset_mean_std(dataset)
-        normalize = transforms.Normalize(mean=mean, std=std)
-        # Setup train transforms for GTSRB
-        train_transform = transforms.Compose([])
-        train_transform.transforms.append(transforms.Resize((32, 32)))
-        if augment:
-            train_transform.transforms.append(transforms.RandomHorizontalFlip())
-            train_transform.transforms.append(transforms.RandomRotation(10))
-        train_transform.transforms.append(transforms.ToTensor())
-        train_transform.transforms.append(normalize)
-        # Setup test transforms for GTSRB
-        test_transform = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(), normalize])
+        transform = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
     elif dataset == 'purchase':
-        train_transform = None
-        test_transform = None
+        transform = None
     elif dataset == 'texas':
-        train_transform = None
-        test_transform = None
+        transform = None
     elif dataset == 'news':
-        train_transform = None
-        test_transform = None
+        transform = None
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
 
     # Load the appropriate train and test datasets
     if dataset == 'cifar10':
         root = os.path.join(datasets_folder, 'cifar10')
-        train_dataset = CIFAR10(root=root, train=True, transform=train_transform, download=True)
-        test_dataset = CIFAR10(root=root, train=False, transform=test_transform, download=True)
+        train_dataset = CIFAR10(root=root, train=True, transform=transform, download=True)
+        test_dataset = CIFAR10(root=root, train=False, transform=transform, download=True)
     elif dataset == 'cifar100':
         root = os.path.join(datasets_folder, 'cifar100')
-        train_dataset = CIFAR100(root=root, train=True, transform=train_transform, download=True)
-        test_dataset = CIFAR100(root=root, train=False, transform=test_transform, download=True)
+        train_dataset = CIFAR100(root=root, train=True, transform=transform, download=True)
+        test_dataset = CIFAR100(root=root, train=False, transform=transform, download=True)
     elif dataset == 'svhn':
         root = os.path.join(datasets_folder, 'svhn')
-        train_dataset = SVHN(root=root, split='train', download=True, transform=train_transform)
+        train_dataset = SVHN(root=root, split='train', download=True, transform=transform)
         train_dataset.targets = train_dataset.labels
-        test_dataset = SVHN(root=root, split='test', download=True, transform=test_transform)
+        test_dataset = SVHN(root=root, split='test', download=True, transform=transform)
         test_dataset.targets = test_dataset.labels
     elif dataset == 'fmnist':
         root = os.path.join(datasets_folder, 'fmnist')
-        train_dataset = FashionMNIST(root=root, train=True, download=True, transform=train_transform)
-        test_dataset = FashionMNIST(root=root, train=False, download=True, transform=test_transform)
+        train_dataset = FashionMNIST(root=root, train=True, download=True, transform=transform)
+        test_dataset = FashionMNIST(root=root, train=False, download=True, transform=transform)
     elif dataset == 'cinic10':
         root = os.path.join(datasets_folder, 'cinic10')
-        train_dataset = Cinic10(root=root, train=True, download=True, transform=train_transform)
-        test_dataset = Cinic10(root=root, train=False, download=True, transform=test_transform)
+        train_dataset = Cinic10(root=root, train=True, download=True, transform=transform)
+        test_dataset = Cinic10(root=root, train=False, download=True, transform=transform)
     elif dataset == 'imagenet':
         root = os.path.join(datasets_folder, 'imagenet')
-        train_dataset = ImageNet(root=root, split='train', download=True, transform=train_transform)
-        test_dataset = ImageNet(root=root, split='val', download=True, transform=test_transform)
+        train_dataset = ImageNet(root=root, split='train', download=True, transform=transform)
+        test_dataset = ImageNet(root=root, split='val', download=True, transform=transform)
     elif dataset == 'imagenet1k':
         root = os.path.join(datasets_folder, 'imagenet1k')
-        train_dataset = ImageNet1K(root=root, split='train', download=True, transform=train_transform)
-        test_dataset = ImageNet1K(root=root, split='val', download=True, transform=test_transform)
+        train_dataset = ImageNet1K(root=root, split='train', download=True, transform=transform)
+        test_dataset = ImageNet1K(root=root, split='val', download=True, transform=transform)
     elif dataset == 'tinyimagenet':
         root = os.path.join(datasets_folder, 'tinyimagenet')
-        train_dataset = TinyImageNet(root=root, train=True, transform=train_transform, download=True)
-        test_dataset = TinyImageNet(root=root, train=False, transform=test_transform, download=True)
+        train_dataset = TinyImageNet(root=root, train=True, transform=transform, download=True)
+        test_dataset = TinyImageNet(root=root, train=False, transform=transform, download=True)
     elif dataset == 'purchase':
         root = os.path.join(datasets_folder, 'purchase')
-        train_dataset = Purchase(root=root, train=True, transform=train_transform, download=True)
-        test_dataset = Purchase(root=root, train=False, transform=test_transform, download=True)
+        train_dataset = Purchase(root=root, train=True, transform=transform, download=True)
+        test_dataset = Purchase(root=root, train=False, transform=transform, download=True)
     elif dataset == 'texas':
         root = os.path.join(datasets_folder, 'texas')
-        train_dataset = Texas(root=root, train=True, transform=train_transform, download=True)
-        test_dataset = Texas(root=root, train=False, transform=test_transform, download=True)
+        train_dataset = Texas(root=root, train=True, transform=transform, download=True)
+        test_dataset = Texas(root=root, train=False, transform=transform, download=True)
     elif dataset == 'news':
         root = os.path.join(datasets_folder, 'news')
-        train_dataset = News(root=root, train=True, transform=train_transform, download=True)
-        test_dataset = News(root=root, train=False, transform=test_transform, download=True)
+        train_dataset = News(root=root, train=True, transform=transform, download=True)
+        test_dataset = News(root=root, train=False, transform=transform, download=True)
     elif dataset == 'gtsrb':
         root = os.path.join(datasets_folder, 'gtsrb')
-        train_dataset = GTSRB(root=root, train=True, transform=train_transform, download=True)
-        test_dataset = GTSRB(root=root, train=False, transform=test_transform, download=True)
+        train_dataset = GTSRB(root=root, train=True, transform=transform, download=True)
+        test_dataset = GTSRB(root=root, train=False, transform=transform, download=True)
     else:
         raise ValueError('Dataset "{}" is not available!'.format(dataset))
     # Merge the train and test datasets into a single dataset with a global index space, while preserving original indices
@@ -206,7 +149,7 @@ def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS
     logger.print_it(f"Loaded dataset '{dataset}' with {len(train_dataset)} training samples and {len(test_dataset)} testing samples. Merged dataset has {len(merged_dataset)} samples in total.")
     return merged_dataset
 
-def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, def_split: float = 0.5, att_split: float = 0.5, seed: int= 12345, augment: bool = False, logger: callable = None):
+def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, def_split: float = 0.5, att_split: float = 0.5, seed: int= 12345, logger: callable = None):
     """Return dataset splits packed into a `MultiDatasets` object.
 
     Parameters:
@@ -221,7 +164,7 @@ def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOL
     instances whose `.indices` attribute corresponds to the indices in the original full training set. This
     allows mapping back to precomputed per-sample statistics (e.g., memorization scores).
     """
-    merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, augment=augment, logger=logger)
+    merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, logger=logger)
     # The merged dataset allows us to keep track of original indices across train/test splits, which is crucial for mapping back to precomputed per-sample statistics (e.g., memorization scores) that are typically computed on the original training set.
     # Now split the merged dataset between defender and attacker
     percentage_for_defender = def_split
@@ -254,7 +197,7 @@ def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOL
     return data
 
 
-def get_attacker_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, def_split: float = 0.5, att_split: float = 0.5, seed: int= 12345, augment: bool = False, logger: callable = None):
+def get_attacker_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, def_split: float = 0.5, att_split: float = 0.5, seed: int= 12345, logger: callable = None):
     """Return dataset splits packed into a `MultiDatasets` object.
 
     Parameters:
@@ -269,7 +212,7 @@ def get_attacker_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOL
     instances whose `.indices` attribute corresponds to the indices in the original full training set. This
     allows mapping back to precomputed per-sample statistics (e.g., memorization scores).
     """
-    merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, augment=augment, logger=logger)
+    merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, logger=logger)
     # The merged dataset allows us to keep track of original indices across train/test splits, which is crucial for mapping back to precomputed per-sample statistics (e.g., memorization scores) that are typically computed on the original training set.
     # Now split the merged dataset between defender and attacker
     percentage_for_defender = def_split

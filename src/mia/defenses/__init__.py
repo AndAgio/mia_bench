@@ -11,6 +11,7 @@ from src.mia.defenses.post_hoc.mem_guard import MemGuardDefender
 from src.mia.defenses.post_hoc.purifier import PurifierDefender
 from src.mia.defenses.post_hoc.ldl import LdlDefender
 from src.mia.defenses.hybrid.hamp import HampDefender
+from src.mia.defenses.training.data_augmentation import DataAugmentationDefender
 
 
 
@@ -42,5 +43,7 @@ def get_defender_class(defender_mode: str):
         return MmdDefender
     elif defender_mode in ['ldl']:
         return LdlDefender
+    elif defender_mode in ['data_augmentation', 'augmentation', 'data-augmentation', 'aug', 'dataaug', 'data_aug', 'augment']:
+        return DataAugmentationDefender
     else:
         raise ValueError('Defense "{}" not found or not implemented yet! Double check your settings please!'.format(defender_mode))
