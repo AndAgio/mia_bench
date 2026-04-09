@@ -8,7 +8,7 @@ from src.data.helpers import MultiDatasets, MergedDataset, SubsampledDataset, Co
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
 from src.utils.configs import ShadowDataConfigs
 from src.utils.log import Loggable, MyLogger
-from src.utils.variables import DEFAULT_SHADOW_DATASETS_FOLDER
+from src.utils.variables import DEFAULT_SHADOW_DATASETS_FOLDER, PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS
 
 MAX_SHADOW_DATASETS = 100
 MAX_SAMPLES_PER_SHADOW_DATASET = 100000
@@ -34,7 +34,7 @@ class ShadowDatasetsManager(Loggable):
         assert self.auditing_indices == auditing_dataset.get('original').get_indices(mode='original'), f"Auditing indices should match the original auditing dataset indices! Found {self.auditing_indices} and {auditing_dataset.get('original').get_indices(mode='original')} instead!"
         self.auditing_dataset = auditing_dataset
 
-        n_shadow_samples = math.ceil(len(attacker_data_distribution.get('all'))*0.75)
+        n_shadow_samples = math.ceil(len(attacker_data_distribution.get('all'))*PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS)
         n_auditing_samples = len(self.auditing_indices)
         if self.mode == 'online':
             assert n_shadow_samples > n_auditing_samples, f"In ONLINE shadow dataset mode, the number of samples available for shadow dataset sampling should be larger than the number of auditing samples! Found {n_shadow_samples} shadow samples and {n_auditing_samples} auditing samples instead!"

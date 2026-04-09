@@ -70,7 +70,6 @@ class TrainConfigs:
     optimizer_config: Union[OptimizerConfigs, Dict[str, Any]]
     scheduler_config: Union[SchedulerConfigs, Dict[str, Any]]
     # Optional arguments with default values
-    # dp_config: DPConfigs = field(default_factory=DPConfigs)
     batch_size: Optional[int] = 256
     loss: Optional[Loss] = 'crossentropy'
     metrics: Optional[Tuple[Union[str, Callable[..., Any]], ...]] = ('multi_class_accuracy',)
@@ -258,10 +257,8 @@ class AuditingDataConfigs:
 class ShadowDataConfigs:
     # Mandatory arguments
     n_shadow_datasets: int
-    # n_samples_per_dataset: int
     mode: str
     # Optional arguments with default values
-    # test_perc: Optional[float] = 0.5
     seed: Optional[int] = 12345
 
 
@@ -271,39 +268,6 @@ class FullDataConfigs:
     auditing: AuditingDataConfigs
     shadow: ShadowDataConfigs
 
-
-# @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
-# class AttackConfigs:
-#     # Shared arguments
-#     mode: str = 'offline'
-
-#     # RobustMIA
-#     alpha: Union[float, list[float]] = 0.5
-#     gamma: float = 1
-#     random_pop_size: int = 1000
-#     # LiRA
-
-#     # Quantile MIA
-#     n_quantile: int = 100
-#     low_quantile: float = 0.01
-#     high_quantile: float = 0.99 
-#     use_logscale: bool = False
-#     use_gaussian: bool = False
-#     quantile_alpha: float = 0.05
-
-#     # Neural MIA
-#     neural_input_mode: str = 'logit'
-#     model_layers: list[int] = field(default_factory=lambda: [64, 32])
-#     model_epochs: int = 10
-#     model_lr: float = 0.01
-
-#     # Attack-R MIA
-#     r_alpha: float = 0.05
-#     r_score_type: str = 'loss'  # options: loss, confidence, entropy
-
-#     # Attack-P MIA
-#     p_alpha: float = 0.05
-#     p_score_type: str = 'loss'  # options: loss, confidence, entropy
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class RobustMiaConfigs:
@@ -579,18 +543,8 @@ class ExperimentConfigs:
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
     assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
-        attacker_settings = ['dataset', 'val_split',
-                            'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', ]
+        attacker_settings = ['dataset', 'val_split', 'n_auditing_samples', 'audit_in_perc', 'n_shadows']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('attacker_') or k in attacker_settings}
-        # attacker_settings = ['dataset', 'val_split', 'attacker_model', 'attacker_mode', 
-        #                     'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'n_samples_per_shadow_dataset', 'shadow_test_perc', 
-        #                     'attacker_robust_rand_pop_size', 'attacker_robust_alphas', 'attacker_robust_gamma', 
-        #                     'n_quantile', 'low_quantile', 'high_quantile', 'quantile_alpha', 'quantile_use_logscale', 'quantile_use_gaussian',
-        #                     'neural_model_layers', 'neural_model_epochs', 'neural_model_lr',
-        #                     'r_alpha']
-        # relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('att_') or k in attacker_settings}
-        # if settings.attacker_mode == 'quantile':
-        #     relevant_settings.pop('n_shadows')
     elif mode == 'defender':
         defender_settings = ['dataset', 'val_split', 'defender_model', 'data_augmentation', 'perf_metrics', 'perf_metric_to_track']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('defender_') or k in defender_settings}
@@ -617,11 +571,6 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     defender_resume_ckpts_folder = settings.out_folder/'defenders'/defender_hash/'resume_ckpts'
     attacker_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'ckpts'
     attacker_resume_ckpts_folder = settings.out_folder/'attackers'/attacker_hash/'resume_ckpts'
-    # defender_dp_config = DPConfigs(use_dp=settings.defender_use_dp,
-    #                             noise_multiplier=settings.defender_dp_noise_multiplier,
-    #                             max_grad_norm=settings.defender_dp_max_grad_norm,
-    #                             clip_per_layer=settings.defender_dp_clip_per_layer,
-    #                             grad_sample_mode=settings.defender_dp_grad_sample_mode)
     defender_dataset_configs = DatasetConfigs(name=settings.dataset,
                                             data_folder=settings.datasets_folder,
                                             data_augmentation=settings.data_augmentation,
@@ -632,9 +581,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                 in_perc=settings.audit_in_perc,
                                                 seed=settings.seed)
     attacker_shadow_configs = ShadowDataConfigs(n_shadow_datasets=settings.n_shadows,
-                                                n_samples_per_dataset=settings.n_samples_per_shadow_dataset,
                                                 mode='online',
-                                                test_perc=settings.shadow_test_perc,
                                                 seed=settings.seed)
     full_data_configs = FullDataConfigs(base=defender_dataset_configs,
                                         auditing=attacker_auditing_configs,

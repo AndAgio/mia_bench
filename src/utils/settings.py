@@ -20,6 +20,10 @@ def gather_settings():
                                 help="percentage of the whole dataset to be assigned to the defender for model training. It will be split into training, validation, and testing sets.",)
         parser.add_argument("--attacker_data_split_perc", type=float, default=0.5,
                                 help="percentage of the whole dataset to be assigned to the attacker for building the shadow datasets via sampling.",)
+        parser.add_argument('--n_auditing_samples', type=int, default=1000,
+                                help='Number of samples to use for auditing on the attacker side')
+        parser.add_argument('--audit_in_perc', type=float, default=0.5,
+                                help='Percentage of auditing samples that are coming from the training set')
         parser.add_argument('--seed', type=int, default=12345,
                                 help='random seed (default:12345)')
 
@@ -229,14 +233,8 @@ def gather_settings():
                                         'dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black', 'dh-attack_random',
                                         'online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo',
                                         ])
-        parser.add_argument('--n_auditing_samples', type=int, default=1000,
-                                help='Number of samples to use for auditing on the attacker side')
-        parser.add_argument('--audit_in_perc', type=float, default=0.5,
-                                help='Percentage of auditing samples that are coming from the training set')
         parser.add_argument('--n_shadows', type=int, default=10,
                                 help='Number of shadow models and datasets to be used for MIAs requiring shadow models')
-        parser.add_argument('--n_samples_per_shadow_dataset', type=int, default=5000,
-                                help='Number of samples to use for each shadow datasets on the attacker side')
         # RobustMIA parameters
         parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
                                 help='Number of samples in Z to select randomly for LR computation')

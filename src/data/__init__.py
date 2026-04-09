@@ -16,7 +16,7 @@ from .texas import Texas
 from .news import News
 from .helpers import MultiDatasets, MergedDataset, IndexedDataset, DatasetSplitter
 
-from src.utils.variables import DEFAULT_DATASETS_FOLDER
+from src.utils.variables import DEFAULT_DATASETS_FOLDER, PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT, PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT, PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT
 from src.utils.configs import get_dataset_info_from_name
 
 
@@ -228,9 +228,9 @@ def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOL
     percentage_for_attacker = att_split
     
     chunks = DatasetSplitter.split_stratified(merged_dataset,
-                                            proportions=[percentage_for_defender*0.75, 
-                                                        percentage_for_attacker*0.1, 
-                                                        percentage_for_defender*0.15,
+                                            proportions=[percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT, 
+                                                        percentage_for_attacker*PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT, 
+                                                        percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT,
                                                         percentage_for_attacker], 
                                             seed=seed)
 
@@ -276,9 +276,9 @@ def get_attacker_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOL
     percentage_for_attacker = att_split
 
     chunks = DatasetSplitter.split_stratified(merged_dataset,
-                                            proportions=[percentage_for_defender*0.75, 
-                                                        percentage_for_attacker*0.1, 
-                                                        percentage_for_defender*0.15,
+                                            proportions=[percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT, 
+                                                        percentage_for_attacker*PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT, 
+                                                        percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT,
                                                         percentage_for_attacker], 
                                             seed=seed)
 
