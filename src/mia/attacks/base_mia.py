@@ -31,14 +31,12 @@ class BaseMIA(Loggable):
                                 def_split=self.base_dataset_configs.def_split,
                                 att_split=self.base_dataset_configs.att_split,
                                 seed=self.seed,
-                                augment=self.base_dataset_configs.data_augmentation,
                                 logger=self.logger)
         self.attacker_data_distribution = get_attacker_datas(dataset=self.base_dataset_configs.name,
                                                         datasets_folder=self.base_dataset_configs.data_folder,
                                                         def_split=self.base_dataset_configs.def_split,
                                                         att_split=self.base_dataset_configs.att_split,
                                                         seed=self.seed,
-                                                        augment=self.base_dataset_configs.data_augmentation,
                                                         logger=self.logger)
         self.audit_manager = AuditingDatasetManager(defender_datasets=self.defender_datasets,
                                                     configs=self.audit_configs,
