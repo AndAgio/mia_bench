@@ -159,19 +159,20 @@ or training configurations are deliberately kept in separate aggregate groups.
 
 `smoke_test_all.py` exercises every distinct attack and defense and keeps going after
 individual failures. The default `quick` preset uses one epoch and tiny inputs. After
-that passes, the `moderate` preset provides a slightly more realistic local check:
+that passes, the `medium` preset provides a moderately realistic stress check:
 
 ```bash
-python smoke_test_all.py --preset moderate --device 0
+python smoke_test_all.py --preset medium --device 0
 ```
 
-The moderate preset uses five epochs for defender, attacker, neural attacker,
-MemGuard, MIST, and Purifier training. Its three profiles use 800–1,120 samples,
-batches of 16–32, 20–28 auditing samples, wider auxiliary networks, and 10 queries
-for query-driven methods. To try only a few components first:
+The medium preset uses ten epochs for defender, attacker, neural attacker, MemGuard,
+MIST, and Purifier training. Its three profiles use 1,600–2,400 samples, batches of
+32–64, 64–128 auditing samples, standard-sized auxiliary networks, 50 quantiles or
+queries for the common query-driven methods, and moderately larger OSLO, DH, SELENA,
+MIST, YOQO, Purifier, and LDL workloads. To try only a few components first:
 
 ```bash
-python smoke_test_all.py --preset moderate --device cpu \
+python smoke_test_all.py --preset medium --device cpu \
 	--only attack:quantile attack:lira defense:mist
 ```
 
@@ -181,6 +182,8 @@ temporary work directory; its checkpoints, shadow data, generated result artifac
 and internal logs are deleted as soon as the case finishes. The top-level case logs
 and `report.json` are retained. Pass `--keep-work` when you need the full artifacts to
 debug a failure.
+
+`--preset moderate` remains accepted as a backward-compatible alias for `medium`.
 
 ### Training defenders (and checkpointing for reuse)
 Use `train_defender.py` when you only want to train the defender model and persist checkpoints for later reuse across multiple attacks. This is the recommended workflow for large experiments: train a defender once with stable settings, then run several attacks reusing that checkpoint.

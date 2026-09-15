@@ -95,11 +95,14 @@ PROFILES = (
     Profile("small_c", 303, 560, 16, 0.020, 12, 0.50),
 )
 
-MODERATE_PROFILES = (
-    Profile("moderate_a", 101, 800, 16, 0.010, 20, 0.20),
-    Profile("moderate_b", 202, 960, 24, 0.005, 24, 0.35),
-    Profile("moderate_c", 303, 1120, 32, 0.020, 28, 0.50),
+MEDIUM_PROFILES = (
+    Profile("medium_a", 101, 1600, 32, 0.010, 64, 0.20),
+    Profile("medium_b", 202, 2000, 48, 0.005, 96, 0.35),
+    Profile("medium_c", 303, 2400, 64, 0.020, 128, 0.50),
 )
+
+# Backward-compatible name for callers that imported the first version directly.
+MODERATE_PROFILES = MEDIUM_PROFILES
 
 
 @dataclass
@@ -136,9 +139,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=1800,
                         help="Maximum seconds for one combination")
     parser.add_argument(
-        "--preset", choices=("quick", "moderate"), default="quick",
-        help=("quick uses the original one-epoch settings; moderate uses five "
-              "epochs and somewhat larger local workloads"),
+        "--preset", choices=("quick", "medium", "moderate"), default="quick",
+        help=("quick uses the original one-epoch settings; medium uses ten epochs "
+              "and moderately sized stress-test workloads; moderate is an alias for medium"),
     )
     parser.add_argument("--only", nargs="*", default=None, metavar="KIND:NAME",
                         help="Subset, e.g. attack:lira defense:dp")
@@ -154,13 +157,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -> list[str]:
-    """Build CLI flags for either the quick or moderately realistic local preset."""
-    moderate = args.preset == "moderate"
-    epochs = "5" if moderate else "1"
-    hidden_layers = ["32", "16"] if moderate else ["8"]
-    queries = "10" if moderate else "3"
-    quantiles = "10" if moderate else "3"
-    auxiliary_batch_size = str(profile.batch_size) if moderate else "4"
+    """Build CLI flags for either the quick or medium local stress preset."""
+    medium = args.preset in {"medium", "moderate"}
+    epochs = "10" if medium else "1"
+    hidden_layers = ["64", "32"] if medium else ["8"]
+    queries = "50" if medium else "3"
+    quantiles = "50" if medium else "3"
+    auxiliary_batch_size = str(profile.batch_size) if medium else "4"
+    robust_alpha = "0.5" if medium else str(profile.alpha)
+    statistical_alpha = "0.05" if medium else str(profile.alpha)
     return [
         "--dataset", args.dataset,
         "--datasets_folder", str(args.datasets_folder.resolve()),
@@ -176,40 +181,45 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         "--seed", str(profile.seed),
         "--n_auditing_samples", str(profile.audit_samples), "--audit_in_perc", "0.5",
         "--attacker_robust_rand_pop_size", str(profile.audit_samples),
-        "--attacker_robust_alphas", str(profile.alpha),
-        "--attacker_quantile_n", quantiles, "--attacker_quantile_low", "0.10",
-        "--attacker_quantile_high", "0.90", "--attacker_quantile_alpha", str(profile.alpha),
+        "--attacker_robust_alphas", robust_alpha,
+        "--attacker_quantile_n", quantiles,
+        "--attacker_quantile_low", "0.01" if medium else "0.10",
+        "--attacker_quantile_high", "0.99" if medium else "0.90",
+        "--attacker_quantile_alpha", statistical_alpha,
         "--attacker_neural_model_layers", *hidden_layers,
         "--attacker_neural_model_epochs", epochs,
         "--attacker_neural_model_lr", str(profile.learning_rate),
-        "--attacker_rmia_alpha", str(profile.alpha), "--attacker_pmia_alpha", str(profile.alpha),
+        "--attacker_rmia_alpha", statistical_alpha, "--attacker_pmia_alpha", statistical_alpha,
         "--attacker_boundary_n_queries", queries,
-        "--attacker_boundary_qeba_reduction_factor", "4",
-        "--attacker_noise_robust_n_queries", queries, "--attacker_noise_robust_sigmas", "0.05",
-        "--attacker_oslo_n_models", "3" if moderate else "2", "--attacker_oslo_same_arch",
-        "--attacker_oslo_source_models_ratio", "0.5",
-        "--attacker_oslo_K", "2" if moderate else "1",
-        "--attacker_oslo_N", "3" if moderate else "1",
-        "--attacker_dh_n_models", "3" if moderate else "2",
+        "--attacker_boundary_qeba_reduction_factor", "8" if medium else "4",
+        "--attacker_noise_robust_n_queries", queries, "--attacker_noise_robust_sigmas",
+        *(["0.01", "0.05", "0.10"] if medium else ["0.05"]),
+        "--attacker_oslo_n_models", "4" if medium else "2", "--attacker_oslo_same_arch",
+        "--attacker_oslo_source_models_ratio", "0.75" if medium else "0.5",
+        "--attacker_oslo_K", "3" if medium else "1",
+        "--attacker_oslo_N", "10" if medium else "1",
+        "--attacker_dh_n_models", "4" if medium else "2",
         "--attacker_dh_n_queries", queries,
-        "--attacker_yoqo_alpha", str(profile.alpha), "--attacker_yoqo_gamma", "1",
-        "--attacker_yoqo_adv_opt_max_iter", "3" if moderate else "1",
+        "--attacker_yoqo_alpha", "2" if medium else str(profile.alpha),
+        "--attacker_yoqo_gamma", "5" if medium else "1",
+        "--attacker_yoqo_adv_opt_max_iter", "10" if medium else "1",
         "--attacker_yoqo_adv_opt_lr", str(profile.learning_rate),
         "--defender_mem_guard_shadow_model_layers", *hidden_layers,
         "--defender_mem_guard_shadow_model_epochs", epochs,
         "--defender_mem_guard_shadow_model_lr", str(profile.learning_rate),
         "--defender_adv_reg_shadow_attacker_model_layers", *hidden_layers,
-        "--defender_adv_reg_shadow_attacker_k", "2" if moderate else "1",
-        "--defender_selena_K", "3" if moderate else "2", "--defender_selena_L", "1",
-        "--defender_mist_num_submodels", "3" if moderate else "2",
+        "--defender_adv_reg_shadow_attacker_k", "2" if medium else "1",
+        "--defender_selena_K", "5" if medium else "2",
+        "--defender_selena_L", "2" if medium else "1",
+        "--defender_mist_num_submodels", "4" if medium else "2",
         "--defender_mist_submodel_epochs", epochs,
-        "--defender_weighted_smoothing_warmup_epochs", "1" if moderate else "0",
-        "--defender_purifier_reformer_latent_dim", "8" if moderate else "4",
-        "--defender_purifier_reformer_hidden_dim", "32" if moderate else "8",
+        "--defender_weighted_smoothing_warmup_epochs", "2" if medium else "0",
+        "--defender_purifier_reformer_latent_dim", "16" if medium else "4",
+        "--defender_purifier_reformer_hidden_dim", "64" if medium else "8",
         "--defender_purifier_reformer_epochs", epochs,
         "--defender_purifier_reformer_lr", str(profile.learning_rate),
         "--defender_purifier_reformer_batch_size", auxiliary_batch_size,
-        "--defender_purifier_pindex_size", (str(profile.audit_samples) if moderate else "8"),
+        "--defender_purifier_pindex_size", (str(profile.audit_samples) if medium else "8"),
         "--defender_ldl_n_queries", queries,
         "--resume",
     ]
@@ -254,7 +264,7 @@ def make_worker_command(profile: Profile, entrypoint: str, run_args: list[str]) 
 def build_cases(args: argparse.Namespace, run_root: Path) -> list[Case]:
     cases: list[Case] = []
     logs = run_root / "logs"
-    profiles = MODERATE_PROFILES if args.preset == "moderate" else PROFILES
+    profiles = MEDIUM_PROFILES if args.preset in {"medium", "moderate"} else PROFILES
     for attack in ATTACKS:
         if not selected("attack", attack, args.only):
             continue
@@ -582,7 +592,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_root = args.output_dir.resolve() / datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = run_root / "report.json"
     cases = build_cases(args, run_root)
-    profiles_per_component = len(MODERATE_PROFILES if args.preset == "moderate" else PROFILES)
+    profiles_per_component = len(
+        MEDIUM_PROFILES if args.preset in {"medium", "moderate"} else PROFILES
+    )
     if not cases:
         print("No cases matched --only. Use --list-components for valid names.", file=sys.stderr)
         return 2
