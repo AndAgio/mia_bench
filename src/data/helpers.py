@@ -1,4 +1,5 @@
 import warnings
+import torch
 from torch.utils.data import Dataset, ConcatDataset
 from torchvision import transforms
 from typing import List, Sequence, Any
@@ -16,13 +17,25 @@ def _unpack_item(item):
     return item, None
 
 class IndexTrackingMixin:
-    def get_indices(self, mode: str = 'original') -> List[int]:
+    def get_indices(self, mode: str = 'original', to_torch: bool = False):
         if mode == 'current':
-            return self.get_current_current_indices()
+            indices = self.get_current_current_indices()
         elif mode == 'original':
-            return self.get_current_original_indices()
+            indices = self.get_current_original_indices()
         else:
             raise ValueError("Invalid mode. Use 'current' or 'original'.")
+        return torch.as_tensor(indices, dtype=torch.long) if to_torch else indices
+
+    def get_all_targets(self, to_torch: bool = False):
+        """Return labels in this wrapper's current sample order."""
+        targets = [self[index][1] for index in range(len(self))]
+        if not to_torch:
+            return targets
+        if not targets:
+            return torch.empty(0)
+        if all(torch.is_tensor(target) for target in targets):
+            return torch.stack(targets)
+        return torch.as_tensor(targets)
 
     def get_current_original_indices(self) -> List[int]:
         """
@@ -212,6 +225,52 @@ class ConstantLabelDataset(Dataset, IndexTrackingMixin):
             x, _ = _unpack_item(item)
             orig_idx = self.original_indices[idx]
         return x, self.constant_label, orig_idx, idx
+
+
+class TargetOverrideDataset(Dataset, IndexTrackingMixin):
+    """Preserve samples and tracked indices while replacing their targets."""
+    def __init__(self, dataset: Dataset, targets):
+        if len(dataset) != len(targets):
+            raise ValueError(
+                f"Expected one target per sample, got {len(targets)} targets for {len(dataset)} samples."
+            )
+        if not hasattr(dataset, 'original_indices'):
+            dataset = IndexedDataset(dataset)
+        self.dataset = dataset
+        self.targets = targets
+        self.original_indices = list(dataset.original_indices)
+        self._orig_to_local = dict(dataset._orig_to_local)
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, idx: int):
+        item = self.dataset[idx]
+        x = item[0]
+        orig_idx = item[2] if isinstance(item, (tuple, list)) and len(item) >= 3 else self.original_indices[idx]
+        return x, self.targets[idx], orig_idx, idx
+
+
+def get_dataset_transform(dataset: Dataset):
+    """Find the input transform beneath tracking/concatenation wrappers."""
+    transform = getattr(dataset, '__dict__', {}).get('transform')
+    if transform is not None:
+        return transform
+
+    for attribute in ('dataset', 'base_dataset'):
+        wrapped = getattr(dataset, attribute, None)
+        if wrapped is not None and wrapped is not dataset:
+            transform = get_dataset_transform(wrapped)
+            if transform is not None:
+                return transform
+
+    concat_dataset = getattr(dataset, 'concat_dataset', None)
+    if concat_dataset is not None:
+        for wrapped in concat_dataset.datasets:
+            transform = get_dataset_transform(wrapped)
+            if transform is not None:
+                return transform
+    return None
     
 
 class AugmentWrappedDataset(Dataset, IndexTrackingMixin):

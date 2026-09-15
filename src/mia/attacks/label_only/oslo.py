@@ -51,11 +51,11 @@ class OsloMIA(BaseMIA):
     def build_ensembles(self):
         self.logger.print_it('Oslo MIA attacker: building ensemble models for transferable adversarial attack generation...')
         start = time.time()
-        n_source_models = math.floor(self.shadow_manager.get_num_models() * self.attack_configs.source_models_ratio)
-        n_val_models = self.shadow_manager.get_num_models() - n_source_models
+        n_source_models = math.floor(self.shadow_manager.get_n_models() * self.attack_configs.source_models_ratio)
+        n_val_models = self.shadow_manager.get_n_models() - n_source_models
         self.logger.print_it(f"Oslo MIA attacker: using {n_source_models} shadow models as source models to build the ensemble, and {n_val_models} shadow models as validation.")
-        self.source_models_ensemble = MultiEnsemble(model_list=[self.shadow_manager.get(index=i) for i in range(n_source_models)])
-        self.val_models_ensemble = MultiEnsemble(model_list=[self.shadow_manager.get(index=i) for i in range(n_source_models, self.shadow_manager.get_num_models())])
+        self.source_models_ensemble = MultiEnsemble(model_list=[self.shadow_manager.get_model(index=i) for i in range(n_source_models)])
+        self.val_models_ensemble = MultiEnsemble(model_list=[self.shadow_manager.get_model(index=i) for i in range(n_source_models, self.shadow_manager.get_n_models())])
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Oslo MIA attacker: Done building ensemble models. It took {}:{:02d}:{:02d}...'.format(h, m, s))
@@ -74,7 +74,7 @@ class OsloMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Supervised Boundary MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
         return metrics
 
     @torch.no_grad()
@@ -86,7 +86,6 @@ class OsloMIA(BaseMIA):
         logits = model(inputs)
         return torch.argmax(logits, dim=1)
 
-    @torch.no_grad()
     def infer_dataset(self, model: torch.nn.Module, dataset: torch.utils.data.Dataset, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
@@ -98,14 +97,13 @@ class OsloMIA(BaseMIA):
             self.logger.print_it_same_line(f"Boundary Distance MIA attacker: processing batch {batch_id+1}/{len(dataloader)} for inference. This may take a while...", console_only=True)
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
-            scores = self.infer_batch(model=model, inputs=batch_x, targets=batch_y, device=device)
+            scores = self.infer_batch(model=model, batch_x=batch_x, batch_y=batch_y, device=device)
             all_scores.append(scores)
         self.logger.set_logger_newline(console_only=True)
         all_scores = torch.cat(all_scores, dim=0).numpy()
         all_decisions = (all_scores >= self.attack_configs.threshold).astype(np.int64)
         return all_scores, all_decisions
 
-    @torch.no_grad()
     def infer_batch(self, model: torch.nn.Module, batch_x: torch.Tensor, batch_y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
@@ -113,9 +111,8 @@ class OsloMIA(BaseMIA):
         model.eval()
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
-        score = self._score(inputs=batch_x, targets=batch_y)
-        decisions = (score >= self.attack_configs.threshold).astype(np.int64)
-        return score.cpu().numpy(), decisions
+        _, score = self._score(inputs=batch_x, targets=batch_y)
+        return score.detach().cpu()
 
     def _score(self, inputs: torch.Tensor, targets: torch.Tensor):
         # Compute the attack score for a batch of samples.
@@ -123,9 +120,11 @@ class OsloMIA(BaseMIA):
 
         batch_size = inputs.shape[0]
         g = torch.zeros_like(inputs)
-        delta = torch.zeros_like(inputs).cuda()
+        delta = torch.zeros_like(inputs)
+        self.source_models_ensemble = self.source_models_ensemble.to(inputs.device)
+        self.val_models_ensemble = self.val_models_ensemble.to(inputs.device)
         eps_list = [(idx + 1) * (self.attack_configs.max_epsilon / self.attack_configs.K) for idx in range(self.attack_configs.K)]
-        mask = torch.ones((batch_size, )).bool()
+        mask = torch.ones((batch_size,), dtype=torch.bool, device=inputs.device)
 
         for eps in eps_list:
             eps /= 255.0
@@ -150,12 +149,14 @@ class OsloMIA(BaseMIA):
                     g[mask] = g[mask] * MOMENTUM + PGD_noise[mask]
                 elif self.attack_configs.ga_mode == 'tifgsm':
                     KERNEL_SIZE = 5
-                    PGD_grad = torch.nn.functional.conv2d(PGD_grad, weight=get_kernel(KERNEL_SIZE), stride=(1, 1), groups=3, padding=(KERNEL_SIZE - 1) // 2)
+                    kernel = get_kernel(KERNEL_SIZE).to(device=PGD_grad.device, dtype=PGD_grad.dtype)
+                    PGD_grad = torch.nn.functional.conv2d(PGD_grad, weight=kernel, stride=(1, 1), groups=3, padding=(KERNEL_SIZE - 1) // 2)
                     g[mask] = PGD_grad[mask].clone()
                 elif self.attack_configs.ga_mode == 'tmifgsm':
                     KERNEL_SIZE = 5
                     MOMENTUM = 1
-                    PGD_grad = torch.nn.functional.conv2d(PGD_grad, weight=get_kernel(KERNEL_SIZE), stride=(1, 1), groups=3, padding=(KERNEL_SIZE - 1) // 2)
+                    kernel = get_kernel(KERNEL_SIZE).to(device=PGD_grad.device, dtype=PGD_grad.dtype)
+                    PGD_grad = torch.nn.functional.conv2d(PGD_grad, weight=kernel, stride=(1, 1), groups=3, padding=(KERNEL_SIZE - 1) // 2)
                     PGD_noise = PGD_grad / torch.abs(PGD_grad).mean(dim=(1, 2, 3), keepdim=True)
                     g[mask] = g[mask] * MOMENTUM + PGD_noise[mask]
                 else:
@@ -169,7 +170,7 @@ class OsloMIA(BaseMIA):
                 tmp = torch.clamp(tmp, 0, 1)
                 output = self.val_models_ensemble(tmp).detach()
             prob = torch.nn.functional.softmax(output, dim=1)
-            conf = prob[np.arange(batch_size), targets.long()]
+            conf = prob[torch.arange(batch_size, device=prob.device), targets.long()]
             mask = (conf >= self.attack_configs.threshold) # it keeps perturbing the ones with confidence above the threshold, and stops perturbing the ones that are already below the threshold (early stopping)
 
             # early stopping
@@ -215,6 +216,5 @@ def get_kernel(kernel_size=7):
     kernel = gkern(kernel_size, 3).astype(np.float32)
     stack_kernel = np.stack([kernel, kernel, kernel]).swapaxes(2, 0)
     stack_kernel = np.expand_dims(stack_kernel, 3).transpose(2, 3, 0, 1)
-    stack_kernel = torch.from_numpy(stack_kernel).cuda()
+    stack_kernel = torch.from_numpy(stack_kernel)
     return stack_kernel
-

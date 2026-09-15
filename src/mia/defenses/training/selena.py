@@ -1,10 +1,9 @@
 from typing import Union, Callable
-import copy
 import time
 import numpy as np
 import torch
 from torch.utils.data import TensorDataset, DataLoader, Subset
-from src.data.helpers import MultiDatasets
+from src.data.helpers import MultiDatasets, TargetOverrideDataset
 from src.utils.configs import DefenderConfigs, SelenaDefenseConfigs, TrainConfigs
 from src.mia.defenses.base import BaseDefender
 from src.mia.helpers.shadow_models_manager import ShadowModelsManager
@@ -123,16 +122,7 @@ class SelenaDefender(BaseDefender):
                         torch.tensor(float('nan'), device=predictions_matrix.device))
         assert torch.isfinite(mean_outputs).all(), "Found NaN or Inf in `mean_outputs`"
 
-        distilled_dataset = copy.deepcopy(train_dataset)
-        try:
-            distilled_dataset.set_targets(mean_outputs)
-        except AttributeError:
-            distilled_dataset.targets = mean_outputs
-            dataloader = DataLoader(distilled_dataset, batch_size=train_configs.batch_size, shuffle=False)
-            with torch.no_grad():
-                for batch_idx, (samples, targets, _, _) in enumerate(dataloader):
-                    assert targets.shape[-1] == self.model_configs.num_classes, f"Expected targets to have shape ({len(distilled_dataset)}, {self.model_configs.num_classes}), got {targets.shape} instead!"
-                    break
+        distilled_dataset = TargetOverrideDataset(train_dataset, mean_outputs)
 
         dataset_to_return.add(distilled_dataset, id='train')
         test_dataset = self.dataset.get('test')

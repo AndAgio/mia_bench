@@ -19,7 +19,6 @@ class AttackPMIA(BaseMIA):
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.shadow_configs.n_shadow_datasets = 1
         self.shadow_configs.mode = 'offline'
-        self.shadow_configs.test_perc = 1.0
         assert self.attack_configs.p_score_type in ['loss', 'confidence', 'entropy'], f"When using Attack-P MIA, p_score_type must be one of ['loss', 'confidence', 'entropy']!"
         self.logger.print_it(f"Working with Attack-P and scoring mode {self.attack_configs.p_score_type}!")
         self.name = f"Attack-P {self.attack_configs.p_score_type} attacker"
@@ -92,7 +91,7 @@ class AttackPMIA(BaseMIA):
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=scores)
         self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
         return metrics
 

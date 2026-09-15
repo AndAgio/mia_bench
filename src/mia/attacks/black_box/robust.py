@@ -59,7 +59,7 @@ class RobustMIA(BaseMIA):
                                                 alpha=alpha,
                                                 gamma=gamma,
                                                 device=device) for alpha in alphas}
-        metrics = {alpha: self.compute_stats(scores[alpha]) for alpha in alphas}
+        metrics = {alpha: self.compute_stats(scores[alpha], params={'alpha': float(alpha)}) for alpha in alphas}
         # self.logger.print_it('RobustMIA attacker: Obtained scores are: {}'.format(metrics))
         return metrics
 
@@ -144,7 +144,7 @@ class RobustMIA(BaseMIA):
 
         ratio = p_x_thetas_defender/(p_x + 1e-15)
         return ratio
-    
+
 
     def compute_p_z_theta_over_p_z(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
         all_models_indices = self.shadow_manager.get_all_model_indeces()
@@ -201,4 +201,3 @@ class RobustMIA(BaseMIA):
             softmax_output = torch.nn.Softmax(dim=1)(output)
             prob = softmax_output[0][lab].detach().cpu().item()
         return prob
-    

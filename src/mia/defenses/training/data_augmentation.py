@@ -31,7 +31,7 @@ class DataAugmentationDefender(BaseDefender):
                                                 extra_transform=self.get_augmentations())
         self.dataset.update(dataset=augmented_dataset,
                             id='train')
-        super().train_model(train_configs=train_configs, return_stats=return_stats)
+        return super().train_model(train_configs=train_configs, return_stats=return_stats)
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
         self.logger.print_it('DataAugmentation Defender: returning trained model as defended model...')

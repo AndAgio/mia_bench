@@ -172,7 +172,7 @@ class ShadowDatasetsManager(Loggable):
             # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
             # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
             return SubsampledDataset(self.attacker_data_distribution.get('all'),
-                                    indices=indices, 
+                                    original_indices=indices,
                                     strict=True)
         elif labels == 'shadow':
             raise ValueError('Labels mode shadow is not supported for random population sampling! This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. Therefore, we want to learn to classify all their training data as members. This does not make sense when sampling random populations that are not associated to any shadow dataset!')

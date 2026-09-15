@@ -3,6 +3,7 @@ from typing import Dict, Any, Tuple, List, Optional, Iterable, Callable, Union
 import json
 import math
 import time
+from pathlib import Path
 
 # --- Types ---
 ParamKey = Tuple[Tuple[str, Any], ...]  # canonicalized, order-independent key
@@ -435,6 +436,40 @@ class ResultManager:
             })
         with open(path, "w", encoding="utf-8") as f:
             json.dump(serializable, f, indent=2)
+
+    def save_mia_artifacts(self, output_dir: Union[str, Path]) -> None:
+        """Write concise run summaries and a line-oriented sample audit log."""
+        import csv
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        bulky_metrics = {'tpr', 'fpr', 'roc', 'per_sample'}
+        summary_rows = []
+        sample_rows = []
+        for params, metrics in self.items():
+            summary_rows.append({
+                **params,
+                **{name: value for name, value in metrics.items()
+                   if name not in bulky_metrics and not isinstance(value, (list, dict))},
+                'correctly_identified_ids': metrics.get('correctly_identified_ids', []),
+                'recovered_member_ids': metrics.get('recovered_member_ids', []),
+            })
+            for sample in metrics.get('per_sample', []):
+                sample_rows.append({'params': params, **sample})
+
+        with (output_dir / 'summary.json').open('w', encoding='utf-8') as handle:
+            json.dump(summary_rows, handle, indent=2)
+        with (output_dir / 'membership_predictions.jsonl').open('w', encoding='utf-8') as handle:
+            for row in sample_rows:
+                handle.write(json.dumps(row) + '\n')
+
+        scalar_rows = [{key: value for key, value in row.items()
+                        if not isinstance(value, (list, dict))} for row in summary_rows]
+        columns = sorted({key for row in scalar_rows for key in row})
+        with (output_dir / 'summary.csv').open('w', newline='', encoding='utf-8') as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(scalar_rows)
 
     @classmethod
     def load_json(cls, path: str):

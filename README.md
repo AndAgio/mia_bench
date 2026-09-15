@@ -67,7 +67,120 @@ export PYTORCH_ENABLE_MPS_FALLBACK=1
 ### Datasets and outputs
 - Default datasets folder: `datas/` (see `src/utils/variables.py`).
 - Default outputs folder: `outs/` (experiment results, attacker outputs, checkpoints).
+
+Each completed attack writes four files under its experiment `results/` directory:
+
+- `results.json`: complete metrics, ROC arrays, ID groups, and per-sample predictions.
+- `summary.json` and `summary.csv`: convenient aggregate metrics (AUC, model and attack
+  accuracy, balanced accuracy, precision/recall/F1, confusion counts, and TPR at low FPR).
+- `membership_predictions.jsonl`: one line per audited sample, containing its original
+  dataset ID, true/predicted membership, attack score, and whether it was identified correctly.
+
+To inspect a result without manually parsing JSON, run:
+
+```bash
+python summarize_results.py path/to/experiment/results --ids members
+```
+
+Use `--ids correct` for every correct member/non-member decision, or `--ids members`
+for successfully recovered training members only. Other choices are `non-members`,
+`false-positives`, and `missed-members`.
+
+`model_accuracy` is evaluated on the test split after the selected defence has been
+applied. The best metric observed while training is retained separately under the
+`training_best_*` fields. For attacks without a native membership threshold, ID-level
+decisions use the ROC threshold that maximizes Youden's J and are marked with
+`decision_source: "roc_youden"`; calibrated attacks are marked `"attack"`.
+
+#### Metrics and metadata retained
+
+The following information is produced centrally for every attack and every selected
+defence used through `run.py`.
+
+- **Overall MIA effectiveness:** ROC AUC, attack accuracy, balanced accuracy,
+  precision, recall/member TPR, F1, specificity/non-member TNR, maximum membership
+  advantage (`TPR - FPR`), TPR at FPR 0.1%, 1%, and 10%, and the full ROC arrays
+  (`tpr`, `fpr`, and thresholds in `roc`).
+- **Counts:** audit sample, member, and non-member counts; true positives, true
+  negatives, false positives, false negatives, and recovered-member count.
+- **Decision provenance:** whether decisions came from the attack's calibrated
+  threshold or a post-hoc Youden-J ROC threshold, plus that threshold when applicable.
+- **Dataset ID groups:** all correctly identified IDs, successfully recovered member
+  IDs, correctly rejected non-member IDs, false-positive IDs, and missed-member IDs.
+- **Per audited sample:** original dataset ID, original class label, true membership,
+  membership score, predicted membership, whether the membership decision was correct,
+  and whether the defended target model classified the sample correctly.
+- **Per-class privacy:** sample/member/non-member counts, AUC, attack and balanced
+  accuracy, precision, recall, F1, specificity, confusion counts, and TPR at FPR 0.1%,
+  1%, and 10% for every class. We also retain macro class AUC, minimum/maximum class
+  AUC, the most vulnerable class label, and the maximum class TPR at each FPR target.
+- **By model correctness:** the same group MIA metrics separately for samples that the
+  defended model classified correctly and incorrectly.
+- **Defended-model utility and generalization:** final train/test accuracy, final
+  train/test loss, accuracy gap (`train - test`), loss gap (`test - train`), and the
+  best metric, metric name, split, and epoch observed during model training.
+- **Attack and defence cost:** defender training time, defence application time,
+  attacker optimization time, attack evaluation time, actual target-model queries,
+  mean target queries per audit sample, configured maximum queries per sample, audit
+  throughput, instantiated shadow-model count, samples per shadow dataset, reference
+  population size where applicable, process peak memory, CUDA peak memory, and
+  recovered members per 1,000 target queries.
+- **Experiment identity:** attack and defence names and complete configurations,
+  defender architecture, defender/attacker training configurations, dataset, data
+  splits, audit composition and size, configured shadow count, seed, and any swept
+  attack parameters such as RobustMIA's `alpha`.
+
+To aggregate repeated target-model seeds, point the summarizer at their common output
+root. It groups matching attack, defence, model architecture, and attack parameters and
+writes mean, sample standard deviation, and two-sided 95% Student-t confidence intervals
+to `aggregate_summary.json` and `aggregate_summary.csv`:
+
+```bash
+python summarize_results.py path/to/repeated/runs --aggregate
+```
+
+For each group of genuinely comparable runs, the uncertainty report retains the number
+of runs and seeds plus the mean, sample standard deviation, and two-sided 95% Student-t
+confidence interval for:
+
+- AUC; TPR at FPR 0.1%, 1%, and 10%; attack accuracy; final defended-model accuracy;
+  and recovered-member count.
+- Train/test accuracy and loss, accuracy and loss generalization gaps.
+- Attack optimization/evaluation time, total and mean target-query cost, audit
+  throughput, and recovered members per 1,000 target queries.
+
+A single run is reported with zero standard deviation and a point confidence interval;
+meaningful uncertainty requires repeated seeds or independently trained target-model
+replicas. Runs with different datasets, models, attack/defence settings, audit settings,
+or training configurations are deliberately kept in separate aggregate groups.
 - Use `python download_all_datasets.py` to download supported datasets to the default `datas/` folder.
+
+### Local smoke matrix
+
+`smoke_test_all.py` exercises every distinct attack and defense and keeps going after
+individual failures. The default `quick` preset uses one epoch and tiny inputs. After
+that passes, the `moderate` preset provides a slightly more realistic local check:
+
+```bash
+python smoke_test_all.py --preset moderate --device 0
+```
+
+The moderate preset uses five epochs for defender, attacker, neural attacker,
+MemGuard, MIST, and Purifier training. Its three profiles use 800–1,120 samples,
+batches of 16–32, 20–28 auditing samples, wider auxiliary networks, and 10 queries
+for query-driven methods. To try only a few components first:
+
+```bash
+python smoke_test_all.py --preset moderate --device cpu \
+	--only attack:quantile attack:lira defense:mist
+```
+
+Use `--dry-run` to inspect the generated commands without training, and
+`--list-components` to see all accepted component names. Each case uses an isolated
+temporary work directory; its checkpoints, shadow data, generated result artifacts,
+and internal logs are deleted as soon as the case finishes. The top-level case logs
+and `report.json` are retained. Pass `--keep-work` when you need the full artifacts to
+debug a failure.
 
 ### Training defenders (and checkpointing for reuse)
 Use `train_defender.py` when you only want to train the defender model and persist checkpoints for later reuse across multiple attacks. This is the recommended workflow for large experiments: train a defender once with stable settings, then run several attacks reusing that checkpoint.

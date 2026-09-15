@@ -110,7 +110,7 @@ class SupervisedBoundaryMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Supervised Boundary MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
         return metrics
 
     @torch.no_grad()

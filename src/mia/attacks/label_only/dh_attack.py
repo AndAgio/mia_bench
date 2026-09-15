@@ -1,5 +1,3 @@
-
-from tkinter import Image
 from typing import Union
 import time
 import torch
@@ -7,12 +5,11 @@ from torch.utils.data import DataLoader
 import numpy as np
 from PIL import Image
 from scipy.stats import norm
-from src.data.helpers import MultiDatasets
+from src.data.helpers import MultiDatasets, TargetOverrideDataset, get_dataset_transform
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
-import copy
 
 
 class DHAttack(BaseMIA):
@@ -81,12 +78,7 @@ class DHAttack(BaseMIA):
         self.logger.set_logger_newline(console_only=True)
         all_relabels = torch.cat(all_relabels, dim=0)
         # Relabeling the shadow dataset with the obtained relabels
-        distilled_dataset = copy.deepcopy(shadow_dataset)
-        try:
-            distilled_dataset.set_targets(all_relabels)
-        except AttributeError:
-            distilled_dataset.targets = all_relabels
-        return distilled_dataset
+        return TargetOverrideDataset(shadow_dataset, all_relabels)
 
     def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
@@ -101,7 +93,7 @@ class DHAttack(BaseMIA):
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('DHAttack attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
         mia_audit_dataset = self.audit_manager.get(labels='mia')
         mia_labels = torch.asarray([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)])
         assert scores.shape == mia_labels.shape, f"Unexpected shape for scores: {scores.shape}, expected {mia_labels.shape}"
@@ -166,7 +158,11 @@ class DHAttack(BaseMIA):
 
     def construct_fixed_input(self, inputs: torch.Tensor) -> torch.Tensor:
         B, C, H, W = inputs.shape
-        dataset_transformer = self.shadow_manager.get_dataset(index=0, labels='original').transform
+        dataset_transformer = get_dataset_transform(
+            self.shadow_manager.get_dataset(index=0, labels='original')
+        )
+        if dataset_transformer is None:
+            raise RuntimeError("Could not find the input transform for the DHAttack shadow dataset.")
         if self.attack_configs.fixed_input_mode == 'white':
             fixed_x_np = np.full((H, W, C), 255, dtype=np.uint8)  # H, W, C
         elif self.attack_configs.fixed_input_mode == 'black':
@@ -184,7 +180,11 @@ class DHAttack(BaseMIA):
     
     def construct_random_samples(self, shape: tuple[int], n_samples: int) -> torch.Tensor:
         C, H, W = shape
-        dataset_transformer = self.shadow_manager.get_dataset(index=0, labels='original').transform
+        dataset_transformer = get_dataset_transform(
+            self.shadow_manager.get_dataset(index=0, labels='original')
+        )
+        if dataset_transformer is None:
+            raise RuntimeError("Could not find the input transform for the DHAttack shadow dataset.")
         samples = []
         for _ in range(n_samples):
             random_x_np = np.random.randint(0, 256, (H, W, C), dtype=np.uint8)

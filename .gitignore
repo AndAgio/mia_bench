@@ -8,6 +8,7 @@ datas/
 logs/
 outs/
 shadow_datas/
+smoke_test_results/
 exes/
 
 *.log

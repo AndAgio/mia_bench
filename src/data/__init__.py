@@ -14,7 +14,7 @@ from .gtsrb import GTSRB
 from .purchase import Purchase
 from .texas import Texas
 from .news import News
-from .helpers import MultiDatasets, MergedDataset, IndexedDataset, DatasetSplitter
+from .helpers import MultiDatasets, MergedDataset, IndexedDataset, TargetOverrideDataset, DatasetSplitter
 
 from src.utils.variables import DEFAULT_DATASETS_FOLDER, PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT, PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT, PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT
 from src.utils.configs import get_dataset_info_from_name

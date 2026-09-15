@@ -5,12 +5,11 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
-from src.data.helpers import MultiDatasets, MergedDataset
+from src.data.helpers import MultiDatasets, MergedDataset, TargetOverrideDataset
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
-import copy
 
 
 PROCESSING_BATCH_SIZE = 128
@@ -79,12 +78,7 @@ class TransferMIA(BaseMIA):
         # print(f"all_relabels shape: {all_relabels.shape}, expected: ({len(shadow_dataset)},)")
 
         # Relabeling the shadow dataset with the obtained relabels
-        distilled_dataset = copy.deepcopy(shadow_dataset)
-        try:
-            distilled_dataset.set_targets(all_relabels)
-        except AttributeError:
-            distilled_dataset.targets = all_relabels
-        return distilled_dataset
+        return TargetOverrideDataset(shadow_dataset, all_relabels)
 
     def find_optimal_threshold(self, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
@@ -153,7 +147,7 @@ class TransferMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Noise Robustness MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
         mia_audit_dataset = self.audit_manager.get(labels='mia')
         correct_decisions = (decisions == np.array([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)]))
         attack_accuracy = np.mean(correct_decisions)
@@ -181,7 +175,7 @@ class TransferMIA(BaseMIA):
             return max_probs.cpu()
         else:
             raise ValueError(f"Unsupported feature_mode {self.attack_configs.feature_mode} for Transfer MIA attacker! Supported modes are: 'loss', 'entropy' and 'max_confidence'.")
-    
+
     @torch.no_grad()
     def infer_dataset(self, model: torch.nn.Module, dataset: torch.utils.data.Dataset, device: Union[torch.device, str] = 'cpu'):
         assert self.attack_threshold is not None, "Call find_optimal_threshold(...) before infer_dataset(...) for Transfer MIA."
@@ -242,4 +236,3 @@ class TransferMIA(BaseMIA):
         else:
             raise ValueError(f"Unsupported feature_mode {self.attack_configs.feature_mode} for Transfer MIA attacker! Supported modes are: 'loss', 'entropy' and 'max_confidence'.")
         return score.item(), decision.item()
-    

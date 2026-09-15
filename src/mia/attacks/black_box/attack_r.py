@@ -94,7 +94,7 @@ class AttackRMIA(BaseMIA):
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=scores)
         self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
         return metrics
 

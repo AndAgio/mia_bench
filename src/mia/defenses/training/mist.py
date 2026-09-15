@@ -196,7 +196,7 @@ class MistTrainManager(TrainManager):
     def split_data_random(self):
         # Split the training data into subsets for each submodel.
         try:
-            all_indices = self.train_loader.dataset.get_indices(to_torch=True)
+            all_indices = self.train_loader.dataset.get_indices(mode='current', to_torch=True)
         except AttributeError:
             all_indices = torch.arange(len(self.train_loader.dataset))
         total_size = len(all_indices)
@@ -310,7 +310,7 @@ class MistTrainManager(TrainManager):
             lr_scheduler = self.sub_lr_schedulers[submodel_index]
             # Setup data loader for this submodel
             submodel_dataset = self.get_submodel_dataset(submodel_index=submodel_index)
-            submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=1)
+            submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=0)
             for epoch in range(self.mist_configs.submodel_epochs):
                 for batch_idx, (inputs, targets, _, _) in enumerate(submodel_loader):
                     model, optimizer, criterion = self.train_step_submodel(model, submodel_index, optimizer, criterion, inputs, targets, epoch, batch_idx=batch_idx, total_batches=len(submodel_loader))
@@ -444,7 +444,7 @@ class MistTrainManager(TrainManager):
             lr_scheduler = self.sub_lr_schedulers[submodel_index]
             # Setup data loader for this submodel
             submodel_dataset = self.get_submodel_dataset(submodel_index=submodel_index)
-            submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=1)
+            submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=0)
             for epoch in range(self.mist_configs.submodel_epochs):
                 for batch_idx, (inputs, targets, _, _) in enumerate(submodel_loader):
                     model, optimizer, criterion = self.optimize_difference_step(model, submodel_index, optimizer, criterion, inputs, epoch, batch_idx=batch_idx, total_batches=len(submodel_loader))

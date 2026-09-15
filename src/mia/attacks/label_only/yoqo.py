@@ -54,12 +54,15 @@ class Yoqo(BaseMIA):
                                                                 in_models_samples_map=trained_in_shadow_models_for_sample,
                                                                 out_models_samples_map=trained_out_shadow_models_for_sample,
                                                                 device=device)
-        scores, decisions = self.compute_scores_from_adversaries(dataset=adversarial_examples, device=device)
+        scores, decisions = self.compute_scores_from_adversaries(
+            adversarial_examples=adversarial_examples,
+            device=device,
+        )
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('DHAttack attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
         mia_audit_dataset = self.audit_manager.get(labels='mia')
         correct_decisions = (decisions == np.array([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)]))
         attack_accuracy = np.mean(correct_decisions)
@@ -76,13 +79,12 @@ class Yoqo(BaseMIA):
         decisions = []
         defender_model = self.defender_model.to(device)
         for batch_index, (adversarial_example, label) in enumerate(dataloader):
-            self.debug_image(adversarial_example)
             defender_model.eval()
             with torch.no_grad():
                 logits = defender_model(adversarial_example.to(device))
                 pred_label = torch.argmax(logits, dim=1)
                 print(f"DEBUG: Sample {batch_index+1}/{len(dataloader)}, original label: {label.item()}, adversarial example predicted label: {pred_label.item()}")    
-            scores.append(logits[label.item()].item())
+            scores.append(logits[0, label.item()].item())
             if pred_label.item() != label.item():
                 decisions.append(0)
             else:
@@ -106,11 +108,11 @@ class Yoqo(BaseMIA):
         tot_samples = len(dataset)
         audit_loader = DataLoader(dataset, batch_size=1, shuffle=False)
         assert self.shadow_manager.get_n_models() == self.shadow_manager.get_n_datasets(), "When working with YOQO the number of shadow models and shadow datasets should be the same!"
-        s = time.time()
+        start = time.time()
         self.logger.print_it(f"YOQO Attacker: Searching adversarial examples for all {tot_samples} samples. This may take a while...")
         adversarial_examples = []
         for sample_index, (sample, label, _, _) in enumerate(audit_loader):
-            h, m, s = convert_to_hms(time.time()-s)
+            h, m, s = convert_to_hms(time.time()-start)
             self.logger.print_it_same_line(f"YOQO Attacker: Searching adversarial examples for sample {sample_index+1}/{tot_samples} [{h:02d}:{m:02d}:{s:02d}]. This may take a while...", console_only=True)
             out_models = out_models_samples_map[sample_index]
             in_models = in_models_samples_map[sample_index]
@@ -119,10 +121,10 @@ class Yoqo(BaseMIA):
                                                                             in_models=in_models,
                                                                             out_models=out_models,
                                                                             device=device)
-            adversarial_examples.append(adversarial_example.cpu())
+            adversarial_examples.append(adversarial_example.squeeze(0).cpu())
         self.logger.set_logger_newline(console_only=True)
         adversarial_examples = torch.stack(adversarial_examples, dim=0)
-        h, m, s = convert_to_hms(time.time()-s)
+        h, m, s = convert_to_hms(time.time()-start)
         self.logger.print_it(f"YOQO Attacker: Finished searching adversarial examples for all samples. It took {h:02d}:{m:02d}:{s:02d}.")
         return adversarial_examples
 
@@ -134,7 +136,7 @@ class Yoqo(BaseMIA):
         target_labels = self.find_target_labels_for_sample(sample=sample, original_label=original_label, out_models=out_models, device=device)
 
         sample.requires_grad = True
-        original_sample = sample.clone().cpu().detach()
+        original_sample = sample.clone().detach()
         print(f"sample.requires_grad: {sample.requires_grad}, original_sample.requires_grad: {original_sample.requires_grad}")
 
         adv_grad = None

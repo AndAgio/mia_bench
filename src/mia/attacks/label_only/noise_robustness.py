@@ -128,7 +128,7 @@ class NoiseRobustnessMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Noise Robustness MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
-        metrics = self.compute_stats(scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
 
         self.logger.print_it(f"Noise Robustness MIA attacker: attack effectiveness measured! AUC score is {metrics['auc']:.4f} at optimal threshold {self.attack_threshold:.4f} with best sigma {self.best_sigma}.")
         mia_audit_dataset = self.audit_manager.get(labels='mia')

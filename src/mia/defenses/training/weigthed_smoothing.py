@@ -2,7 +2,7 @@ import time
 from typing import Union
 import torch
 from torch.utils.data import DataLoader
-from src.data.helpers import IndexedDataset
+from src.data.helpers import IndexTrackingMixin
 from src.trainer.train_manager import TrainManager
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
@@ -85,7 +85,7 @@ class WeightedSmoothingTrainManager(TrainManager):
 
     def compute_weights(self):
         start = time.time()
-        assert isinstance(self.train_loader.dataset, IndexedDataset), "Train loader dataset must be an IndexedDataset!"
+        assert isinstance(self.train_loader.dataset, IndexTrackingMixin), "Train loader dataset must track sample indices!"
         data_loader = DataLoader(self.train_loader.dataset, batch_size=self.train_loader.batch_size, shuffle=False)
         self.weights = torch.zeros(len(self.train_loader.dataset))
         self.logger.print_it(f"Computing weights for all training samples based on Mentr. This may take a while...")
@@ -94,14 +94,14 @@ class WeightedSmoothingTrainManager(TrainManager):
             with torch.no_grad():
                 outputs = self.model(inputs.to(self.device))
                 probs = torch.softmax(outputs, dim=1)
-            m_entr = self.mentr(probs, targets, from_logits=True)  # shape (batch_size,)
+            m_entr = self.mentr(probs, targets.to(self.device), from_logits=False)  # shape (batch_size,)
             self.weights[sample_indices] = m_entr.cpu()
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Computed weights for all training samples in {time.time() - start:.2f} seconds.")
     
     def normalize_weights(self):
         start = time.time()
-        assert isinstance(self.train_loader.dataset, IndexedDataset), "Train loader dataset must be an IndexedDataset!"
+        assert isinstance(self.train_loader.dataset, IndexTrackingMixin), "Train loader dataset must track sample indices!"
         all_targets = self.train_loader.dataset.get_all_targets(to_torch=True)
         # all_targets = torch.tensor(self.train_loader.dataset.ds.targets)
         classes = torch.unique(all_targets, return_counts=False)
@@ -184,7 +184,7 @@ class WeightedSmoothingTrainManager(TrainManager):
             # Forward propagation, compute loss, get predictions (no GradScaler/AMP)
             self.optimizer.zero_grad()
             outputs = self.model(inputs) + batch_weights.unsqueeze(1) * gaussian_noise
-            loss = self.criterion(outputs, targets)
+            loss = self.criterion(outputs, targets).mean()
             loss.backward()
             self.optimizer.step()
         

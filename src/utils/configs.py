@@ -762,7 +762,6 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         p_score_type=score_type)
         attacker_shadow_configs.n_shadow_datasets = 1
         attacker_shadow_configs.mode = 'offline'
-        attacker_shadow_configs.test_perc = 1.0
     elif settings.attacker_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
         if settings.attacker_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop']:
             bound_mode = 'hop_skip_jump'
@@ -805,6 +804,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         attacker_shadow_configs.mode = 'offline'
     elif settings.attacker_mode in ['transfer_loss', 'transfer_confidence', 'transfer_entropy']:
         feature_mode = settings.attacker_mode.split('_')[-1]
+        if feature_mode == 'confidence':
+            feature_mode = 'max_confidence'
         attack_configs = TransferAttackConfig(feature_mode=feature_mode)
         attacker_shadow_configs.mode = 'offline'
     elif settings.attacker_mode in ['oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm']:

@@ -119,6 +119,27 @@ class AdvRegTrainManager(TrainManager):
 
         return train_summary
 
+    def adversarial_gain(self, train_outputs, heldout_outputs):
+        """Score membership leakage while updating only the classifier.
+
+        The attacker must remain a differentiable function of the classifier
+        outputs, but its own parameters must not receive gradients during the
+        defender step. ``torch.no_grad`` cannot be used here because it also
+        severs the gradient from the privacy loss back to the classifier.
+        """
+        requires_grad = [parameter.requires_grad
+                         for parameter in self.attacker_model.parameters()]
+        try:
+            for parameter in self.attacker_model.parameters():
+                parameter.requires_grad_(False)
+            atk_m_tr = self.attacker_model(train_outputs)
+            atk_m_h = self.attacker_model(heldout_outputs)
+            return (self.attacker_criterion(atk_m_tr, torch.ones_like(atk_m_tr))
+                    + self.attacker_criterion(atk_m_h, torch.zeros_like(atk_m_h)))
+        finally:
+            for parameter, enabled in zip(self.attacker_model.parameters(), requires_grad):
+                parameter.requires_grad_(enabled)
+
     def train_step(self, train_inputs, train_targets, heldout_inputs, heldout_targets, batch_idx=0, total_batches=0):
         # Map to available device (profile this)
         train_inputs = train_inputs.to(self.device)
@@ -132,10 +153,14 @@ class AdvRegTrainManager(TrainManager):
         train_outputs = self.model(train_inputs)
         heldout_outputs = self.model(heldout_inputs)
         # 2) k attacker steps (maximize attack success on member vs non-member)
+        # These are fixed features for the attacker update. Detaching them both
+        # prevents classifier gradients and gives every attacker iteration its
+        # own fresh graph, so k > 1 does not reuse a freed autograd graph.
+        atk_in = torch.cat([train_outputs.detach(), heldout_outputs.detach()], dim=0)
+        atk_lab = torch.cat([torch.ones(len(train_outputs)),
+                             torch.zeros(len(heldout_outputs))]).to(self.device)
         for _ in range(self.adv_reg_configs.shadow_attacker_k):
             self.attacker_optimizer.zero_grad()
-            atk_in  = torch.cat([train_outputs, heldout_outputs], dim=0)
-            atk_lab = torch.cat([torch.ones(len(train_outputs),), torch.zeros(len(heldout_outputs),)], dim=0).to(self.device)
             atk_pred = self.attacker_model(atk_in)
             atk_loss = self.attacker_criterion(atk_pred, atk_lab)
             atk_loss.backward()
@@ -152,10 +177,7 @@ class AdvRegTrainManager(TrainManager):
                 train_outputs = self.model(train_inputs)
                 heldout_outputs = self.model(heldout_inputs)
                 task_loss = self.criterion(train_outputs, train_targets)
-                with torch.no_grad():  # adversary is treated as fixed opponent
-                    atk_m_tr  = self.attacker_model(train_outputs)
-                    atk_m_h   = self.attacker_model(heldout_outputs)
-                    atk_gain  = self.attacker_criterion(atk_m_tr, torch.ones_like(atk_m_tr)) + self.attacker_criterion(atk_m_h, torch.zeros_like(atk_m_h))
+                atk_gain = self.adversarial_gain(train_outputs, heldout_outputs)
                 loss = task_loss - self.adv_reg_configs.adv_lambda * atk_gain
                 if mean:
                     loss = loss.mean()
@@ -173,10 +195,7 @@ class AdvRegTrainManager(TrainManager):
             heldout_outputs = self.model(heldout_inputs)
             task_loss = self.criterion(train_outputs, train_targets)
 
-            with torch.no_grad():  # adversary is treated as fixed opponent
-                atk_m_tr  = self.attacker_model(train_outputs)
-                atk_m_h   = self.attacker_model(heldout_outputs)
-                atk_gain  = self.attacker_criterion(atk_m_tr, torch.ones_like(atk_m_tr)) + self.attacker_criterion(atk_m_h, torch.zeros_like(atk_m_h))
+            atk_gain = self.adversarial_gain(train_outputs, heldout_outputs)
 
             loss = task_loss - self.adv_reg_configs.adv_lambda * atk_gain
             loss.backward()
