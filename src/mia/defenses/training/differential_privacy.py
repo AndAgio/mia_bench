@@ -69,7 +69,7 @@ class DifferentialPrivacyTrainManager(TrainManager):
         privacy_engine = PrivacyEngine()
         clipping = "per_layer" if dp_config.clip_per_layer else "flat"
         if dp_config.grad_sample_mode in ['ghost']:
-            self.model, self.optimizer, self.criterion, self.train_loader = privacy_engine.make_private(
+            private_objects = privacy_engine.make_private(
                 module=self.model,
                 optimizer=self.optimizer,
                 data_loader=self.train_loader,
@@ -78,6 +78,21 @@ class DifferentialPrivacyTrainManager(TrainManager):
                 clipping=clipping,
                 grad_sample_mode=dp_config.grad_sample_mode,
             )
+            # Opacus 1.5+ returns a wrapped criterion for ghost clipping, while
+            # older compatible releases return the usual three-item tuple.
+            if len(private_objects) == 4:
+                self.model, self.optimizer, self.criterion, self.train_loader = private_objects
+            elif len(private_objects) == 3:
+                self.model, self.optimizer, self.train_loader = private_objects
+                self.logger.print_it(
+                    'Opacus did not return a ghost-clipping criterion; '
+                    'continuing with the configured criterion.'
+                )
+            else:
+                raise RuntimeError(
+                    f"Unexpected number of values returned by Opacus make_private(): "
+                    f"{len(private_objects)}"
+                )
         elif dp_config.grad_sample_mode in ['hooks']:
             self.model, self.optimizer, self.train_loader = privacy_engine.make_private(
                 module=self.model,

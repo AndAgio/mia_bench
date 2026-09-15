@@ -103,7 +103,6 @@ class UnsupervisedBoundaryMIA(BaseMIA):
             HSJA is run per-sample for stability. This uses only hard labels internally.
         """
         model.eval()
-        compiled_model = JITModelWrapper(model)
         N = inputs.shape[0]
         if self.attack_configs.boundary.mode == 'hop_skip_jump':
             # self.logger.print_it(f"Unsupervised Boundary MIA attacker: using HopSkipJump to estimate distance to decision boundary for {N} samples with max {self.attack_configs.n_queries} queries and norm {self.attack_configs.boundary.norm}...")
@@ -121,7 +120,7 @@ class UnsupervisedBoundaryMIA(BaseMIA):
             raise ValueError(f"Unsupervised Boundary MIA attacker: bound_mode {self.attack_configs.boundary.mode} not recognized!")
 
         # start = time.time()
-        adversarial_samples, distances, queries = boundary_finder.run(model=compiled_model, inputs=inputs, labels=targets, targeted=False, device=inputs.device)
+        adversarial_samples, distances, queries = boundary_finder.run(model=model, inputs=inputs, labels=targets, targeted=False, device=inputs.device)
         # stop = time.time()
         # h, m, s = convert_to_hms(stop-start)
         # self.logger.print_it(f"Boundary MIA attacker: adversarial distance to boundary estimation completed in {h}:{m:02d}:{s:02d} for {N} samples.")
@@ -172,13 +171,3 @@ class UnsupervisedBoundaryMIA(BaseMIA):
         boundary_distance_score = self._features(model=model, inputs=x, targets=y)
         decision = (boundary_distance_score >= self.attack_threshold).astype(np.int64)
         return boundary_distance_score.item(), decision.item()
-
-
-
-class JITModelWrapper(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = torch.compile(model)
-
-    def forward(self, x):
-        return self.model(x)

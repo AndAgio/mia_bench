@@ -105,7 +105,7 @@ class TrainManager(Loggable):
         if self.distributed:
             self.model = DDP(self.model, device_ids=[self.local_rank])
         else:
-            self.model = model.to(self.device)
+            self.model = self.model.to(self.device)
         self.model_name = model.name
         self.logger.print_it('Model setup done!')
 

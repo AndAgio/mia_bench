@@ -36,6 +36,12 @@ class NeuralMIA(BaseMIA):
         start = time.time()
         self.shadow_manager.train_all(train_configs=train_config,
                                         labels_mode='original')
+        # Keeping every trained shadow ResNet on CUDA can exhaust or heavily
+        # fragment GPU memory before the feature-building GEMMs begin.
+        for shadow_model in self.shadow_manager.get_all_models().values():
+            shadow_model.to('cpu')
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         stop = time.time()
         self.reset_logger()
         h, m, s = convert_to_hms(stop-start)
@@ -68,6 +74,7 @@ class NeuralMIA(BaseMIA):
                                                 data=dummy_data,
                                                 device=train_config.device,
                                                 mode=self.attack_configs.neural_input_mode)
+        dummy_model.to('cpu')
         feature_shape = dummy_feature.shape[1]
         self.logger.print_it(f"Neural MIA attacker: feature shape determined as {feature_shape}.")
 
@@ -91,6 +98,9 @@ class NeuralMIA(BaseMIA):
                 for i in range(batch_size):
                     targets[current_index + i, 0] = sample_label_map[(batch_sample_ids[i].item(), model_index)]
                 current_index += batch_size
+            shadow_model.to('cpu')
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Neural MIA attacker: training dataset built in {time.time() - start_build:.2f} seconds!")
         # Build and train the attacking model
@@ -151,7 +161,8 @@ class NeuralMIA(BaseMIA):
         if isinstance(device, str):
             device = NeuralMIA.get_device(dev_str=device)
         model.to(device)
-        criterion = nn.BCELoss()
+        # The final layer emits unrestricted logits (there is no Sigmoid).
+        criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(model.parameters(), lr=self.attack_configs.model_lr)
         model.train()
         for epoch in range(self.attack_configs.model_epochs):
@@ -178,7 +189,8 @@ class NeuralMIA(BaseMIA):
 
         if isinstance(device, str):
             device = NeuralMIA.get_device(dev_str=device)
-    
+
+        model.to(device)
         model.eval()
         with torch.no_grad():
             if mode == 'prob':
