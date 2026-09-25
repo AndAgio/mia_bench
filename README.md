@@ -183,6 +183,16 @@ and internal logs are deleted as soon as the case finishes. The top-level case l
 and `report.json` are retained. Pass `--keep-work` when you need the full artifacts to
 debug a failure.
 
+To run the focused TransferMIA regression and smoke tests for both loss and
+confidence scoring:
+
+```bash
+python test_transfer_mia.py --device cpu
+```
+
+Use `--direction-only` for the fast deterministic score check, or `--preset medium`
+for a more substantial end-to-end run.
+
 `--preset moderate` remains accepted as a backward-compatible alias for `medium`.
 
 ### Training defenders (and checkpointing for reuse)

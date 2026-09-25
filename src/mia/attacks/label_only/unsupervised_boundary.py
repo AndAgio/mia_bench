@@ -9,7 +9,7 @@ from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
 from src.mia.attacks.label_only.helpers.hop_skip_jump import HopSkipJump
-from src.mia.attacks.label_only.helpers.qeba import Qeba
+from src.mia.attacks.label_only.helpers.qeba import Qeba, build_qeba_basis
 
 
 
@@ -30,6 +30,14 @@ class UnsupervisedBoundaryMIA(BaseMIA):
                                                     auditing_dataset=self.audit_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
+        self.qeba_basis = None
+        if (self.attack_configs.boundary.mode == 'qeba'
+                and self.attack_configs.boundary.qeba.reduction_mode in ('pca', 'custom')):
+            self.qeba_basis = build_qeba_basis(
+                samples=self.attacker_data_distribution.get('all'),
+                variant=self.attack_configs.boundary.qeba.reduction_mode,
+                reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
+            )
 
     def optimize(self, train_config: TrainConfigs):        
         self.logger.print_it('Unsupervised Boundary MIA attacker: finding threshold via quantile on shadow dataset...')
@@ -115,7 +123,8 @@ class UnsupervisedBoundaryMIA(BaseMIA):
                                     max_queries=self.attack_configs.boundary.n_queries,
                                     logger=self.logger,
                                     variant=self.attack_configs.boundary.qeba.reduction_mode,
-                                    reduction_factor=self.attack_configs.boundary.qeba.reduction_factor)
+                                    reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
+                                    basis=self.qeba_basis)
         else:
             raise ValueError(f"Unsupervised Boundary MIA attacker: bound_mode {self.attack_configs.boundary.mode} not recognized!")
 

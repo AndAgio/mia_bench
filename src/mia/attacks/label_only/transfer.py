@@ -83,7 +83,9 @@ class TransferMIA(BaseMIA):
     def find_optimal_threshold(self, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
-        # Get the trained shadow model and build a dataset with samples from the shadow dataset labeled as members and samples from outside the shadow dataset labeled as non-members to find the optimal threshold for the noise robustness score at the given sigma on the shadow dataset.
+        # Calibrate the transfer score on members and non-members of the
+        # surrogate model.  _features() normalizes every feature so that larger
+        # values always mean stronger membership evidence.
         shadow_model = self.shadow_manager.shadow_models.get(index=0).to(device)
         shadow_member_dataset = self.shadow_manager.get_dataset(index=0, 
                                                                 labels='original')
@@ -99,7 +101,7 @@ class TransferMIA(BaseMIA):
         all_mia_labels = []
         with torch.no_grad():
             for batch_id, (batch_x, batch_y, _, sample_ids) in enumerate(dataloader):
-                self.logger.print_it_same_line(f"Noise Robustness MIA attacker: processing batch {batch_id+1}/{len(dataloader)} for optimal threshold...", console_only=True)
+                self.logger.print_it_same_line(f"Transfer MIA attacker: processing batch {batch_id+1}/{len(dataloader)} for optimal threshold...", console_only=True)
                 batch_x = batch_x.to(device)
                 mia_labels_batch = mia_labels[sample_ids]
                 all_mia_labels.append(mia_labels_batch)
@@ -112,13 +114,15 @@ class TransferMIA(BaseMIA):
                 
                 all_feats.append(batch_feats.cpu())
         self.logger.set_logger_newline(console_only=True)
-        # Compute the optimal threshold on the shadow dataset for the given sigma as the one maximizing the attack accuracy when classifying samples as members if their noise robustness score is above the threshold and non-members otherwise.
+        # Pick the threshold that maximizes calibration accuracy.  All feature
+        # modes use the same >= rule because their direction was normalized in
+        # _features().
         all_feats = torch.cat(all_feats, dim=0).numpy()
         all_mia_labels = torch.cat(all_mia_labels).numpy()
         fpr, tpr, thresholds = roc_curve(all_mia_labels, all_feats)
         accuracy_scores = []
         for thresh in thresholds:
-            preds = [1 if m > thresh else 0 for m in all_feats]
+            preds = (all_feats >= thresh).astype(np.int64)
             accuracy_scores.append(accuracy_score(all_mia_labels, preds))
         optimal_idx = np.argmax(accuracy_scores)
         optimal_threshold = thresholds[optimal_idx]
@@ -129,14 +133,14 @@ class TransferMIA(BaseMIA):
     def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
-        self.logger.print_it('Noise Robustness MIA attacker: finding optimal threshold on shadow dataset...')
+        self.logger.print_it('Transfer MIA attacker: finding optimal threshold on shadow dataset...')
         start = time.time()
         self.find_optimal_threshold(device=device)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
-        self.logger.print_it('Noise Robustness MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
+        self.logger.print_it('Transfer MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
-        self.logger.print_it('Noise Robustness MIA attacker: measuring attack effectiveness...')
+        self.logger.print_it('Transfer MIA attacker: measuring attack effectiveness...')
         start = time.time()
         audit_dataset = self.audit_manager.get(labels='original')
         shadow_model = self.shadow_manager.shadow_models.get(index=0).to(device)
@@ -145,33 +149,37 @@ class TransferMIA(BaseMIA):
                                                 device=device)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
-        self.logger.print_it('Noise Robustness MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
+        self.logger.print_it('Transfer MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
         metrics = self.compute_stats(scores, decisions=decisions)
         mia_audit_dataset = self.audit_manager.get(labels='mia')
         correct_decisions = (decisions == np.array([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)]))
         attack_accuracy = np.mean(correct_decisions)
-        self.logger.print_it(f"Noise Robustness MIA attacker: attack accuracy at optimal threshold is {attack_accuracy:.4f}.")
+        self.logger.print_it(f"Transfer MIA attacker: attack accuracy at optimal threshold is {attack_accuracy:.4f}.")
         return metrics
 
     @torch.no_grad()
-    def _features(self, model: torch.nn.Module, inputs: torch.Tensor, true_labels: torch.Tensor) -> np.ndarray:
+    def _features(self, model: torch.nn.Module, inputs: torch.Tensor, true_labels: torch.Tensor) -> torch.Tensor:
+        """Return a score whose larger values always indicate membership.
+
+        Confidence naturally has this direction.  Loss and entropy have the
+        opposite direction, so negate them before thresholding or computing
+        ROC/AUC metrics.
+        """
         device = inputs.device
         model.eval()
         true_labels = true_labels.to(device)
-        preds = model(inputs)
+        logits = model(inputs)
         if self.attack_configs.feature_mode == 'loss':
-            # Compute the loss for each sample and use it as feature for the regressor
             criterion = torch.nn.CrossEntropyLoss(reduction='none')
-            losses = criterion(model(inputs), true_labels)
-            return losses.cpu()
+            losses = criterion(logits, true_labels)
+            return -losses.cpu()
         elif self.attack_configs.feature_mode == 'entropy':
-            logits = model(inputs)
             log_probs = torch.nn.functional.log_softmax(logits, dim=1)
             entropy = -torch.sum(log_probs * torch.exp(log_probs), dim=1)
-            return entropy.cpu()
+            return -entropy.cpu()
         elif self.attack_configs.feature_mode == 'max_confidence':
-            max_probs = torch.max(torch.softmax(preds, dim=1), dim=1)[0]
+            max_probs = torch.max(torch.softmax(logits, dim=1), dim=1)[0]
             return max_probs.cpu()
         else:
             raise ValueError(f"Unsupported feature_mode {self.attack_configs.feature_mode} for Transfer MIA attacker! Supported modes are: 'loss', 'entropy' and 'max_confidence'.")
@@ -186,19 +194,14 @@ class TransferMIA(BaseMIA):
         dataloader = DataLoader(dataset, batch_size=PROCESSING_BATCH_SIZE, shuffle=False)
         all_scores = []
         for batch_id, (batch_x, batch_y, _, _) in enumerate(dataloader):
-            self.logger.print_it_same_line(f"Noise Robustness MIA attacker: processing batch {batch_id+1}/{len(dataloader)} for inference...", console_only=True)
+            self.logger.print_it_same_line(f"Transfer MIA attacker: processing batch {batch_id+1}/{len(dataloader)} for inference...", console_only=True)
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
             scores = self._features(model=model, inputs=batch_x, true_labels=batch_y)
             all_scores.append(scores.cpu())
         self.logger.set_logger_newline(console_only=True)
         all_scores = torch.cat(all_scores, dim=0).numpy()
-        if self.attack_configs.feature_mode in ["max_confidence", "entropy"]:
-            all_decisions = (all_scores >= self.attack_threshold).astype(np.int64)
-        elif self.attack_configs.feature_mode == "loss":
-            all_decisions = (all_scores <= self.attack_threshold).astype(np.int64)
-        else:
-            raise ValueError(f"Unsupported feature_mode {self.attack_configs.feature_mode} for Transfer MIA attacker! Supported modes are: 'loss', 'entropy' and 'max_confidence'.")
+        all_decisions = (all_scores >= self.attack_threshold).astype(np.int64)
         return all_scores, all_decisions
     
     @torch.no_grad()
@@ -211,13 +214,8 @@ class TransferMIA(BaseMIA):
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
         scores = self._features(model=model, inputs=batch_x, true_labels=batch_y)
-        if self.attack_configs.feature_mode in ["max_confidence", "entropy"]:
-            decisions = (scores >= self.attack_threshold).astype(np.int64)
-        elif self.attack_configs.feature_mode == "loss":
-            decisions = (scores <= self.attack_threshold).astype(np.int64)
-        else:
-            raise ValueError(f"Unsupported feature_mode {self.attack_configs.feature_mode} for Transfer MIA attacker! Supported modes are: 'loss', 'entropy' and 'max_confidence'.")
-        return scores.cpu().numpy(), decisions
+        decisions = (scores >= self.attack_threshold).to(torch.int64)
+        return scores.cpu().numpy(), decisions.cpu().numpy()
 
     @torch.no_grad()
     def infer_single(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
@@ -229,10 +227,5 @@ class TransferMIA(BaseMIA):
         x = x.unsqueeze(0).to(device)
         y = y.unsqueeze(0).to(device)
         score = self._features(model=model, inputs=x, true_labels=y)
-        if self.attack_configs.feature_mode in ["max_confidence", "entropy"]:
-            decision = (score >= self.attack_threshold).astype(np.int64)
-        elif self.attack_configs.feature_mode == "loss":
-            decision = (score <= self.attack_threshold).astype(np.int64)
-        else:
-            raise ValueError(f"Unsupported feature_mode {self.attack_configs.feature_mode} for Transfer MIA attacker! Supported modes are: 'loss', 'entropy' and 'max_confidence'.")
+        decision = (score >= self.attack_threshold).to(torch.int64)
         return score.item(), decision.item()

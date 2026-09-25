@@ -11,7 +11,7 @@ from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
 from src.mia.attacks.label_only.helpers.hop_skip_jump import HopSkipJump
-from src.mia.attacks.label_only.helpers.qeba import Qeba
+from src.mia.attacks.label_only.helpers.qeba import Qeba, build_qeba_basis
 
 
 
@@ -35,6 +35,14 @@ class SupervisedBoundaryMIA(BaseMIA):
         self.logger.print_it('Supervised Boundary MIA attacker: definition of boundary model...')
         self.shadow_manager.build_shadow_models(n_models=1,
                                                 model_configs=self.model_configs)
+        self.qeba_basis = None
+        if (self.attack_configs.boundary.mode == 'qeba'
+                and self.attack_configs.boundary.qeba.reduction_mode in ('pca', 'custom')):
+            self.qeba_basis = build_qeba_basis(
+                samples=self.attacker_data_distribution.get('all'),
+                variant=self.attack_configs.boundary.qeba.reduction_mode,
+                reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
+            )
 
     def optimize(self, train_config: TrainConfigs):
         self.logger.print_it('Supervised Boundary MIA attacker: training all shadow models. This will take a while. Sit back and chill...')
@@ -148,7 +156,8 @@ class SupervisedBoundaryMIA(BaseMIA):
                                     max_queries=self.attack_configs.boundary.n_queries,
                                     logger=self.logger,
                                     variant=self.attack_configs.boundary.qeba.reduction_mode,
-                                    reduction_factor=self.attack_configs.boundary.qeba.reduction_factor)
+                                    reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
+                                    basis=self.qeba_basis)
         else:
             raise ValueError(f"Supervised Boundary MIA attacker: bound_mode {self.attack_configs.boundary.mode} not recognized!")
 

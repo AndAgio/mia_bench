@@ -72,21 +72,22 @@ class DifferentialPrivacyTrainManager(TrainManager):
             private_objects = privacy_engine.make_private(
                 module=self.model,
                 optimizer=self.optimizer,
+                criterion=self.criterion,
                 data_loader=self.train_loader,
                 noise_multiplier=dp_config.noise_multiplier,
                 max_grad_norm=max_grad_norm,
                 clipping=clipping,
                 grad_sample_mode=dp_config.grad_sample_mode,
             )
-            # Opacus 1.5+ returns a wrapped criterion for ghost clipping, while
-            # older compatible releases return the usual three-item tuple.
+            # Ghost clipping requires Opacus' wrapped criterion to perform its
+            # two backward passes and populate the optimizer's gradient state.
             if len(private_objects) == 4:
                 self.model, self.optimizer, self.criterion, self.train_loader = private_objects
             elif len(private_objects) == 3:
-                self.model, self.optimizer, self.train_loader = private_objects
-                self.logger.print_it(
-                    'Opacus did not return a ghost-clipping criterion; '
-                    'continuing with the configured criterion.'
+                raise RuntimeError(
+                    "This Opacus version did not return the loss wrapper required "
+                    "for ghost clipping. Use --defender_dp_grad_sample_mode hooks "
+                    "or install a compatible Opacus release."
                 )
             else:
                 raise RuntimeError(

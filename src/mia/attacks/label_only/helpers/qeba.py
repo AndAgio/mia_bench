@@ -10,8 +10,73 @@
 #   (code)       https://github.com/AI-secure/QEBA
 # [1](https://openaccess.thecvf.com/content_CVPR_2020/papers/Li_QEBA_Query-Efficient_Boundary-Based_Blackbox_Attack_CVPR_2020_paper.pdf)[2](https://arxiv.org/pdf/2005.14137)[3](https://github.com/AI-secure/QEBA)
 
+import math
+from typing import Sequence
+
 import torch
 from .hop_skip_jump import HopSkipJump
+
+
+def build_qeba_basis(
+    samples: Sequence,
+    variant: str,
+    reduction_factor: int,
+    max_pca_samples: int = 256,
+) -> torch.Tensor:
+    """Build the basis used by the configured QEBA MIA CLI variant.
+
+    PCA learns an intrinsic subspace from data available to the attacker.  The
+    custom CLI variant uses a deterministic block-indicator basis; callers that
+    use :class:`Qeba` directly can still pass any custom basis they want.
+    """
+    if variant not in ("pca", "custom"):
+        raise ValueError(f"A basis is not used by QEBA variant '{variant}'.")
+    if len(samples) == 0:
+        raise ValueError(f"Cannot build a QEBA-{variant.upper()} basis from an empty dataset.")
+
+    first = samples[0][0] if isinstance(samples[0], (tuple, list)) else samples[0]
+    if not isinstance(first, torch.Tensor) or first.dim() != 3:
+        raise ValueError(
+            f"QEBA-{variant.upper()} basis construction requires image tensors "
+            f"with shape (C, H, W), got {type(first).__name__} "
+            f"with shape {getattr(first, 'shape', None)}."
+        )
+    channels, height, width = first.shape
+    reduction_factor = max(1, int(reduction_factor))
+
+    if variant == "custom":
+        # One indicator per channel and non-overlapping spatial block. Qeba
+        # normalizes the columns before use.
+        columns = []
+        for channel in range(channels):
+            for row in range(0, height, reduction_factor):
+                for col in range(0, width, reduction_factor):
+                    direction = torch.zeros_like(first, dtype=torch.float32)
+                    direction[
+                        channel,
+                        row:min(row + reduction_factor, height),
+                        col:min(col + reduction_factor, width),
+                    ] = 1.0
+                    columns.append(direction.reshape(-1))
+        return torch.stack(columns, dim=1)
+
+    count = min(len(samples), max(2, int(max_pca_samples)))
+    flattened = []
+    for index in range(count):
+        item = samples[index]
+        sample = item[0] if isinstance(item, (tuple, list)) else item
+        if not isinstance(sample, torch.Tensor) or tuple(sample.shape) != tuple(first.shape):
+            raise ValueError("All samples used for a QEBA-PCA basis must have the same image shape.")
+        flattened.append(sample.detach().to(device="cpu", dtype=torch.float32).reshape(-1))
+    data = torch.stack(flattened)
+    data = data - data.mean(dim=0, keepdim=True)
+    # Match the spatial/frequency variants' approximate dimensional reduction.
+    requested_rank = max(1, data.shape[1] // (reduction_factor ** 2))
+    rank = min(requested_rank, data.shape[0] - 1, data.shape[1])
+    if rank < 1:
+        raise ValueError("QEBA-PCA needs at least two reference samples.")
+    _, _, components = torch.pca_lowrank(data, q=rank, center=False)
+    return components
 
 
 class Qeba(HopSkipJump):
@@ -140,8 +205,8 @@ class Qeba(HopSkipJump):
         # We'll do: X_bc = Ch.t() @ Q_bc @ Cw
         # vectorize via reshapes:
         # left multiply: (H,H) x (H,W) -> (H,W)
-        X = torch.einsum("ab,bcde->acde", Ch.t(), Q)      # (H,W) left-applied over (B,C)
-        X = torch.einsum("bcde,ef->bcdf", X, Cw)          # right-applied
+        X = torch.einsum("ij,bcjk->bcik", Ch.t(), Q)
+        X = torch.einsum("bcij,jk->bcik", X, Cw)
         return X
 
     # -------------------- QEBA direction samplers (subspaces) -----------------
