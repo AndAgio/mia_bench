@@ -369,7 +369,7 @@ class OsloAttackConfig:
     N: int = 1000 # number of attack iterations per sub-procedure
     max_epsilon: float = 4/255 # maximum perturbation for the attack
     ga_mode: str = 'difgsm' # algorithm for gradient ascent step: options are 'difgsm', 'mifgsm', 'tifgsm', 'tmifgsm'
-    threshold: float = 0.01 # decision threshold for the attack
+    threshold: float = 0.01 # validation-surrogate confidence threshold for stopping perturbation generation
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class DHAttackConfig:

@@ -101,7 +101,9 @@ class OsloMIA(BaseMIA):
             all_scores.append(scores)
         self.logger.set_logger_newline(console_only=True)
         all_scores = torch.cat(all_scores, dim=0).numpy()
-        all_decisions = (all_scores >= self.attack_configs.threshold).astype(np.int64)
+        # At a fixed surrogate confidence threshold, OSLO produces binary
+        # membership evidence from the target's single hard-label response.
+        all_decisions = all_scores.astype(np.int64)
         return all_scores, all_decisions
 
     def infer_batch(self, model: torch.nn.Module, batch_x: torch.Tensor, batch_y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
@@ -111,11 +113,13 @@ class OsloMIA(BaseMIA):
         model.eval()
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
-        _, score = self._score(inputs=batch_x, targets=batch_y)
-        return score.detach().cpu()
+        adv_inputs, _ = self._score(inputs=batch_x, targets=batch_y)
+        predicted_labels = self.label_pred(model, adv_inputs)
+        return predicted_labels.eq(batch_y).float().cpu()
 
     def _score(self, inputs: torch.Tensor, targets: torch.Tensor):
-        # Compute the attack score for a batch of samples.
+        # Generate adversarial inputs using only surrogates. The returned
+        # distance is diagnostic; it is not OSLO's membership score.
         loss_fn = torch.nn.CrossEntropyLoss()
 
         batch_size = inputs.shape[0]

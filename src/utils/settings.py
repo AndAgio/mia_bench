@@ -288,7 +288,7 @@ def gather_settings():
         parser.add_argument('--attacker_oslo_max_epsilon', type=float, default=4/255,
                                 help='Maximum perturbation for the OSLO MIA attack')
         parser.add_argument('--attacker_oslo_threshold', type=float, default=0.01,
-                                help='Decision threshold for the OSLO MIA attack')
+                                help='Validation-surrogate true-class confidence threshold for stopping OSLO perturbation generation')
         # DHAttack MIA parameters
         parser.add_argument('--attacker_dh_n_models', type=int, default=10,
                                 help='Number of shadow models to be trained for the DHAttack MIA attack')
