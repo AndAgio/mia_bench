@@ -91,7 +91,7 @@ class RobustMIA(BaseMIA):
         self.logger.print_it('RobustMIA attacker: LR computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))
 
         lr_ratios = np.divide(left_lr[:, np.newaxis], right_lr)
-        gamma=1
+        self.logger.print_it(f'RobustMIA attacker: scoring with gamma={gamma}')
         positives_indices = lr_ratios > gamma
         positives = np.sum(positives_indices, axis=1)
         total = right_lr.shape[0]
