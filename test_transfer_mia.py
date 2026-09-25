@@ -105,6 +105,7 @@ def main() -> int:
 
     print("Running deterministic TransferMIA score checks...")
     check_score_direction("loss")
+    check_score_direction("entropy")
     check_score_direction("max_confidence")
 
     if args.direction_only:
