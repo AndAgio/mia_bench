@@ -88,13 +88,17 @@ class AttackRMIA(BaseMIA):
             )
         self.logger.set_logger_newline(console_only=True)
         target_losses = np.concatenate(target_losses, axis=0)
-        # decide membership per sample
-        scores = target_losses <= thresholds
+        # Keep the continuous margin for ROC/AUC, with membership above zero.
+        if self.attack_configs.r_score_type == "confidence":
+            scores = target_losses - thresholds
+        else:
+            scores = thresholds - target_losses
+        decisions = scores >= 0
         self.logger.print_it(f"{self.name}: auditing forward and thresholding completed in {time.time() - start_thresh:.2f}s.")
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
-        metrics = self.compute_stats(scores, decisions=scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
         self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
         return metrics
 

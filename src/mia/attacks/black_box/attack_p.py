@@ -79,19 +79,20 @@ class AttackPMIA(BaseMIA):
             )
         self.logger.set_logger_newline(console_only=True)
         audit_scores = np.concatenate(audit_scores, axis=0)
-        # decide membership per sample
+        # Keep the continuous margin for ROC/AUC, with membership above zero.
         if self.attack_configs.p_score_type == "confidence":
-            scores = audit_scores >= thresholds
+            scores = audit_scores - thresholds
         elif self.attack_configs.p_score_type in ["entropy", "loss"]:
-            scores = audit_scores <= thresholds
+            scores = thresholds - audit_scores
         else:
             raise ValueError(f"Unsupported scoring type '{self.attack_configs.p_score_type}'.")
+        decisions = scores >= 0
 
         self.logger.print_it(f"{self.name}: auditing forward and thresholding completed in {time.time() - start_thresh:.2f}s.")
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
-        metrics = self.compute_stats(scores, decisions=scores)
+        metrics = self.compute_stats(scores, decisions=decisions)
         self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
         return metrics
 
