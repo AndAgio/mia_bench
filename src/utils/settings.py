@@ -294,8 +294,8 @@ def gather_settings():
         # DHAttack MIA parameters
         parser.add_argument('--attacker_dh_n_models', type=int, default=10,
                                 help='Number of shadow models to be trained for the DHAttack MIA attack')
-        parser.add_argument('--attacker_dh_n_queries', type=int, default=1000,
-                                help='Number of queries to train the attack regressor in the DHAttack MIA attack')
+        parser.add_argument('--attacker_dh_n_queries', type=int, default=30,
+                                help='Maximum number of queries per sample for DHAttack boundary-distance inference')
         # YOQO MIA parameters
         parser.add_argument('--attacker_yoqo_alpha', type=float, default=2,
                                 help='Alpha parameter for the YOQO MIA attack')

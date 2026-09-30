@@ -377,7 +377,7 @@ class DHAttackConfig:
     strategy: Literal["dh"] = "dh"
     mode: str = 'offline'
     n_models: int = 10 # number of shadow models to train for the attack
-    n_queries: int = 1000 # number of queries to perform inference
+    n_queries: int = 30 # number of queries to perform inference
     fixed_input_mode: str = 'white' # options: 'white', 'black'
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))

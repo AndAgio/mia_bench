@@ -258,9 +258,9 @@ class DHAttack(BaseMIA):
         model.eval()
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
-        scores = self.rel_score(inputs=batch_x, true_labels=batch_y).numpy()
+        scores = self.rel_score(inputs=batch_x, true_labels=batch_y).cpu().numpy()
         decisions = (scores > self.attack_threshold).astype(np.int64)
-        return scores.cpu().numpy(), decisions
+        return scores, decisions
 
     @torch.no_grad()
     def infer_single(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
