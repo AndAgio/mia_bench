@@ -195,6 +195,32 @@ for a more substantial end-to-end run.
 
 `--preset moderate` remains accepted as a backward-compatible alias for `medium`.
 
+### Li and Zhang: boundary and transfer attacks
+
+`--attacker_mode uba` runs the boundary attack with data-free threshold
+calibration. It generates 100 seeded random inputs by default, queries their
+predicted labels, and estimates the perturbation needed to change those labels.
+Image pixels are uniform in [0, 1] before the dataset's normal model-input
+normalization; tabular features are uniform in [0, 1]. Configure the count with
+`--attacker_boundary_calibration_samples` and the ascending distance quantile
+with `--attacker_boundary_quantile` (default 0.5). No auxiliary dataset or shadow
+model is used. Candidate distances also use the model's initial predicted label.
+QEBA PCA/custom variants build their bases from generated inputs, not real data;
+these basis variants are benchmark extensions.
+
+`--attacker_mode transfer_loss` runs the transfer attack: query hard labels for
+real auxiliary samples, train a surrogate on those labels, and score candidates
+by negative surrogate cross-entropy against their ground-truth class. Larger
+scores indicate membership. `transfer_confidence` and `transfer_entropy` provide
+alternative surrogate scores. Configure surrogate training with `--attacker_model`
+and `--attacker_epochs`, and auxiliary size with `--n_samples_per_shadow_dataset`.
+The benchmark calibrates a decision threshold using surrogate members and held-out
+auxiliary samples; ROC/AUC uses the continuous scores.
+
+Both methods follow [Li and Zhang, Membership Leakage in Label-Only Exposures](https://arxiv.org/abs/2007.15528).
+Run `python -m unittest test_boundary_calibration` for focused calibration and
+relabeling checks, and `python test_transfer_mia.py` for transfer smoke tests.
+
 ### Training defenders (and checkpointing for reuse)
 Use `train_defender.py` when you only want to train the defender model and persist checkpoints for later reuse across multiple attacks. This is the recommended workflow for large experiments: train a defender once with stable settings, then run several attacks reusing that checkpoint.
 

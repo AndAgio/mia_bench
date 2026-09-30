@@ -15,16 +15,13 @@ from src.utils import convert_to_hms
 PROCESSING_BATCH_SIZE = 128
 
 
-# Apparently the authors in the original implementation of the paper require training the defender model with very few data (only 2000 samples for CIFAR10) and the shadow model over a large set of data (more than 35000 samples on CIFAR10) which should be disjunct from the training dataset of the defender model.
-# Given our implementation of the shadow manager, we can only guarantee that the shadow dataset is disjunct from the defender training dataset by sampling only from the testing set. Therefore, we can try the shadow model with fewer data.
-# However, our implementation is much more realistic. In practice, it is not possible to consider a setting in which the attacker has access to a dataset which is larger than the victim.
-
 class TransferMIA(BaseMIA):
     # Implementation of transfer attack of "Membership Leakage in Label-Only Exposures" (https://dl.acm.org/doi/pdf/10.1145/3460120.3484575)
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
+        self.attack_threshold = None
         self.logger.print_it(f"Working with Transfer MIA!")
         assert self.shadow_configs.mode == 'offline', f"Transfer MIA attacker should be used with offline shadow models, but found mode={self.shadow_configs.mode} instead!"
         if self.shadow_configs.n_shadow_datasets != 1:
@@ -60,12 +57,12 @@ class TransferMIA(BaseMIA):
         self.logger.print_it('Transfer MIA attacker: Done optimizing shadow model over the distilled dataset. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
     def relabel_shadow_dataset(self, train_config: TrainConfigs):
-        # Relabel the shadow dataset according to the predictions of the target model, as done in the transfer attack of "Label-Only Membership Inference Attacks" (https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf).
+        # Li and Zhang: distill only the target model's hard-label predictions.
         shadow_dataset = self.shadow_manager.get_dataset(index=0, labels='original')
         shadow_loader = torch.utils.data.DataLoader(shadow_dataset, batch_size=train_config.batch_size, shuffle=False)
         all_relabels = []
         device = self.get_device(train_config.device)
-        self.defender_model.to(device)
+        self.defender_model.to(device).eval()
         with torch.no_grad():
             for batch_index, (data, original_labels, _, _) in enumerate(shadow_loader):
                 # print(f"original_labels shape: {original_labels.shape}")

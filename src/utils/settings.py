@@ -269,6 +269,8 @@ def gather_settings():
                                 help='Reduction factor for QEBA (spatial/dct variants)')
         parser.add_argument('--attacker_boundary_quantile', type=float, default=0.5,
                                 help='Quantile to use for the unsupervised variant of the Boundary MIA attack')
+        parser.add_argument('--attacker_boundary_calibration_samples', type=int, default=100,
+                                help='Number of random inputs for boundary threshold calibration (no auxiliary data)')
         # Noise Robustness MIA parameters
         parser.add_argument('--attacker_noise_robust_n_queries', type=int, default=5000,
                                 help='Number of noisy copies to create for each sample in the Noise Robustness MIA attack')

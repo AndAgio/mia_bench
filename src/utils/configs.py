@@ -343,7 +343,8 @@ class UnsupervisedBoundaryAttackConfig:
     strategy: Literal["uba"] = "uba"
     mode: str = 'offline'
     boundary: BoundaryMiaConfigs = field(default_factory=BoundaryMiaConfigs)
-    quantile: float = 0.95
+    quantile: float = Field(default=0.95, ge=0, le=1)
+    n_calibration_samples: int = Field(default=100, gt=0)
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class NoiseRobustnessAttackConfig:
@@ -795,7 +796,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         qeba=qeba_configs if bound_mode == 'qeba' else None)
         attack_configs = UnsupervisedBoundaryAttackConfig(boundary=boundary_configs,
                                                         mode='offline',
-                                                        quantile=settings.attacker_boundary_quantile)
+                                                        quantile=settings.attacker_boundary_quantile,
+                                                        n_calibration_samples=settings.attacker_boundary_calibration_samples)
         attacker_shadow_configs.mode = 'offline'
     
     elif settings.attacker_mode in ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']:
