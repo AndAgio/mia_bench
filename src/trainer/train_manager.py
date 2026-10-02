@@ -348,7 +348,8 @@ class TrainManager(Loggable):
 
 
     def reset_running_stats(self):
-        best_record = np.inf if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else 0
+        # Start from the worst possible value so that the first epoch is always saved as best.pth.
+        best_record = np.inf if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else -np.inf
         mode_to_track_best = "min" if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else "max"
         stage_to_track_best = "val" if self.run_val else "test" if self.run_test else "train"
         self.train_stats_tracker = TrainStats(best_epoch=0,
@@ -390,6 +391,7 @@ class TrainManager(Loggable):
             if resume_ckpt is not None:
                 self.epoch = int(resume_ckpt['epoch']) + 1
                 self.train_stats_tracker.load_from_checkpoint_dict(resume_ckpt.get("train_stats", {}))
+                self.load_checkpoint_extra(resume_ckpt.get("extra", {}))
             else:
                 self.epoch = 1
         else:
@@ -413,7 +415,8 @@ class TrainManager(Loggable):
 
             if self.local_rank == 0:
                 ckpt = self.ckpts_manager.build_checkpoint(epoch=self.epoch,
-                                                        train_stats=self.train_stats_tracker)
+                                                        train_stats=self.train_stats_tracker,
+                                                        extra=self.get_checkpoint_extra())
                 self.ckpts_manager.save(name='last.pth',
                                         ckpt=ckpt)
                 if best_epoch == self.epoch:
@@ -453,6 +456,14 @@ class TrainManager(Loggable):
                     return self.train_stats_tracker
                 else:
                     return
+
+    def get_checkpoint_extra(self) -> dict[str, Any]:
+        # Hook for subclasses with additional training state (e.g., auxiliary models) to be stored in checkpoints.
+        return {}
+
+    def load_checkpoint_extra(self, extra: dict[str, Any]):
+        # Hook for subclasses to restore the state stored by get_checkpoint_extra when resuming.
+        pass
 
     def train_executions(self):
         self.train_epoch()
