@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One tiny RobustMIA run: one epoch per defender/shadow model.
 
-Example: python3 test_robust_mia.py --attacker_robust_gamma 1.2 --device cpu
+Example: python3 tests/test_robust_mia.py --attacker_robust_gamma 1.2 --device cpu
 Uses the normal dataset loader (which may download CIFAR-10), limited to 400
 samples by the existing smoke worker. This checks execution, not attack quality.
 """
@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
@@ -31,7 +31,7 @@ def main():
     # Fresh output directory prevents previous checkpoints from skipping training.
     output = ROOT / 'smoke_test_results' / 'robust_mia' / datetime.now().strftime('%Y%m%d_%H%M%S_%f')
     command = [
-        sys.executable, str(ROOT / 'smoke_test_all.py'),
+        sys.executable, str(ROOT / 'tests' / 'smoke_test_all.py'),
         '--worker', '--data-limit', '400', '--entrypoint', 'run', '--',
         '--dataset', 'cifar10', '--datasets_folder', str(args.datasets_folder.resolve()),
         '--out_folder', str(output), '--device', args.device,

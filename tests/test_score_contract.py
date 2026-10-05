@@ -1,6 +1,8 @@
 """Deterministic scoring regressions; no datasets or model training required."""
 
+import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -8,6 +10,10 @@ import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score
 from torch.utils.data import TensorDataset
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.mia.attacks.black_box.attack_p import AttackPMIA
 from src.mia.attacks.black_box.attack_r import AttackRMIA

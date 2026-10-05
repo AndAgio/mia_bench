@@ -7,6 +7,10 @@ from .variables import DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODE
 
 
 def gather_settings():
+        return build_parser().parse_args()
+
+
+def build_parser() -> argparse.ArgumentParser:
         # Training settings
         parser = argparse.ArgumentParser(description='MIA Benchmarking code')
         
@@ -367,10 +371,9 @@ def gather_settings():
         # parser.add_argument("--att_dp_clip_per_layer", action="store_true", default=False,
         #                         help="whether to use per layer clipping in DP-SGD",)
         # parser.add_argument("--att_dp_grad_sample_mode", type=str, default="ghost")
-        
 
-        settings = parser.parse_args()
-        return settings
+
+        return parser
 
 
 def setup_configs_and_folder_from_settings(settings):

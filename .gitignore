@@ -28,7 +28,8 @@ apptainers/*/*.log
 apptainers/*/*.out
 apptainers/*/*.err
 
-tests/
+tests/test_logging.py
+tests/test_shadow_perf.py
 temp.py
 debug.py
 trial.py

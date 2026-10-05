@@ -1,11 +1,12 @@
 """Regression checks and optional one-epoch OSLO smoke runs.
 
-Regression only: python3 -m unittest test_oslo_mia
-One-epoch smoke runs: python3 test_oslo_mia.py --smoke --device cpu
+Regression only: python3 -m unittest tests.test_oslo_mia
+One-epoch smoke runs: python3 tests/test_oslo_mia.py --smoke --device cpu
 """
 
 import argparse
 from pathlib import Path
+import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -13,6 +14,10 @@ from unittest.mock import Mock
 import numpy as np
 import torch
 from torch.utils.data import TensorDataset
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.mia.attacks.label_only.oslo import OsloMIA
 
@@ -74,8 +79,8 @@ def main():
                         help='Also train and evaluate OSLO using three tiny one-epoch profiles')
     parser.add_argument('--device', default='cpu', help='cpu or CUDA device index (e.g. 0)')
     parser.add_argument('--dataset', default='cifar10')
-    parser.add_argument('--datasets-folder', type=Path, default=Path(__file__).resolve().parent / 'datas')
-    parser.add_argument('--output-dir', type=Path, default=Path(__file__).resolve().parent / 'smoke_test_results' / 'oslo_mia')
+    parser.add_argument('--datasets-folder', type=Path, default=REPO_ROOT / 'datas')
+    parser.add_argument('--output-dir', type=Path, default=REPO_ROOT / 'smoke_test_results' / 'oslo_mia')
     parser.add_argument('--mode', choices=('difgsm', 'mifgsm', 'tifgsm', 'tmifgsm'), default='difgsm')
     parser.add_argument('--timeout', type=int, default=1800, help='Maximum seconds per smoke profile')
     parser.add_argument('--keep-work', action='store_true', help='Retain checkpoints and detailed result artifacts')
@@ -88,7 +93,7 @@ def main():
     if not (args.smoke or args.dry_run):
         return 0
 
-    import smoke_test_all
+    from tests import smoke_test_all
 
     smoke_args = [
         '--preset', 'quick', '--device', args.device,

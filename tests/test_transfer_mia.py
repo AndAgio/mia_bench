@@ -2,7 +2,7 @@
 """Focused regression and end-to-end smoke tests for TransferMIA.
 
 The fast regression check verifies the score orientation and threshold rule for
-both loss and confidence.  The end-to-end portion reuses smoke_test_all.py so it
+both loss and confidence.  The end-to-end portion reuses tests/smoke_test_all.py so it
 also trains a defender and transfer model, calibrates the attack threshold, and
 writes the normal benchmark results for both attack modes.
 """
@@ -10,6 +10,7 @@ writes the normal benchmark results for both attack modes.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,11 +18,12 @@ import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, roc_curve
 
-import smoke_test_all
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from src.mia.attacks.label_only.transfer import TransferMIA
-
-
-REPO_ROOT = Path(__file__).resolve().parent
+from tests import smoke_test_all
 
 
 class FixedLogitModel(torch.nn.Module):

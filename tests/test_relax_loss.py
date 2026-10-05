@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Smoke test of the RelaxLoss defense with every optimizer supported by TrainManager.
 
-Example: python3 test_relax_loss.py --device cpu
-         python3 test_relax_loss.py --optimizers sgd sam esam --variants incorrect --device 0
+Example: python3 tests/test_relax_loss.py --device cpu
+         python3 tests/test_relax_loss.py --optimizers sgd sam esam --variants incorrect --device 0
 
 Uses a small synthetic image dataset (nothing is downloaded), so it checks the implementation, not the
 quality of the defense:
@@ -29,7 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.data.helpers import MultiDatasets

@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-"""Run every current attack/defense with local test profiles, continuing on errors."""
+"""Run every current attack/defense with local test profiles, continuing on errors.
+
+Examples (from the repository root):
+  python tests/smoke_test_all.py --device cpu --only defense:relax_loss
+  python tests/smoke_test_all.py --list-options relax_loss
+  python tests/smoke_test_all.py --only defense:relax_loss --profiles small_a \\
+      --grid defender_optimizer=sgd,sam,esam defender_relax_loss_flatten='*' -- --defender_epochs 2
+
+Anything after `--` is passed to every case (run.py / train_defender.py options, overriding the
+profile settings), and --grid runs one case per combination of option values. All the generated
+commands are checked against the options of run.py / train_defender.py before anything runs.
+"""
 
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -20,7 +33,10 @@ from pathlib import Path
 from typing import Sequence
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
+# Workers import run.py / train_defender.py and the src package from the repository root.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 # Distinct algorithms/modes from the current factories and config generator.
 # Aliases that produce the same class/config are recorded separately below.
@@ -105,6 +121,25 @@ MEDIUM_PROFILES = (
 MODERATE_PROFILES = MEDIUM_PROFILES
 
 
+# Options that the harness sets for every case itself.
+RESERVED_OPTIONS = {
+    "--defender_mode": "use --only to choose the defenses",
+    "--attacker_mode": "use --only to choose the attacks",
+    "--out_folder": "every case gets its own output folder",
+}
+
+
+@dataclass(frozen=True)
+class Variant:
+    """One combination of --grid values, e.g. label 'defender_optimizer=sam'."""
+    label: str = ""
+    args: tuple[str, ...] = ()
+
+    @property
+    def folder(self) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "_", self.label.replace("=", "-").replace(", ", "__"))
+
+
 @dataclass
 class Case:
     kind: str
@@ -112,6 +147,7 @@ class Case:
     profile: str
     command: list[str]
     log_file: str
+    variant: str = ""
 
 
 @dataclass
@@ -125,11 +161,22 @@ class Result:
     error: str | None
     log_file: str
     command: list[str]
+    variant: str = ""
+
+
+def case_name(case: Case | Result) -> str:
+    return f"{case.kind}:{case.component}" + (f" [{case.variant}]" if case.variant else "")
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    argv = list(argv)
+    extra_args: list[str] = []
+    if "--" in argv:
+        split = argv.index("--")
+        argv, extra_args = argv[:split], argv[split + 1:]
     parser = argparse.ArgumentParser(
-        description="Smoke-test every current MIA attack and defense without stopping on failures."
+        description="Smoke-test every current MIA attack and defense without stopping on failures.",
+        usage="%(prog)s [options] [-- run.py/train_defender.py options for every case]",
     )
     parser.add_argument("--device", default="0",
                         help="CUDA index (default: 0); pass cpu to disable GPU use")
@@ -145,6 +192,17 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument("--only", nargs="*", default=None, metavar="KIND:NAME",
                         help="Subset, e.g. attack:lira defense:dp")
+    parser.add_argument("--profiles", nargs="+", default=None, metavar="NAME",
+                        help="Subset of the profiles of the preset, e.g. small_a")
+    parser.add_argument(
+        "--grid", nargs="+", action="extend", default=[], metavar="OPTION=V1,V2",
+        help=("Run every combination of these run.py/train_defender.py option values, e.g. "
+              "defender_optimizer=sgd,sam defender_relax_loss_flatten='*'. '*' takes all the "
+              "choices of the option, true/false switch flags on/off, quote values with spaces"),
+    )
+    parser.add_argument("--list-options", nargs="*", default=None, metavar="PATTERN",
+                        help=("List the run.py/train_defender.py options whose name contains a "
+                              "pattern (e.g. relax_loss, attacker_oslo), or all of them, and exit"))
     parser.add_argument("--list-components", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--always-zero", action="store_true")
@@ -153,7 +211,112 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help=("Keep per-case checkpoints, shadow data, results, and internal logs. "
               "By default these temporary artifacts are deleted after each case."),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    args.extra_args = extra_args
+    return args
+
+
+def project_parser() -> argparse.ArgumentParser:
+    """Parser of run.py / train_defender.py, raising ValueError instead of exiting."""
+    from src.utils.settings import build_parser
+
+    parser = build_parser()
+
+    def raise_error(message: str):
+        raise ValueError(message)
+
+    parser.error = raise_error
+    return parser
+
+
+def option_action(parser: argparse.ArgumentParser, option: str) -> argparse.Action:
+    action = parser._option_string_actions.get(option)
+    if action is None:
+        raise ValueError(f"unknown option {option}; see --list-options")
+    return action
+
+
+def check_not_reserved(option: str) -> None:
+    if option in RESERVED_OPTIONS:
+        raise ValueError(f"{option} cannot be set here: {RESERVED_OPTIONS[option]}")
+
+
+def expand_grid(specs: Sequence[str], parser: argparse.ArgumentParser) -> list[Variant]:
+    """One Variant per combination of the --grid values (a single empty one without --grid)."""
+    axes = []
+    for spec in specs:
+        if "=" not in spec:
+            raise ValueError(f"--grid expects OPTION=V1,V2,..., got '{spec}'")
+        name, raw_values = spec.split("=", 1)
+        option = "--" + name.strip().lstrip("-")
+        check_not_reserved(option)
+        if option in (axis[0][0] for axis in axes):
+            raise ValueError(f"{option} appears twice in --grid")
+        action = option_action(parser, option)
+        if raw_values.strip() == "*":
+            if not action.choices:
+                raise ValueError(f"{option}='*' needs an option with a fixed set of choices")
+            values = [str(choice) for choice in action.choices]
+        else:
+            values = [value.strip() for value in raw_values.split(",") if value.strip()]
+        if not values:
+            raise ValueError(f"no values given for {option} in --grid")
+        axis = []
+        for value in values:
+            if action.nargs == 0:  # switch flags such as --defender_nesterov
+                if value.lower() not in ("true", "false"):
+                    raise ValueError(f"{option} is a switch: use {name}=true,false")
+                args = (option,) if value.lower() == "true" else ()
+            else:
+                args = (option, *shlex.split(value))
+            axis.append((option, value, args))
+        axes.append(axis)
+    variants = []
+    for combination in itertools.product(*axes):
+        label = ", ".join(f"{option[2:]}={value}" for option, value, _ in combination)
+        variants.append(Variant(label, tuple(arg for *_, args in combination for arg in args)))
+    return variants
+
+
+def selected_profiles(args: argparse.Namespace) -> tuple[Profile, ...]:
+    profiles = MEDIUM_PROFILES if args.preset in {"medium", "moderate"} else PROFILES
+    if args.profiles:
+        unknown = sorted(set(args.profiles) - {profile.name for profile in profiles})
+        if unknown:
+            raise ValueError(f"unknown profiles {unknown} for the {args.preset} preset; "
+                             f"choose among {[profile.name for profile in profiles]}")
+        profiles = tuple(profile for profile in profiles if profile.name in args.profiles)
+    return profiles
+
+
+def print_options(patterns: Sequence[str], parser: argparse.ArgumentParser) -> None:
+    patterns = [pattern.lstrip("-") for pattern in patterns]
+    shown = 0
+    for action in parser._actions:
+        option = next((name for name in action.option_strings if name.startswith("--")), None)
+        if option is None or option == "--help":
+            continue
+        if patterns and not any(pattern in option for pattern in patterns):
+            continue
+        details = [f"choices: {', '.join(map(str, action.choices))}"] if action.choices else []
+        details.append("switch" if action.nargs == 0 else f"default: {action.default}")
+        print(f"{option}  ({'; '.join(details)})")
+        if action.help:
+            print(f"    {action.help}")
+        shown += 1
+    print(f"\n{shown} option(s). Pass them after '--' to set them for every case, or use --grid to sweep them.")
+
+
+def validate_commands(cases: Sequence[Case], parser: argparse.ArgumentParser) -> list[str]:
+    """Errors of the run.py/train_defender.py parser on the commands, one per component and variant."""
+    errors = {}
+    for case in cases:
+        run_args = case.command[case.command.index("--") + 1:]
+        try:
+            parser.parse_args(run_args)
+        except ValueError as exc:
+            errors.setdefault(case_name(case), str(exc))
+    return [f"{name}: {error}" for name, error in errors.items()]
 
 
 def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -> list[str]:
@@ -261,35 +424,33 @@ def make_worker_command(profile: Profile, entrypoint: str, run_args: list[str]) 
             "--", *run_args]
 
 
-def build_cases(args: argparse.Namespace, run_root: Path) -> list[Case]:
+def component_args(kind: str, component: str) -> list[str]:
+    if kind == "attack":
+        return ["--defender_mode", "none", "--attacker_mode", component,
+                "--n_shadows", str(shadow_count(component))]
+    return ["--defender_mode", component, "--attacker_mode", "quantile", "--n_shadows", "1"]
+
+
+def build_cases(args: argparse.Namespace, run_root: Path, variants: Sequence[Variant],
+                profiles: Sequence[Profile]) -> list[Case]:
     cases: list[Case] = []
-    logs = run_root / "logs"
-    profiles = MEDIUM_PROFILES if args.preset in {"medium", "moderate"} else PROFILES
-    for attack in ATTACKS:
-        if not selected("attack", attack, args.only):
-            continue
-        for profile in profiles:
-            # Isolate every case so its checkpoints and shadow data can be deleted
-            # immediately without touching another case's files.
-            out = run_root / "work" / "attacks" / attack / profile.name
-            run_args = common_run_args(profile, args, out)
-            run_args += ["--defender_mode", "none", "--attacker_mode", attack,
-                         "--n_shadows", str(shadow_count(attack))]
-            log_file = logs / "attacks" / attack / f"{profile.name}.log"
-            cases.append(Case("attack", attack, profile.name,
-                              make_worker_command(profile, "run", run_args), str(log_file)))
-    # This entrypoint isolates the defense test from failures in a probe attack.
-    for defense in DEFENSES:
-        if not selected("defense", defense, args.only):
-            continue
-        for profile in profiles:
-            out = run_root / "work" / "defenses" / defense / profile.name
-            run_args = common_run_args(profile, args, out)
-            run_args += ["--defender_mode", defense, "--attacker_mode", "quantile",
-                         "--n_shadows", "1"]
-            log_file = logs / "defenses" / defense / f"{profile.name}.log"
-            cases.append(Case("defense", defense, profile.name,
-                              make_worker_command(profile, "train_defender", run_args), str(log_file)))
+    # Defenses run train_defender.py, which isolates them from failures in a probe attack.
+    for kind, components, entrypoint in (("attack", ATTACKS, "run"), ("defense", DEFENSES, "train_defender")):
+        for component in components:
+            if not selected(kind, component, args.only):
+                continue
+            for variant in variants:
+                for profile in profiles:
+                    # Isolate every case so its checkpoints and shadow data can be deleted
+                    # immediately without touching another case's files.
+                    case_path = Path(f"{kind}s", component, variant.folder, profile.name)
+                    out = run_root / "work" / case_path
+                    # Later options win: --grid values over the ones after '--', over the profile ones.
+                    run_args = (common_run_args(profile, args, out) + component_args(kind, component)
+                                + args.extra_args + list(variant.args))
+                    cases.append(Case(kind, component, profile.name,
+                                      make_worker_command(profile, entrypoint, run_args),
+                                      str(run_root / "logs" / f"{case_path}.log"), variant.label))
     return cases
 
 
@@ -361,7 +522,7 @@ def _run_case(case: Case, timeout: int, index: int, total: int) -> Result:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     started_wall = time.time()
-    print(f"[{index}/{total}] {case.kind}:{case.component} / {case.profile}", flush=True)
+    print(f"[{index}/{total}] {case_name(case)} / {case.profile}", flush=True)
     try:
         with log_path.open("w", encoding="utf-8") as log:
             log.write("COMMAND: " + shlex.join(case.command) + "\n\n")
@@ -405,13 +566,13 @@ def _run_case(case: Case, timeout: int, index: int, total: int) -> Result:
         if return_code == 0:
             print(f"  PASS ({elapsed:.1f}s)", flush=True)
             return Result(case.kind, case.component, case.profile, "passed", elapsed,
-                          return_code, None, case.log_file, case.command)
+                          return_code, None, case.log_file, case.command, case.variant)
         reason = failure_reason(return_code, log_path)
         print(f"  ERROR: {reason}", flush=True)
         dump_internal_logs(case, started_wall)
         print(f"  FAIL (exit {return_code}, {elapsed:.1f}s): {reason}", flush=True)
         return Result(case.kind, case.component, case.profile, "failed", elapsed,
-                      return_code, reason, case.log_file, case.command)
+                      return_code, reason, case.log_file, case.command, case.variant)
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - started
         reason = f"timed out after {timeout} seconds"
@@ -419,13 +580,13 @@ def _run_case(case: Case, timeout: int, index: int, total: int) -> Result:
         dump_internal_logs(case, started_wall)
         print(f"  FAIL ({reason})", flush=True)
         return Result(case.kind, case.component, case.profile, "failed", elapsed,
-                      None, reason, case.log_file, case.command)
+                      None, reason, case.log_file, case.command, case.variant)
     except Exception as exc:
         elapsed = time.monotonic() - started
         reason = f"runner error: {type(exc).__name__}: {exc}"
         print(f"  FAIL ({reason})", flush=True)
         return Result(case.kind, case.component, case.profile, "failed", elapsed,
-                      None, reason, case.log_file, case.command)
+                      None, reason, case.log_file, case.command, case.variant)
 
 
 def cleanup_case_work(case: Case, work_root: Path) -> None:
@@ -472,7 +633,8 @@ def aggregate(results: list[Result], kind: str,
     grouped: dict[str, list[Result]] = {}
     for result in results:
         if result.kind == kind:
-            grouped.setdefault(result.component, []).append(result)
+            name = result.component + (f" [{result.variant}]" if result.variant else "")
+            grouped.setdefault(name, []).append(result)
     passed = sorted(name for name, items in grouped.items()
                     if len(items) == profiles_per_component
                     and all(x.status == "passed" for x in items))
@@ -502,13 +664,14 @@ def print_summary(results: list[Result], report_path: Path,
 
 
 def write_report(results: list[Result], report_path: Path, started_at: str,
-                 preset: str, profiles_per_component: int) -> None:
+                 preset: str, profiles_per_component: int, options: dict | None = None) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "preset": preset,
         "profiles_per_component": profiles_per_component,
+        **(options or {}),
         "attack_matrix": list(ATTACKS), "defense_matrix": list(DEFENSES),
         "attack_aliases_not_repeated": ATTACK_ALIASES,
         "defense_aliases_not_repeated": DEFENSE_ALIASES,
@@ -589,17 +752,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.list_components:
         print_component_list()
         return 0
+    try:
+        parser = project_parser()
+        if args.list_options is not None:
+            print_options(args.list_options, parser)
+            return 0
+        for token in args.extra_args:
+            if token.startswith("--"):
+                check_not_reserved(token.split("=", 1)[0])
+        variants = expand_grid(args.grid, parser)
+        profiles = selected_profiles(args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     run_root = args.output_dir.resolve() / datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = run_root / "report.json"
-    cases = build_cases(args, run_root)
-    profiles_per_component = len(
-        MEDIUM_PROFILES if args.preset in {"medium", "moderate"} else PROFILES
-    )
+    cases = build_cases(args, run_root, variants, profiles)
+    profiles_per_component = len(profiles)
     if not cases:
         print("No cases matched --only. Use --list-components for valid names.", file=sys.stderr)
         return 2
-    print(f"Prepared {len(cases)} cases ({profiles_per_component} combinations per component, "
-          f"{args.preset} preset).")
+    errors = validate_commands(cases, parser)
+    if errors:
+        print("Invalid run.py/train_defender.py options (see --list-options); nothing was run:",
+              file=sys.stderr)
+        for error in errors:
+            print(f"  {error}", file=sys.stderr)
+        return 2
+    options = {"profiles": [profile.name for profile in profiles], "grid": args.grid,
+               "extra_args": args.extra_args}
+    print(f"Prepared {len(cases)} cases ({len(variants)} option combination(s) x "
+          f"{profiles_per_component} profile(s) per component, {args.preset} preset).")
     print(f"Results directory: {run_root}")
     if args.keep_work:
         print("Temporary per-case work will be kept (--keep-work).")
@@ -607,7 +790,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Temporary per-case checkpoints and data will be deleted after each case.")
     if args.dry_run:
         for case in cases:
-            print(f"{case.kind}:{case.component}/{case.profile}: {shlex.join(case.command)}")
+            print(f"{case_name(case)}/{case.profile}: {shlex.join(case.command)}")
         return 0
 
     started_at = datetime.now(timezone.utc).isoformat()
@@ -617,12 +800,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             results.append(run_case(case, args.timeout, index, len(cases),
                                     run_root / "work", args.keep_work))
             write_report(results, report_path, started_at, args.preset,
-                         profiles_per_component)
+                         profiles_per_component, options)
     except KeyboardInterrupt:
         print("\nInterrupted; writing the partial report.", file=sys.stderr)
     finally:
         write_report(results, report_path, started_at, args.preset,
-                     profiles_per_component)
+                     profiles_per_component, options)
     any_failed = print_summary(results, report_path, profiles_per_component)
     return 0 if args.always_zero or not any_failed else 1
 

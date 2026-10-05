@@ -155,14 +155,28 @@ replicas. Runs with different datasets, models, attack/defence settings, audit s
 or training configurations are deliberately kept in separate aggregate groups.
 - Use `python download_all_datasets.py` to download supported datasets to the default `datas/` folder.
 
+### Tests
+
+All tests live in `tests/` and are run from the repository root. The fast unit tests
+need no datasets or training:
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+The other scripts in `tests/` run the real pipeline on small data: the smoke matrix
+below, `test_transfer_mia.py`, `test_oslo_mia.py --smoke` and `test_robust_mia.py`.
+`test_relax_loss.py` checks RelaxLoss against the paper with every optimizer on
+synthetic data.
+
 ### Local smoke matrix
 
-`smoke_test_all.py` exercises every distinct attack and defense and keeps going after
+`tests/smoke_test_all.py` exercises every distinct attack and defense and keeps going after
 individual failures. The default `quick` preset uses one epoch and tiny inputs. After
 that passes, the `medium` preset provides a moderately realistic stress check:
 
 ```bash
-python smoke_test_all.py --preset medium --device 0
+python tests/smoke_test_all.py --preset medium --device 0
 ```
 
 The medium preset uses ten epochs for defender, attacker, neural attacker, MemGuard,
@@ -172,8 +186,22 @@ queries for the common query-driven methods, and moderately larger OSLO, DH, SEL
 MIST, YOQO, Purifier, and LDL workloads. To try only a few components first:
 
 ```bash
-python smoke_test_all.py --preset medium --device cpu \
+python tests/smoke_test_all.py --preset medium --device cpu \
 	--only attack:quantile attack:lira defense:mist
+```
+
+To test the options of a defense or attack rather than its defaults, anything after `--`
+is passed to every case (overriding the profile settings), and `--grid` runs one case per
+combination of option values (`'*'` takes all the choices of an option, `true,false`
+toggles a switch). `--profiles` restricts the run to some profiles and `--list-options`
+shows the available options, e.g. `--list-options relax_loss`. All the generated
+commands are checked against the options of `run.py`/`train_defender.py` before
+anything runs, so a typo or an invalid value fails immediately:
+
+```bash
+python tests/smoke_test_all.py --device cpu --only defense:relax_loss --profiles small_a \
+	--grid defender_optimizer=sgd,adam,sam,esam,wsam defender_relax_loss_flatten='*' \
+	-- --defender_epochs 2 --defender_relax_loss_alpha 3.0
 ```
 
 Use `--dry-run` to inspect the generated commands without training, and
@@ -187,7 +215,7 @@ To run the focused TransferMIA regression and smoke tests for both loss and
 confidence scoring:
 
 ```bash
-python test_transfer_mia.py --device cpu
+python tests/test_transfer_mia.py --device cpu
 ```
 
 Use `--direction-only` for the fast deterministic score check, or `--preset medium`
@@ -218,8 +246,8 @@ The benchmark calibrates a decision threshold using surrogate members and held-o
 auxiliary samples; ROC/AUC uses the continuous scores.
 
 Both methods follow [Li and Zhang, Membership Leakage in Label-Only Exposures](https://arxiv.org/abs/2007.15528).
-Run `python -m unittest test_boundary_calibration` for focused calibration and
-relabeling checks, and `python test_transfer_mia.py` for transfer smoke tests.
+Run `python -m unittest tests.test_boundary_calibration` for focused calibration and
+relabeling checks, and `python tests/test_transfer_mia.py` for transfer smoke tests.
 
 ### Training defenders (and checkpointing for reuse)
 Use `train_defender.py` when you only want to train the defender model and persist checkpoints for later reuse across multiple attacks. This is the recommended workflow for large experiments: train a defender once with stable settings, then run several attacks reusing that checkpoint.

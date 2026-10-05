@@ -1,10 +1,16 @@
 """Fast checks for data-free boundary calibration and transfer relabeling."""
+import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
 import torch
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.data import get_dataset_mean_std
 from src.mia.attacks.label_only.unsupervised_boundary import UnsupervisedBoundaryMIA
