@@ -121,6 +121,10 @@ def gather_settings():
         # Relax Loss parameters for defender model
         parser.add_argument('--defender_relax_loss_alpha', type=float, default=0.5,
                                 help='Alpha parameter for Relax Loss defense')
+        parser.add_argument('--defender_relax_loss_upper', type=float, default=None,
+                                help='Upper bound on the ground-truth confidence during posterior flattening in Relax Loss defense (default: 1.0, i.e. no bound, for image datasets, 0.3 for purchase and news, 0.1 for texas)')
+        parser.add_argument('--defender_relax_loss_flatten', type=str, default=None, choices=['incorrect', 'all'],
+                                help='Samples to apply posterior flattening to in Relax Loss defense (default: incorrect for image datasets, all for purchase, news and texas)')
         # Adversarial Regularization parameters for defender model
         parser.add_argument('--defender_adv_reg_lambda', type=float, default=1.0,
                                 help='Lambda parameter for Adversarial Regularization defense')

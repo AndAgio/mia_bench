@@ -423,6 +423,8 @@ class MemGuardDefenseConfigs:
 class RelaxLossDefenseConfigs:
     strategy: Literal["relax_loss"] = "relax_loss"
     relax_alpha: float = 0.5
+    relax_upper: float = 1.0
+    flatten_incorrect_only: bool = True
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class AdvRegDefenseConfigs:
@@ -548,7 +550,8 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
     else:
         exclude_keys = ["resume", "device"]
         relevant_settings = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
-    return relevant_settings
+    # Unset optional settings are left out, so that adding a new option does not change the hashes of existing runs.
+    return {k: v for k, v in relevant_settings.items() if v is not None}
 
 def get_hash_from_settings(settings: Any, mode: str = 'attacker') -> str:
     relevant_settings = get_relevant_settings(settings, mode=mode)
@@ -623,7 +626,17 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         shadow_attacker_model_lr=settings.defender_mem_guard_shadow_model_lr,
                                                         budget=settings.defender_mem_guard_budget)
     elif settings.defender_mode in ['relax_loss', 'relaxloss', 'relax-loss']:
-        defender_defense_configs = RelaxLossDefenseConfigs(relax_alpha=settings.defender_relax_loss_alpha)
+        # Unset options follow the per-modality choices of the paper (App. B.3) and of the official configs.
+        is_image_dataset = settings.dataset not in ["purchase", "news", "texas"]
+        relax_upper = settings.defender_relax_loss_upper
+        if relax_upper is None:
+            relax_upper = 1.0 if is_image_dataset else {"purchase": 0.3, "texas": 0.1}.get(settings.dataset, 0.3)
+        relax_flatten = settings.defender_relax_loss_flatten
+        if relax_flatten is None:
+            relax_flatten = 'incorrect' if is_image_dataset else 'all'
+        defender_defense_configs = RelaxLossDefenseConfigs(relax_alpha=settings.defender_relax_loss_alpha,
+                                                            relax_upper=relax_upper,
+                                                            flatten_incorrect_only=relax_flatten == 'incorrect')
     elif settings.defender_mode in ['adv_reg', 'advreg', 'adv-reg']:
         defender_defense_configs = AdvRegDefenseConfigs(shadow_attacker_model_layers=settings.defender_adv_reg_shadow_attacker_model_layers,
                                                         adv_lambda=settings.defender_adv_reg_lambda,
