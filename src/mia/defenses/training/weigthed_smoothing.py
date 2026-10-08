@@ -165,7 +165,8 @@ class WeightedSmoothingTrainManager(TrainManager):
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
-            def closure(inputs, targets, batch_weights, mean=True, backward=True, run_stats=True):
+            # The noise is an argument too, so that optimizers selecting samples (ESAM) select its rows as well.
+            def closure(inputs, targets, batch_weights, gaussian_noise, mean=True, backward=True, run_stats=True):
                 if run_stats:
                     enable_running_stats(self.model)
                 else:
@@ -177,7 +178,7 @@ class WeightedSmoothingTrainManager(TrainManager):
                 if backward:
                     loss.backward()
                 return loss, outputs
-            self.optimizer.step(closure, inputs, targets, batch_weights)
+            self.optimizer.step(closure, inputs, targets, batch_weights, gaussian_noise)
             self.optimizer.zero_grad()
             loss, outputs = self.optimizer.get_first_closure_outputs()
         else:

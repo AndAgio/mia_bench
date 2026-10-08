@@ -41,9 +41,9 @@ class SAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         if zero_grad: self.zero_grad()
 
     @torch.no_grad()
-    def step(self, closure: Callable, inputs: torch.Tensor, targets: torch.Tensor):
+    def step(self, closure: Callable, *args):
         '''
-        Expects closure to be:
+        Expects closure to be, with args its positional arguments (inputs, targets, ...):
         def closure(inputs, targets, mean=True, backward=True):
             loss = self.criterion(self.model(inputs), targets)
             if mean:
@@ -53,10 +53,10 @@ class SAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
             return loss
         '''
         closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
-        loss, outputs = closure(inputs, targets, mean=True, backward=True, run_stats=True)
+        loss, outputs = closure(*args, mean=True, backward=True, run_stats=True)
         self.to_return = loss, outputs
         self.first_step(zero_grad=True)
-        closure(inputs, targets, mean=True, backward=True, run_stats=False)
+        closure(*args, mean=True, backward=True, run_stats=False)
         self.second_step()
 
     def _grad_norm(self):

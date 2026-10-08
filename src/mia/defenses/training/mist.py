@@ -440,7 +440,8 @@ class MistTrainManager(TrainManager):
             model = self.sub_models[submodel_index]
             model.train()
             optimizer = self.sub_optimizers[submodel_index]
-            criterion = torch.nn.L1Loss(reduction="mean")
+            # Element-wise, so that SAM-like optimizers can get per-sample losses (ESAM selects samples by them).
+            criterion = torch.nn.L1Loss(reduction="none")
             lr_scheduler = self.sub_lr_schedulers[submodel_index]
             # Setup data loader for this submodel
             submodel_dataset = self.get_submodel_dataset(submodel_index=submodel_index)
@@ -466,15 +467,18 @@ class MistTrainManager(TrainManager):
                     disable_running_stats(model)
                 outputs = model(inputs)
                 targets = self.avg_probs_other_models(exclude=model_index, inputs=inputs)
-                loss = self.mist_configs.lmbd * criterion(outputs, targets)
+                loss = self.mist_configs.lmbd * criterion(outputs, targets).mean(dim=1)
                 if mean:
                     loss = loss.mean()
                 if backward:
                     loss.backward()
                 return loss, outputs
-            optimizer.step(closure, inputs, criterion)
-            optimizer.zero_grad()
-            loss, outputs = optimizer.get_first_closure_outputs()
+            # The alignment loss is minimized by an optimizer sharing parameters, momentum and learning rate with the
+            # one training the sub-model, but with its own state for this loss.
+            alignment_optimizer = optimizer.for_objective('alignment')
+            alignment_optimizer.step(closure, inputs, criterion)
+            alignment_optimizer.zero_grad()
+            loss, outputs = alignment_optimizer.get_first_closure_outputs()
         else:
             # Forward propagation, compute loss, get predictions (no GradScaler/AMP)
             optimizer.zero_grad()

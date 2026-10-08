@@ -61,9 +61,10 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
 
         if zero_grad: self.zero_grad()
 
-    def step(self, closure: Callable, inputs: torch.Tensor, targets: torch.Tensor):
+    def step(self, closure: Callable, *args):
         '''
-        Expects closure to be:
+        Expects closure to be, with args its positional arguments (inputs, targets, ...), where every tensor holds
+        one entry per sample, so that the selected samples can be taken from all of them:
         def closure(inputs, targets, mean=True, backward=True):
             loss = self.criterion(self.model(inputs), targets)
             if mean:
@@ -74,20 +75,26 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         '''
         closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
 
-        loss, outputs = closure(inputs, targets, mean=False, backward=False, run_stats=True)
+        loss, outputs = closure(*args, mean=False, backward=False, run_stats=True)
         l_before = loss.clone().detach()
         self.to_return = loss.mean(), outputs
         loss.mean().backward()
         self.first_step(zero_grad=True)
-        with torch.no_grad():
-            l_after, _ = closure(inputs, targets, mean=False, backward=False, run_stats=True)
-            instance_sharpness = l_after-l_before
-            # Sharpness-sensitive data selection: the gamma * |B| samples whose loss increases the most (at least one).
-            # The official code keeps the samples above the k-th largest value instead, which is one sample fewer, or
-            # none at all for small batches or ties.
-            position = max(1, math.ceil(len(targets) * self.gamma))
-            indices = torch.topk(instance_sharpness, position).indices
-        closure(inputs[indices], targets[indices], mean=True, backward=True, run_stats=False)
+        if l_before.dim() == 0:
+            # A loss of the whole batch (e.g. MMD, a function of the set of outputs) has no per-sample values to
+            # select samples by: all of them are used, as in SAM.
+            selected = args
+        else:
+            with torch.no_grad():
+                l_after, _ = closure(*args, mean=False, backward=False, run_stats=True)
+                instance_sharpness = l_after-l_before
+                # Sharpness-sensitive data selection: the gamma * |B| samples whose loss increases the most (at least
+                # one). The official code keeps the samples above the k-th largest value instead, which is one sample
+                # fewer, or none at all for small batches or ties.
+                position = max(1, math.ceil(len(instance_sharpness) * self.gamma))
+                indices = torch.topk(instance_sharpness, position).indices
+            selected = [arg[indices] if isinstance(arg, torch.Tensor) else arg for arg in args]
+        closure(*selected, mean=True, backward=True, run_stats=False)
         self.second_step()
 
     def _grad_norm(self):

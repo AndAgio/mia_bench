@@ -223,21 +223,39 @@ class MmdTrainManager(TrainManager):
 
             train_images = train_images.to(self.device)
             train_labels = train_labels.to(self.device)
-            outputs = self.model(train_images)
-            all_train_outputs = torch.nn.functional.softmax(outputs,dim=1)
-            #all_train_outputs = all_train_outputs.view(-1,num_classes)
             train_labels = train_labels.view(batch_num,1)
-
             valid_images = valid_images.to(self.device)
             valid_labels = valid_labels.to(self.device)
-            outputs = self.model(valid_images)
-            all_valid_outputs = torch.nn.functional.softmax(outputs,dim=1)
-            all_valid_outputs = (all_valid_outputs).detach_()
             valid_labels = valid_labels.view(batch_num,1)
 
-            mmd_loss = mix_rbf_mmd2(all_train_outputs,all_valid_outputs,sigma_list=[1])*self.mmd_configs.lmbd            
-            mmd_loss.backward()
-            self.optimizer.step()
+            if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
+                # The MMD term gets the same sharpness-aware step as the training loss, through an optimizer sharing
+                # parameters, momentum and learning rate with the main one, but with its own state for this loss.
+                def closure(train_images, valid_images, mean=True, backward=True, run_stats=True):
+                    if run_stats:
+                        enable_running_stats(self.model)
+                    else:
+                        disable_running_stats(self.model)
+                    train_outputs = torch.nn.functional.softmax(self.model(train_images), dim=1)
+                    # As in the paper, only the training outputs are optimized, not the validation ones.
+                    valid_outputs = torch.nn.functional.softmax(self.model(valid_images), dim=1).detach()
+                    loss = mix_rbf_mmd2(train_outputs, valid_outputs, sigma_list=[1]) * self.mmd_configs.lmbd
+                    if backward:
+                        loss.backward()
+                    return loss, train_outputs
+                mmd_optimizer = self.optimizer.for_objective('mmd')
+                mmd_optimizer.step(closure, train_images, valid_images)
+                mmd_optimizer.zero_grad()
+                mmd_loss, _ = mmd_optimizer.get_first_closure_outputs()
+            else:
+                outputs = self.model(train_images)
+                all_train_outputs = torch.nn.functional.softmax(outputs,dim=1)
+                outputs = self.model(valid_images)
+                all_valid_outputs = torch.nn.functional.softmax(outputs,dim=1)
+                all_valid_outputs = (all_valid_outputs).detach_()
+                mmd_loss = mix_rbf_mmd2(all_train_outputs,all_valid_outputs,sigma_list=[1])*self.mmd_configs.lmbd
+                mmd_loss.backward()
+                self.optimizer.step()
     
             message = self.build_message_for_batch_end_mmd(loss_index+1, len(train_loader_in_order), mmd_loss.item())
             self.logger.print_it_same_line(message, console_only=True)
