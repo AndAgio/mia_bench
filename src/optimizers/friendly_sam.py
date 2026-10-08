@@ -48,13 +48,14 @@ class FriendlySAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
                 grad = p.grad
                 state = self.state[p]
 
+                # Algorithm 1 of the paper: m_t = lmbda * m_{t-1} + (1 - lmbda) * g_t from the raw gradient, with
+                # m_{-1} = 0, then perturbation along d_t = g_t - sigma * m_t. The official code starts from m = g_0
+                # and subtracts m_{t-1}, which gives the same direction with sigma = 1 once the start has faded.
                 if 'momentum' not in state:
-                    state['momentum'] = grad.clone()
-                else:
-                    momentum = state['momentum']
-
-                    grad.sub_(momentum, alpha=group['sigma'])
-                    momentum.lerp_(grad, weight=1.0 - group['lmbda'])
+                    state['momentum'] = torch.zeros_like(grad)
+                momentum = state['momentum']
+                momentum.lerp_(grad, weight=1.0 - group['lmbda'])
+                grad.sub_(momentum, alpha=group['sigma'])
 
         device = self.param_groups[0]['params'][0].device
 
@@ -63,14 +64,13 @@ class FriendlySAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         for group in self.param_groups:
             scale = group['rho'] / grad_norm
 
-            for i, p in enumerate(group['params']):
+            for p in group['params']:
                 if p.grad is None:
                     continue
 
                 grad = p.grad
 
                 self.state[p]['old_p'] = p.clone()
-                self.state[f"old_grad_p_{i}"]['old_grad_p'] = grad.clone()
 
                 e_w = (torch.pow(p, 2) if group['adaptive'] else 1.0) * grad * scale.to(p)
 
