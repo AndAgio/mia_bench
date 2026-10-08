@@ -8,6 +8,7 @@ from typing import Callable
 class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     def __init__(self, params, base_optimizer, rho=0.05,beta=1.0,gamma=1.0,adaptive=False,**kwargs):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
+        assert 0.0 < gamma <= 1.0, f"Invalid gamma, should be in (0, 1]: {gamma}"
         # print('Adaptive set to {}'.format(adaptive))
         self.beta = beta
         self.gamma = gamma
@@ -81,12 +82,11 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         with torch.no_grad():
             l_after, _ = closure(inputs, targets, mean=False, backward=False, run_stats=True)
             instance_sharpness = l_after-l_before
-            #codes for sorting
-            position = math.ceil(len(targets) * self.gamma)
-            cutoff, _ = torch.topk(instance_sharpness, position)
-            cutoff = cutoff[-1]
-            #select top k% 
-            indices = tuple([instance_sharpness > cutoff])
+            # Sharpness-sensitive data selection: the gamma * |B| samples whose loss increases the most (at least one).
+            # The official code keeps the samples above the k-th largest value instead, which is one sample fewer, or
+            # none at all for small batches or ties.
+            position = max(1, math.ceil(len(targets) * self.gamma))
+            indices = torch.topk(instance_sharpness, position).indices
         closure(inputs[indices], targets[indices], mean=True, backward=True, run_stats=False)
         self.second_step()
 
