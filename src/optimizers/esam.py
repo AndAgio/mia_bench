@@ -86,7 +86,8 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
             selected = args
         else:
             with torch.no_grad():
-                l_after, _ = closure(*args, mean=False, backward=False, run_stats=True)
+                # At the perturbed weights: BatchNorm running statistics are only updated by the clean pass, as in SAM.
+                l_after, _ = closure(*args, mean=False, backward=False, run_stats=False)
                 instance_sharpness = l_after-l_before
                 # Sharpness-sensitive data selection: the gamma * |B| samples whose loss increases the most (at least
                 # one). The official code keeps the samples above the k-th largest value instead, which is one sample

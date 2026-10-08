@@ -7,7 +7,9 @@ import torch.nn as nn
 
 def disable_running_stats(model):
     def _disable(module):
-        if isinstance(module, nn.BatchNorm2d):
+        # Only back up the momentum once, so that disabling twice in a row (e.g. ESAM's sharpness and update passes)
+        # does not replace the backup with 0.
+        if isinstance(module, nn.BatchNorm2d) and not hasattr(module, "backup_momentum"):
             module.backup_momentum = module.momentum
             module.momentum = 0
 
@@ -18,6 +20,7 @@ def enable_running_stats(model):
     def _enable(module):
         if isinstance(module, nn.BatchNorm2d) and hasattr(module, "backup_momentum"):
             module.momentum = module.backup_momentum
+            del module.backup_momentum
 
     model.apply(_enable)
 
