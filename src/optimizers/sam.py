@@ -1,8 +1,9 @@
 import torch
+from .utils import BaseOptimizerStateMixin
 from typing import Callable
 
 
-class SAM(torch.optim.Optimizer):
+class SAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     # Sharpness-Aware Minimization for Efficiently Improving Generalization.
     def __init__(self, params, base_optimizer, rho=0.05, adaptive=False, **kwargs):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
@@ -69,10 +70,6 @@ class SAM(torch.optim.Optimizer):
                     p=2
             )
         return norm
-
-    def load_state_dict(self, state_dict):
-        super().load_state_dict(state_dict)
-        self.base_optimizer.param_groups = self.param_groups
 
     def get_first_closure_outputs(self):
         return self.to_return

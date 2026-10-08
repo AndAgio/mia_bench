@@ -1,10 +1,11 @@
 import torch
 import random
 import math
+from .utils import BaseOptimizerStateMixin
 from typing import Callable
 
 
-class ESAM(torch.optim.Optimizer):
+class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     def __init__(self, params, base_optimizer, rho=0.05,beta=1.0,gamma=1.0,adaptive=False,**kwargs):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
         # print('Adaptive set to {}'.format(adaptive))

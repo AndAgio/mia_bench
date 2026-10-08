@@ -20,6 +20,26 @@ def enable_running_stats(model):
     model.apply(_enable)
 
 
+class BaseOptimizerStateMixin:
+    """For optimizers wrapping a base optimizer (SAM and its variants), whose state (e.g. the SGD momentum
+    buffers) lives in the base optimizer: checkpoints include it, and loading one keeps the parameter groups
+    shared between wrapper and base optimizer, so that learning rate schedulers keep reaching the base optimizer."""
+
+    def state_dict(self) -> dict:
+        state_dict = super().state_dict()
+        state_dict['base_optimizer'] = self.base_optimizer.state_dict()
+        return state_dict
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        state_dict = dict(state_dict)
+        base_optimizer_state = state_dict.pop('base_optimizer', None)
+        super().load_state_dict(state_dict)
+        # Checkpoints saved before the base optimizer state was included do not have it.
+        if base_optimizer_state is not None:
+            self.base_optimizer.load_state_dict(base_optimizer_state)
+        self.base_optimizer.param_groups = self.param_groups
+
+
 def whether_to_sync(model, sync=False):
     if not sync:
         return model.no_sync()

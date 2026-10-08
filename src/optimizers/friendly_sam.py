@@ -1,9 +1,9 @@
 import torch
-from .utils import get_global_gradient_norm
+from .utils import BaseOptimizerStateMixin, get_global_gradient_norm
 from typing import Callable
 
 
-class FriendlySAM(torch.optim.Optimizer):
+class FriendlySAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     # Friendly Sharpness-Aware Minimization.
     def __init__(
         self,
@@ -111,10 +111,6 @@ class FriendlySAM(torch.optim.Optimizer):
         self.first_step(zero_grad=True)
         closure(inputs, targets, mean=True, backward=True, run_stats=False)
         self.second_step()
-
-    def load_state_dict(self, state_dict: dict):
-        super().load_state_dict(state_dict)
-        self.base_optimizer.param_groups = self.param_groups
 
     def get_first_closure_outputs(self):
         return self.to_return

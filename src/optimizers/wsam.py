@@ -2,10 +2,10 @@ import torch
 import torch.distributed as dist
 from typing import Callable
 
-from .utils import disable_running_stats, enable_running_stats
+from .utils import BaseOptimizerStateMixin, disable_running_stats, enable_running_stats
 
 
-class WSAM(torch.optim.Optimizer):
+class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     # Sharpness-Aware Minimization Revisited: Weighted Sharpness as a Regularization Term.
     def __init__(
         self,
