@@ -193,6 +193,7 @@ class TrainManager(Loggable):
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = LookSAM(params=self.model.parameters(),
                                     base_optimizer=SGD,
+                                    lr=opt_cfg.lr,
                                     rho=0.05,
                                     k=10,
                                     alpha=0.7,
@@ -205,6 +206,7 @@ class TrainManager(Loggable):
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = FriendlySAM(params=self.model.parameters(),
                                         base_optimizer=SGD,
+                                        lr=opt_cfg.lr,
                                         rho=0.05,
                                         sigma=1,
                                         lmbda=0.9,
