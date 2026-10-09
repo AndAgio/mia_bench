@@ -1,6 +1,7 @@
 from typing import Union
 import torch
-from torch.utils.data import DataLoader, ConcatDataset, Subset
+from torch.utils.data import DataLoader, ConcatDataset
+from src.data.helpers import SubsampledDataset
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
 from src.utils.configs import DefenderConfigs, MmdDefenseConfigs, TrainConfigs
@@ -194,7 +195,7 @@ class MmdTrainManager(TrainManager):
                 indices = (targets == target_label).nonzero(as_tuple=True)[0].tolist()
             except AttributeError:
                 indices = [i for i in range(len(dataset)) if dataset[i][1] == target_label]
-        return Subset(dataset, indices)
+        return SubsampledDataset.from_positions(dataset, indices)
 
     def train_with_mmd_distance(self):
         self.reset_epoch_stats(phase='mmd')
@@ -211,12 +212,8 @@ class MmdTrainManager(TrainManager):
             for label in unique_labels:
                 all_val_with_matching_class = MmdTrainManager.get_subset_by_label(validation_data, label.item())
                 freq = torch.count_nonzero(train_labels == label).item()
-
-                #TODO: Refactor also MMD to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
-                #Issue URL: https://github.com/AndAgio/mia_bench/issues/45
-                # assignees: AndAgio
-
-                subset_val = Subset(all_val_with_matching_class, torch.randperm(len(all_val_with_matching_class))[:freq])
+                subset_val = SubsampledDataset.from_positions(all_val_with_matching_class,
+                                                              torch.randperm(len(all_val_with_matching_class))[:freq].tolist())
                 subsets_val.append(subset_val)
             sampled_val = ConcatDataset(subsets_val)
             valid_images, valid_labels, _, _ = next(iter(DataLoader(sampled_val, batch_size=self.train_loader.batch_size, shuffle=False)))

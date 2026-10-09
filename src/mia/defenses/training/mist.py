@@ -3,6 +3,7 @@ import copy
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from src.data.helpers import SubsampledDataset
 from src.utils.configs import DefenderConfigs, MistDefenseConfigs
 from src.mia.defenses.base import BaseDefender
 from src.trainer.train_manager import TrainManager
@@ -210,12 +211,7 @@ class MistTrainManager(TrainManager):
             start_idx = i * subset_size
             end_idx = (i + 1) * subset_size if i < self.mist_configs.num_submodels - 1 else total_size
             subset_indices = indices[start_idx:end_idx]
-
-            #TODO: Refactor to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
-            #Issue URL: https://github.com/AndAgio/mia_bench/issues/44
-            # assignees: AndAgio
-
-            subset_dataset = torch.utils.data.Subset(self.train_loader.dataset, subset_indices)
+            subset_dataset = SubsampledDataset.from_positions(self.train_loader.dataset, subset_indices.tolist())
             self.submodel_datasets[i] = subset_dataset
         self.logger.print_it(f"MIST TrainManager: split training data into {self.mist_configs.num_submodels} subsets for sub-models.")
 
@@ -237,7 +233,7 @@ class MistTrainManager(TrainManager):
         self.submodel_datasets = {}
         for i in range(self.mist_configs.num_submodels):
             subset_indices = indices[i]
-            subset_dataset = torch.utils.data.Subset(self.train_loader.dataset, subset_indices)
+            subset_dataset = SubsampledDataset.from_positions(self.train_loader.dataset, subset_indices.tolist())
             self.submodel_datasets[i] = subset_dataset
         self.logger.print_it(f"MIST TrainManager: stratified split of training data into {self.mist_configs.num_submodels} subsets for sub-models.")
 

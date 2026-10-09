@@ -1,10 +1,11 @@
 import warnings
 import torch
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import Dataset, ConcatDataset, Subset
 from torchvision import transforms
-from typing import List, Sequence, Any
+from typing import List, Sequence, Any, Optional, Union
 import numpy as np
 from collections import defaultdict
+from collections.abc import Mapping
 
 
 def _unpack_item(item):
@@ -64,16 +65,42 @@ class IndexTrackingMixin:
         return list(current.original_indices)
     
 
+def _inherited_original_indices(dataset: Dataset) -> Optional[List[int]]:
+    """Original indices carried by `dataset`, or through torch Subset/ConcatDataset by the datasets it wraps; None for raw data."""
+    if hasattr(dataset, 'original_indices'):
+        return list(dataset.original_indices)
+    if isinstance(dataset, Subset):
+        parent_indices = _inherited_original_indices(dataset.dataset)
+        return None if parent_indices is None else [parent_indices[int(i)] for i in dataset.indices]
+    if isinstance(dataset, ConcatDataset):
+        parts = [_inherited_original_indices(part) for part in dataset.datasets]
+        if all(part is None for part in parts):
+            return None
+        if any(part is None for part in parts):
+            raise ValueError("ConcatDataset mixes datasets with and without tracked original indices.")
+        return [orig for part in parts for orig in part]
+    return None
+
+
 # Notice we inherit from Dataset AND IndexTrackingMixin
 class IndexedDataset(Dataset, IndexTrackingMixin):
     def __init__(self, dataset: Dataset, original_indices: List[int] = None):
         self.dataset = dataset
         if original_indices is not None:
             self.original_indices = original_indices
-        elif hasattr(dataset, 'original_indices'):
-            self.original_indices = dataset.original_indices
         else:
-            self.original_indices = list(range(len(dataset)))
+            inherited = _inherited_original_indices(dataset)
+            if inherited is None:
+                # Fresh indices are only safe for raw data. A wrapper whose items already carry an original index
+                # (x, y, orig_idx, ...) but that does not expose them would give its samples a second, different index.
+                first = dataset[0] if len(dataset) > 0 else None
+                if isinstance(first, (tuple, list)) and len(first) >= 3:
+                    raise ValueError(
+                        f"{type(dataset).__name__} yields tracked samples (x, y, orig_idx, ...) but does not expose "
+                        f"'original_indices'; build it with SubsampledDataset/MergedDataset instead."
+                    )
+                inherited = list(range(len(dataset)))
+            self.original_indices = inherited
         self._orig_to_local = {orig: local for local, orig in enumerate(self.original_indices)}
 
     def __len__(self) -> int:
@@ -194,6 +221,13 @@ class SubsampledDataset(Dataset, IndexTrackingMixin):
             self.original_indices = [i for i in self.original_indices if i not in missing]
 
         self._orig_to_local = {orig: local for local, orig in enumerate(self.original_indices)}
+
+    @classmethod
+    def from_positions(cls, dataset: Dataset, positions: Sequence[int], strict: bool = True) -> 'SubsampledDataset':
+        """Subsample by positions in `dataset` (its local indices) instead of by original indices."""
+        if not hasattr(dataset, 'original_indices'):
+            dataset = IndexedDataset(dataset)
+        return cls(dataset, [dataset.original_indices[int(position)] for position in positions], strict=strict)
 
     def __len__(self) -> int:
         return len(self.local_to_parent_local)
@@ -396,12 +430,21 @@ class DatasetSplitter:
         return chunks
 
     @staticmethod
-    def split_by_metric(dataset, metrics: Sequence[float], proportions: Sequence[float], strategy: str = 'contiguous', seed: int = 42):
+    def split_by_metric(dataset, metrics: Union[Sequence[float], Mapping[int, float]], proportions: Sequence[float], strategy: str = 'contiguous', seed: int = 42):
         """
         Splits dataset based on a metric (e.g., memorization scores).
+        metrics: one score per sample in dataset order, or a {original index: score} map (e.g. precomputed scores),
+        aligned to the samples through dataset.original_indices.
         strategy="contiguous": Chunk 1 gets top scores, chunk 2 gets next, etc.
         strategy="balanced": All chunks get a similar distribution/histogram of scores.
         """
+        if isinstance(metrics, Mapping):
+            missing = [orig for orig in dataset.original_indices if orig not in metrics]
+            if missing:
+                raise ValueError(f"No metric for {len(missing)} samples. First 10 original indices: {missing[:10]}")
+            metrics = [metrics[orig] for orig in dataset.original_indices]
+        elif len(metrics) != len(dataset):
+            raise ValueError(f"Expected one metric per sample, got {len(metrics)} metrics for {len(dataset)} samples.")
         np.random.seed(seed)
         metrics = np.array(metrics)
         sorted_local_indices = np.argsort(metrics)[::-1] # Descending order (High mem first)

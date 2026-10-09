@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.data import get_dataset_mean_std
+from src.data.helpers import IndexedDataset
 from src.mia.attacks.label_only.unsupervised_boundary import UnsupervisedBoundaryMIA
 from src.mia.attacks.label_only.transfer import TransferMIA
 from src.utils.configs import UnsupervisedBoundaryAttackConfig
@@ -68,7 +69,8 @@ class BoundaryCalibrationTests(unittest.TestCase):
         attack.logger = Mock()
         model = torch.nn.Sequential(torch.nn.BatchNorm1d(2), torch.nn.Identity())
         attack.defender_model = model.train()
-        dataset = [(torch.tensor([0., 5.]), 0, 0, 0), (torch.tensor([5., 0.]), 1, 1, 1)]
+        # Shadow datasets are tracked (they carry original indices), like the MergedDataset the attack gets in practice.
+        dataset = IndexedDataset(torch.utils.data.TensorDataset(torch.tensor([[0., 5.], [5., 0.]]), torch.tensor([0, 1])))
         attack.shadow_manager = Mock()
         attack.shadow_manager.get_dataset.return_value = dataset
         attack.get_device = lambda _: torch.device('cpu')

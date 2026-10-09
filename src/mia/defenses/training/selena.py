@@ -2,8 +2,8 @@ from typing import Union, Callable
 import time
 import numpy as np
 import torch
-from torch.utils.data import TensorDataset, DataLoader, Subset
-from src.data.helpers import MultiDatasets, TargetOverrideDataset
+from torch.utils.data import DataLoader
+from src.data.helpers import MultiDatasets, SubsampledDataset, TargetOverrideDataset
 from src.utils.configs import DefenderConfigs, SelenaDefenseConfigs, TrainConfigs
 from src.mia.defenses.base import BaseDefender
 from src.mia.helpers.shadow_models_manager import ShadowModelsManager
@@ -78,7 +78,7 @@ class SelenaDefender(BaseDefender):
         else:
             return self.trained_model
 
-    def gather_dataset_for_distillation(self, train_configs: TrainConfigs) -> TensorDataset:
+    def gather_dataset_for_distillation(self, train_configs: TrainConfigs) -> MultiDatasets:
         start = time.time()
         device = self.get_device(dev_str=train_configs.device)
         dataset_to_return = MultiDatasets()
@@ -96,7 +96,7 @@ class SelenaDefender(BaseDefender):
             model = self.split_model_manager.get(index=k)
             model = model.to(device)
             model.eval()
-            dataloader = DataLoader(Subset(train_dataset, indices=excluded_indices), batch_size=train_configs.batch_size, shuffle=False)
+            dataloader = DataLoader(SubsampledDataset.from_positions(train_dataset, excluded_indices), batch_size=train_configs.batch_size, shuffle=False)
             all_outputs = []
             with torch.no_grad():
                 for batch_idx, (samples, _, _, _) in enumerate(dataloader):
@@ -152,15 +152,10 @@ class SplitDataManager:
         np.put_along_axis(self.exclusion_mask, self.exclusion_matrix, True, axis=1)
         self.logger.print_it("Selena Defender: data split into K={} models with L={} exclusions per sample.".format(self.selena_configs.K, self.selena_configs.L))
 
-    def get_dataset_for_model(self, model_index: int) -> TensorDataset:
+    def get_dataset_for_model(self, model_index: int) -> MultiDatasets:
         dataset_to_return = MultiDatasets()
         indices = np.nonzero(~self.exclusion_mask[:, model_index])[0]
-
-        #TODO: Refactor selena as well to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
-        #Issue URL: https://github.com/AndAgio/mia_bench/issues/46
-        # assignees: AndAgio
-
-        train_dataset = Subset(self.dataset.get('train'), indices=indices)
+        train_dataset = SubsampledDataset.from_positions(self.dataset.get('train'), indices)
         dataset_to_return.add(train_dataset, id='train')
         try:
             val_dataset = self.dataset.get('val')
