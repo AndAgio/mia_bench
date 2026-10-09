@@ -69,13 +69,21 @@ class RelaxLossTrainManager(TrainManager):
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
         if type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
+            # The branch of Algorithm 1 is decided once per step, by the first call, which all of them make at the current
+            # weights on the whole batch. The later calls run at perturbed weights and, with ESAM, on the selected samples
+            # only, whose loss is typically higher than the one of the batch: deciding again there would often switch to
+            # gradient descent while the batch loss is below alpha.
+            branch = None
             def closure(inputs, targets, mean=True, backward=True, run_stats=True):
+                nonlocal branch
                 if run_stats:
                     enable_running_stats(self.model)
                 else:
                     disable_running_stats(self.model)
                 outputs = self.model(inputs)
-                relaxed_loss = self.relax_loss(outputs=outputs, targets=targets)
+                if branch is None:
+                    branch = self.relax_branch(outputs=outputs, targets=targets)
+                relaxed_loss = self.relax_loss(outputs=outputs, targets=targets, branch=branch)
                 if mean:
                     relaxed_loss = relaxed_loss.mean()
                 if backward:
@@ -101,20 +109,28 @@ class RelaxLossTrainManager(TrainManager):
         self.logger.print_it_same_line(message, console_only=True)
 
 
-    def relax_loss(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def relax_branch(self, outputs: torch.Tensor, targets: torch.Tensor) -> str:
+        # Branch of Algorithm 1 for a batch with these outputs: gradient descent while the batch loss is not below the
+        # target loss, otherwise gradient ascent on even epochs and posterior flattening on odd ones.
+        if F.cross_entropy(outputs.detach(), targets).item() >= self.relax_alpha:
+            return 'descent'
+        return 'ascent' if self.epoch % 2 == 0 else 'flatten'
+
+    def relax_loss(self, outputs: torch.Tensor, targets: torch.Tensor, branch: str = None) -> torch.Tensor:
         # Algorithm 1 of the paper, with the per-modality techniques of its App. B.3. Returns per-sample terms whose
         # batch mean is the objective of the current step, so that optimizers working on per-sample losses (e.g., ESAM)
         # can be used as well. The cross-entropy is computed here instead of with self.criterion, whose reduction is
-        # changed by setup_optimizer depending on the optimizer in use.
+        # changed by setup_optimizer depending on the optimizer in use. The branch of Algorithm 1 is the one of these
+        # outputs (see relax_branch), unless given.
         # Following the paper, this differs from the official code in that: epochs are counted from 1 (the official code
         # starts with a gradient ascent epoch), the soft labels are constants (the official code does not detach them),
         # and, for image data, the flattened samples do not also get gradient ascent (as in the official code).
         loss = F.cross_entropy(outputs, targets, reduction='none')
-        if loss.mean().item() >= self.relax_alpha:
-            # Gradient descent while the batch loss is not below the target loss.
+        if branch is None:
+            branch = self.relax_branch(outputs=outputs, targets=targets)
+        if branch == 'descent':
             return loss
-        if self.epoch % 2 == 0:
-            # Gradient ascent on even epochs.
+        if branch == 'ascent':
             return -loss
         # Posterior flattening on odd epochs: keep the ground-truth score and spread the rest evenly over the other
         # classes (Sec. 4.2), with the ground-truth score clamped to relax_upper (App. B.3, non-image data).

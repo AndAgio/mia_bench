@@ -11,7 +11,8 @@ quality of the defense:
   2. steps: with every optimizer, one train_step per branch (gradient descent, gradient ascent, posterior flattening,
      and flattening of a batch without incorrect predictions) takes the expected branch, hands the optimizer the
      gradient of the paper's objective, stays finite and decreases the objective of that branch;
-  3. train: a full TrainManager.train() run (val/test, checkpoints, best model) stays finite;
+  3. train: a full TrainManager.train() run (val/test, checkpoints, best model) stays finite, and every call of
+     relax_loss in a step takes the branch of the whole batch (ESAM's selected samples must not switch it);
   4. resume: training stopped halfway and resumed restarts from the right epoch, keeping the phase parity.
 Exits with status 1 if any check fails.
 """
@@ -157,22 +158,44 @@ def make_manager(args, model, data, optimizer, variant, alpha, epochs, folder, r
     return manager
 
 
-def record_branches(manager: RelaxLossTrainManager) -> list:
-    # Wraps relax_loss to log (epoch, branch it should take, whether its output is finite) for every call.
-    calls = []
-    relax_loss = manager.relax_loss
+def batch_branch(manager: RelaxLossTrainManager, outputs: torch.Tensor, targets: torch.Tensor) -> str:
+    # Branch of Algorithm 1 for a batch with these outputs.
+    if F.cross_entropy(outputs.detach(), targets).item() >= manager.relax_alpha:
+        return 'descent'
+    return 'ascent' if manager.epoch % 2 == 0 else 'flatten'
 
-    def wrapped(outputs, targets):
-        out = relax_loss(outputs=outputs, targets=targets)
-        if F.cross_entropy(outputs.detach(), targets).item() >= manager.relax_alpha:
-            branch = 'descent'
-        else:
-            branch = 'ascent' if manager.epoch % 2 == 0 else 'flatten'
-        calls.append((manager.epoch, branch, bool(torch.isfinite(out).all())))
+
+def record_branches(manager: RelaxLossTrainManager) -> list:
+    # Wraps train_step and relax_loss to log (epoch, step, branch the step should take, branch relax_loss took, whether
+    # its output is finite) for every call of relax_loss. The branch of a step is the one of its first call, which all
+    # optimizers make at the current weights on the whole batch: the later calls of SAM-like optimizers run at perturbed
+    # weights and, with ESAM, on the selected samples only, and must keep it.
+    calls, steps = [], []
+    train_step, relax_loss = manager.train_step, manager.relax_loss
+
+    def wrapped_step(*args, **kwargs):
+        steps.append(None)
+        return train_step(*args, **kwargs)
+
+    def wrapped_loss(outputs, targets, branch=None):
+        out = relax_loss(outputs=outputs, targets=targets, branch=branch)
+        taken = batch_branch(manager, outputs, targets) if branch is None else branch
+        if steps[-1] is None:
+            steps[-1] = batch_branch(manager, outputs, targets)
+        calls.append((manager.epoch, len(steps), steps[-1], taken, bool(torch.isfinite(out).all())))
         return out
 
-    manager.relax_loss = wrapped
+    manager.train_step, manager.relax_loss = wrapped_step, wrapped_loss
     return calls
+
+
+def branch_mismatches(calls: list) -> list:
+    # Steps with a call of relax_loss that took another branch than the one of the step.
+    mismatches = {}
+    for epoch, step, expected, taken, _ in calls:
+        if taken != expected:
+            mismatches.setdefault(step, (epoch, expected, []))[2].append(taken)
+    return [(step, *info) for step, info in mismatches.items()]
 
 
 def capture_gradient(manager: RelaxLossTrainManager) -> dict:
@@ -279,10 +302,10 @@ def check_steps(args, model: nn.Module, data: MultiDatasets, optimizer: str, var
 
             objective_after = reference_relax_loss(train_mode_outputs(manager.model, inputs), targets, epoch, alpha,
                                                    upper, incorrect_only, ref_outputs=outputs_before).item()
-            taken = sorted({call[1] for call in calls})
+            taken = sorted({call[3] for call in calls})
             if taken != [branch]:
                 errors.append(f"{where}: expected branch '{branch}', relax_loss took {taken}")
-            if not all(call[2] for call in calls):
+            if not all(call[4] for call in calls):
                 errors.append(f"{where}: relax_loss returned non-finite values")
             if captured.get('per_sample_shape', (len(targets),)) != (len(targets),):
                 errors.append(f"{where}: closure with mean=False returned shape {captured['per_sample_shape']}, expected one loss per sample")
@@ -311,11 +334,17 @@ def check_train(args, data: MultiDatasets, optimizer: str, variant: str, folder:
         best_model = manager.train(return_best_model=True)
         history = manager.train_stats_tracker.history
         train_losses = [history[e].stages['train'].metrics['loss'] for e in sorted(history)]
-        info = {'losses': train_losses, 'branches': sorted({call[1] for call in calls})}
+        info = {'losses': train_losses, 'branches': sorted({call[3] for call in calls})}
         if sorted(history) != list(range(1, args.epochs + 1)):
             errors.append(f"train: epochs in history are {sorted(history)}")
-        if not all(call[2] for call in calls):
+        if not all(call[4] for call in calls):
             errors.append("train: relax_loss returned non-finite values")
+        mismatches = branch_mismatches(calls)
+        if mismatches:
+            step, epoch, expected, taken = mismatches[0]
+            errors.append(f"train: in {len(mismatches)} of {len({call[1] for call in calls})} steps a call of relax_loss "
+                          f"took another branch than the one of the batch, e.g. step {step} (epoch {epoch}) should take "
+                          f"'{expected}' and took {taken}")
         if not all(torch.isfinite(torch.tensor(train_losses))):
             errors.append(f"train: non-finite training losses {train_losses}")
         if not (params_finite(best_model) and params_finite(manager.model)):
