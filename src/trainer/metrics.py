@@ -7,8 +7,10 @@ TensorOrSeq = Union[torch.Tensor, Sequence[torch.Tensor]]
 
 
 def multiclass_accuracy_from_logits(preds: torch.Tensor, targets: torch.Tensor) -> float:
-    """preds: [B, C] logits; targets: [B] class ids"""
+    """preds: [B, C] logits; targets: [B] class ids or [B, C] soft/one-hot labels (compared via argmax)"""
     pred_cls = preds.argmax(dim=1)
+    if targets.shape == preds.shape:
+        targets = targets.argmax(dim=1)
     return float((pred_cls == targets.view(-1)).float().mean().item())
 
 

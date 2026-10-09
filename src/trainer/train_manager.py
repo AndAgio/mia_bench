@@ -638,6 +638,7 @@ class TrainManager(Loggable):
     def build_message_for_stage_end(self, stage_summary: StageSummary) -> str:
         message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
         message += ' {}: '.format(stage_summary.stage.upper())
+        metrics = {}
         if is_rank0():
             metrics = stage_summary.metrics
         message = self.append_metrics(message, metrics)
@@ -654,6 +655,7 @@ class TrainManager(Loggable):
         block = int(round(bar_length * progress))
         message += '[{}]'.format('=' * block + ' ' * (bar_length - block))
         message += '| {}: '.format(self.epoch_stats_tracker.get_stage().upper())
+        metrics = {}
         if is_rank0():
             metrics = self.epoch_stats_tracker._require_active_stage().current_avgs()
         message = self.append_metrics(message, metrics)
