@@ -86,6 +86,10 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='momentum')
         parser.add_argument('--defender_nesterov', action="store_true", default=False,
                                 help='nesterov')
+        parser.add_argument('--defender_looksam_k', type=int, default=None,
+                                help='LookSAM: number of steps between two SAM steps (default: 5)')
+        parser.add_argument('--defender_looksam_alpha', type=float, default=None,
+                                help='LookSAM: norm of the reused sharpness component relative to the gradient norm (default: 0.3)')
         
         # Shared MIA parameters
         parser.add_argument("--defender_mode", default="none",
@@ -361,6 +365,10 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='momentum')
         parser.add_argument('--attacker_nesterov', action="store_true", default=False,
                                 help='nesterov')
+        parser.add_argument('--attacker_looksam_k', type=int, default=None,
+                                help='LookSAM: number of steps between two SAM steps (default: 5)')
+        parser.add_argument('--attacker_looksam_alpha', type=float, default=None,
+                                help='LookSAM: norm of the reused sharpness component relative to the gradient norm (default: 0.3)')
         # Differential Privacy parameters for attacker model
         # parser.add_argument("--att_use_dp", action="store_true", default=False,
         #                         help="enable Differential Privacy for attacker model training",)

@@ -394,8 +394,7 @@ def main():
     stuck = [f"{optimizer}/{variant}" for optimizer, variant, relaxed, ok in rows if ok and not relaxed]
     if stuck:
         print(f"WARNING: no batch loss got below alpha in {args.epochs} epochs for {', '.join(stuck)}, so the train check "
-              f"only ran the descent branches for them (the steps check covers all branches anyway). Slow optimizer? "
-              f"Note that LookSAM currently runs without momentum.")
+              f"only ran the descent branches for them (the steps check covers all branches anyway). Slow optimizer?")
     if failures:
         print(f"\n{len(failures)} FAILED CHECK(S):")
         for failure in failures:

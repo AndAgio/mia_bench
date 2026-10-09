@@ -597,7 +597,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                 lr=settings.defender_lr,
                                                 weight_decay=settings.defender_weight_decay,
                                                 momentum=settings.defender_momentum,
-                                                nesterov=settings.defender_nesterov,)
+                                                nesterov=settings.defender_nesterov,
+                                                extra={'looksam_k': settings.defender_looksam_k,
+                                                       'looksam_alpha': settings.defender_looksam_alpha},)
     defender_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='defender')
     defender_train_configs = TrainConfigs(optimizer_config=defender_optimizer_configs,
                                         scheduler_config=defender_scheduler_configs,
@@ -719,7 +721,9 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     lr=settings.attacker_lr,
                                                     weight_decay=settings.attacker_weight_decay,
                                                     momentum=settings.attacker_momentum,
-                                                    nesterov=settings.attacker_nesterov,)
+                                                    nesterov=settings.attacker_nesterov,
+                                                    extra={'looksam_k': settings.attacker_looksam_k,
+                                                           'looksam_alpha': settings.attacker_looksam_alpha},)
     attacker_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='attacker')
     attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
                                             scheduler_config=attacker_scheduler_configs,

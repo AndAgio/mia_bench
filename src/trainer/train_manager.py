@@ -191,17 +191,19 @@ class TrainManager(Loggable):
                                 weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name.split('_')[-1] == 'looksam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
+            # k and alpha keep the LookSAM defaults unless set
+            looksam_settings = {name: opt_cfg.extra[f'looksam_{name}'] for name in ['k', 'alpha']
+                                if opt_cfg.extra.get(f'looksam_{name}') is not None}
             self.optimizer = LookSAM(params=self.model.parameters(),
                                     base_optimizer=SGD,
                                     lr=opt_cfg.lr,
                                     rho=0.05,
-                                    k=10,
-                                    alpha=0.7,
                                     adaptive=adaptive,
-                                    use_gc=False,
                                     perturb_eps=1e-12,
+                                    momentum=opt_cfg.momentum,
                                     nesterov=opt_cfg.nesterov,
-                                    weight_decay=opt_cfg.weight_decay)
+                                    weight_decay=opt_cfg.weight_decay,
+                                    **looksam_settings)
         elif opt_cfg.name.split('_')[-1] == 'friendlysam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = FriendlySAM(params=self.model.parameters(),
