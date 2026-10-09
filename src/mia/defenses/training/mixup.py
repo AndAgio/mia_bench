@@ -84,9 +84,13 @@ class MixupTrainManager(TrainManager):
             loss.backward()
             self.optimizer.step()
 
+        # Train stats on the clean inputs. The model is in train mode, so freeze the BN running stats: otherwise this
+        # pass would update them with the clean batch (only with some optimizers), changing the trained model.
+        disable_running_stats(self.model)
         with torch.no_grad():
             outputs = self.model(inputs)
-        
+        enable_running_stats(self.model)
+
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
         
