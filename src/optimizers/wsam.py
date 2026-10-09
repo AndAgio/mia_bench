@@ -48,7 +48,7 @@ class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
                 if torch.distributed.is_initialized():
                     dist.all_reduce(p.grad, op=dist.ReduceOp.AVG)
         if self.max_norm is not None:
-            torch.nn.utils.clip_grad_norm_(self.param_groups, self.max_norm)
+            torch.nn.utils.clip_grad_norm_([p for group in self.param_groups for p in group["params"]], self.max_norm)
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is None:
@@ -68,7 +68,7 @@ class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
                 p.add_(self.state[p]["e_w"], alpha=-1.0)  # get back to "w" from "w + e(w)"
 
         if self.max_norm is not None:
-            torch.nn.utils.clip_grad_norm_(self.param_groups, self.max_norm)
+            torch.nn.utils.clip_grad_norm_([p for group in self.param_groups for p in group["params"]], self.max_norm)
 
         for group in self.param_groups:
             for p in group["params"]:

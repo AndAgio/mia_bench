@@ -3,13 +3,14 @@ import copy
 from collections import defaultdict
 import torch
 import torch.nn as nn
+from torch.nn.modules.batchnorm import _BatchNorm
 
 
 def disable_running_stats(model):
     def _disable(module):
-        # Only back up the momentum once, so that disabling twice in a row (e.g. ESAM's sharpness and update passes)
-        # does not replace the backup with 0.
-        if isinstance(module, nn.BatchNorm2d) and not hasattr(module, "backup_momentum"):
+        # Every BatchNorm type (1d, 2d, 3d, synchronized). Only back up the momentum once, so that disabling twice in
+        # a row (e.g. ESAM's sharpness and update passes) does not replace the backup with 0.
+        if isinstance(module, _BatchNorm) and not hasattr(module, "backup_momentum"):
             module.backup_momentum = module.momentum
             module.momentum = 0
 
@@ -18,7 +19,7 @@ def disable_running_stats(model):
 
 def enable_running_stats(model):
     def _enable(module):
-        if isinstance(module, nn.BatchNorm2d) and hasattr(module, "backup_momentum"):
+        if isinstance(module, _BatchNorm) and hasattr(module, "backup_momentum"):
             module.momentum = module.backup_momentum
             del module.backup_momentum
 
