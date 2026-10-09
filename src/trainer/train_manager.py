@@ -28,7 +28,9 @@ SAM_RHO, ASAM_RHO = 0.05, 0.5
 
 
 def sam_setting(opt_cfg: OptimizerConfigs, name: str, default: Any) -> Any:
-    """Setting of the SAM-like optimizers given on the command line (see SAM_SETTINGS), or the default if not given."""
+    """Setting of the SAM-like optimizers given on the command line (see SAM_SETTINGS), or the default if not given.
+    The defaults are starting points to tune per dataset, model and defense: see the Optimizers section of the README,
+    which lists where each one comes from."""
     value = opt_cfg.extra.get(name)
     return default if value is None else value
 
@@ -181,7 +183,7 @@ class TrainManager(Loggable):
                                 base_optimizer=SGD,
                                 lr=opt_cfg.lr,
                                 rho=sam_setting(opt_cfg, 'sam_rho', ASAM_RHO if adaptive else SAM_RHO),
-                                beta=sam_setting(opt_cfg, 'esam_beta', 1.0),
+                                beta=sam_setting(opt_cfg, 'esam_beta', 0.6),
                                 gamma=sam_setting(opt_cfg, 'esam_gamma', 0.5),
                                 adaptive=adaptive,
                                 eta=sam_setting(opt_cfg, 'asam_eta', 0.01),

@@ -31,9 +31,13 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         #first order sum 
         grad_norm = self._grad_norm()
         for group in self.param_groups:
-            scale = group["rho"] / (grad_norm + 1e-7) / self.beta
+            # Stochastic weight perturbation, Eq. 5 of the paper: a = m * eps / beta, with eps SAM's perturbation over
+            # all the weights and m the mask of the chosen tensors, so that the expected perturbation is SAM's. Only the
+            # gradients of the chosen tensors are computed, and their norm is about sqrt(beta) times the full one, hence
+            # the division by sqrt(beta). The official code divides by beta, which gives an expected perturbation
+            # 1 / sqrt(beta) times SAM's.
+            scale = group["rho"] / (grad_norm + 1e-7) / math.sqrt(self.beta)
             for p in group["params"]:
-                p.requires_grad = True 
                 if p.grad is None: continue
                 #original sam 
                 # e_w = p.grad * scale.to(p)
@@ -55,9 +59,6 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
                 p.sub_(self.state[p]["e_w"])  # get back to "w" from "w + e(w)"
                 self.state[p]["e_w"] = 0
 
-                if random.random() > self.beta:
-                    p.requires_grad = False
-
         self.base_optimizer.step()  # do the actual "sharpness-aware" update
 
         if zero_grad: self.zero_grad()
@@ -76,10 +77,25 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         '''
         closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
 
-        loss, outputs = closure(*args, mean=False, backward=False, run_stats=True)
-        l_before = loss.clone().detach()
-        self.to_return = loss.mean(), outputs
-        loss.mean().backward()
+        # Stochastic weight perturbation: each parameter tensor (the paper's "basic parameter unit", Appendix A.4) is
+        # perturbed with probability beta, at least one of them. The others are left out of the first backward pass,
+        # which is where the computation is saved, with requires_grad=False as in the official code, but only during
+        # that pass: the official code chooses them at the end of the previous step and leaves them frozen in between,
+        # and turns requires_grad on for every parameter, including those frozen on purpose.
+        trainable = [p for group in self.param_groups for p in group["params"] if p.requires_grad]
+        skipped = [p for p in trainable if random.random() > self.beta]
+        if skipped and len(skipped) == len(trainable):
+            skipped.pop(random.randrange(len(skipped)))
+        for p in skipped:
+            p.requires_grad_(False)
+        try:
+            loss, outputs = closure(*args, mean=False, backward=False, run_stats=True)
+            l_before = loss.clone().detach()
+            self.to_return = loss.mean(), outputs
+            loss.mean().backward()
+        finally:
+            for p in skipped:
+                p.requires_grad_(True)
         self.first_step(zero_grad=True)
         if l_before.dim() == 0:
             # A loss of the whole batch (e.g. MMD, a function of the set of outputs) has no per-sample values to

@@ -8,7 +8,7 @@ This repository provides a **modular, scalable, and state‑of‑the‑art frame
 
 - **Model & dataset flexibility**: easily add new architectures and datasets
 - **Explicit attacker/defender modeling** with realistic knowledge assumptions
-- **Support for modern optimizers**, including SAM, ASAM, GSAM
+- **Support for modern optimizers**: SAM, ESAM, WSAM, LookSAM and F-SAM, each also with ASAM's adaptive perturbation
 - **Highly modular attack design** through attacker, defender, and shadow managers
 - **Fast experimentation** with optimized shadow‑model training
 - **Distributed training and Apple Silicon support**
@@ -22,7 +22,7 @@ This repository provides a **modular, scalable, and state‑of‑the‑art frame
 models/        # Model definitions (defender and attacker)
 data/          # Dataset wrappers
 mia/           # MIA implementations
-optimizers/    # SAM, ASAM, GSAM, ...
+optimizers/    # SAM, ESAM, WSAM, LookSAM, F-SAM (and their adaptive versions)
 trainer/       # Module containing code to train defender and attacker models
 utils/         # Helper functions and classes
 outs/          # Outputs
@@ -327,6 +327,68 @@ Notes:
 - LiRA and other heavy attacks typically require many shadow models and larger shadow datasets — expect increased runtime and GPU memory usage.
 
 
+### Optimizers
+
+`--defender_optimizer` sets the optimizer of the defended model, and `--attacker_optimizer`
+the one of the models the attacker trains (e.g. its shadow models). Besides `sgd` and
+`adam`, five sharpness-aware variants are available:
+
+- `sam`: SAM ([Foret et al., ICLR 2021](https://arxiv.org/abs/2010.01412))
+- `esam`: ESAM ([Du et al., ICLR 2022](https://arxiv.org/abs/2110.03141))
+- `wsam`: WSAM ([Yue et al., KDD 2023](https://arxiv.org/abs/2305.15817))
+- `looksam`: LookSAM ([Liu et al., CVPR 2022](https://arxiv.org/abs/2203.02714))
+- `friendlysam`: F-SAM ([Li et al., CVPR 2024](https://arxiv.org/abs/2403.12350))
+
+Each one also has an `adaptive_` version (e.g. `adaptive_esam`) that uses the
+scale-invariant perturbation of ASAM ([Kwon et al., ICML 2021](https://arxiv.org/abs/2102.11600));
+`adaptive_sam` is ASAM itself. All of them use SGD as base optimizer, with the
+`--defender_lr`, `--defender_momentum`, `--defender_nesterov` and `--defender_weight_decay`
+settings (`--attacker_...` for the attacker).
+
+Their settings are command line options, listed here without their `--defender_` or
+`--attacker_` prefix. The defender and the attacker are set separately, e.g.
+`--defender_sam_rho 0.1 --attacker_sam_rho 0.05`.
+
+| Setting | Applies to | Default | Source of the default |
+| --- | --- | --- | --- |
+| `sam_rho` | the non-adaptive variants | 0.05 | SAM, CIFAR-10 (0.1 for CIFAR-100) |
+| `sam_rho` | `adaptive_*` | 0.5 | ASAM, CIFAR-10 (1.0 for CIFAR-100) |
+| `asam_eta` | `adaptive_*` | 0.01 | ASAM |
+| `esam_beta` | `esam` | 0.6 | ESAM, ResNet-18 (0.5 for WideResNet-28-10); 1 turns stochastic weight perturbation off |
+| `esam_gamma` | `esam` | 0.5 | ESAM, ResNet-18 and WideResNet-28-10; 1 turns data selection off |
+| `wsam_gamma` | `wsam` | 0.9 | WSAM's official code; the paper tunes it per model (0.88 for ResNet-18 on CIFAR-10) |
+| `looksam_k` | `looksam` | 5 | LookSAM |
+| `looksam_alpha` | `looksam` | 0.3 | Our CIFAR-10 test, see below; the paper's 0.7 was tuned for ViTs with ρ = 1 |
+| `friendlysam_sigma` | `friendlysam` | 1 | F-SAM |
+| `friendlysam_lambda` | `friendlysam` | 0.9 | F-SAM's official code; the paper's best is 0.6 for ResNet-18 and 0.9 for WideResNet-28-10 |
+
+**These defaults are starting points, not tuned values.** They come from the papers'
+CIFAR experiments, mostly with ResNets, or from our own short test where noted. No paper
+covers the tabular datasets (Purchase, Texas, News) or the defenses of this benchmark,
+several of which change the training loss (e.g. RelaxLoss, mixup, MMD). These settings
+change how much a model overfits, which is what membership inference exploits, so they
+can change the privacy results on their own: a setting under which the model barely
+learns looks like a strong defense. If SAM-like optimizers matter to your results:
+
+- tune their settings for your dataset, model and defense, giving every optimizer you
+  compare the same tuning budget;
+- check that the model reaches its accuracy plateau before reading the privacy metrics,
+  and report test accuracy and the settings used together with them.
+
+Two cases we observed (ResNet-18, 5,000 CIFAR-10 training images, one seed):
+
+- ESAM's data selection trains each step on the half of the batch whose loss rises most
+  under the perturbation. It learned much more slowly than without it (`esam_gamma` 1):
+  38% against 73% train accuracy after 12 epochs. After 50 epochs it still reached a lower
+  test accuracy (53% against 60%) with a larger train–test gap. Pass
+  `--defender_esam_gamma 1` to turn it off.
+- LookSAM with the paper's `looksam_alpha` of 0.7 barely trained (35–40% train accuracy
+  after 12 epochs), while 0.3 behaved closest to SAM.
+
+ESAM's stochastic weight perturbation (`esam_beta` below 1) leaves some parameters out of
+a backward pass, which has not been tested with multi-GPU (DDP) training: pass
+`--defender_esam_beta 1` when training on several GPUs.
+
 ### Options and defaults
 The full CLI options and defaults can be found in [src/utils/settings.py](src/utils/settings.py), while the default folders and paths are in [src/utils/variables.py](src/utils/variables.py).
 
@@ -337,6 +399,7 @@ Below are the most commonly used flags. See `src/utils/settings.py` for the full
 - `--defender_model`: defender architecture (resnet18, resnet50, vgg16, mobile_small, etc.)
 - `--defender_epochs`, `--defender_batch_size`: defender training schedule and batch size
 - `--defender_lr`, `--defender_lr_sched`: defender learning rate and scheduler
+- `--defender_optimizer`, `--attacker_optimizer`: optimizer (`sgd`, `adam`, `sam`, `esam`, ...; see [Optimizers](#optimizers) for the SAM variants and their settings)
 - `--defender_use_dp`, `--defender_dp_noise_multiplier`, `--defender_dp_max_grad_norm`, `--defender_dp_clip_per_layer`: differential privacy training options for the defender
 - `--attacker_model`, `--attacker_epochs`, `--attacker_batch_size`, `--attacker_lr`: attacker model and training settings
 - `--attacker_mode`: attack strategy (`quantile`, `lira`, `neural_feat`, `rmia_loss`, `pmia_confidence`, ...)

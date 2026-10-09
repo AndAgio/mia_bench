@@ -87,13 +87,14 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_nesterov', action="store_true", default=False,
                                 help='nesterov')
         # Settings of the SAM-like optimizers: unset (None) means the default given in the help, so that setting a
-        # new option does not change the hashes of existing runs.
+        # new option does not change the hashes of existing runs. The defaults are starting points, mostly from the
+        # papers' CIFAR experiments, to tune per dataset, model and defense: see the Optimizers section of the README.
         parser.add_argument('--defender_sam_rho', type=float, default=None,
                                 help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05, or 0.5 for the adaptive versions)')
         parser.add_argument('--defender_asam_eta', type=float, default=None,
                                 help='Adaptive versions (ASAM): eta in the normalization |w| + eta of the weights, for stability (default: 0.01)')
         parser.add_argument('--defender_esam_beta', type=float, default=None,
-                                help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 1.0, i.e. all of them)')
+                                help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 0.6, the paper value for ResNet-18; 1.0 switches it off)')
         parser.add_argument('--defender_esam_gamma', type=float, default=None,
                                 help='ESAM: fraction of the batch used for the update, the samples whose loss the perturbation increases the most (default: 0.5)')
         parser.add_argument('--defender_wsam_gamma', type=float, default=None,
@@ -388,7 +389,7 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_asam_eta', type=float, default=None,
                                 help='Adaptive versions (ASAM): eta in the normalization |w| + eta of the weights, for stability (default: 0.01)')
         parser.add_argument('--attacker_esam_beta', type=float, default=None,
-                                help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 1.0, i.e. all of them)')
+                                help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 0.6, the paper value for ResNet-18; 1.0 switches it off)')
         parser.add_argument('--attacker_esam_gamma', type=float, default=None,
                                 help='ESAM: fraction of the batch used for the update, the samples whose loss the perturbation increases the most (default: 0.5)')
         parser.add_argument('--attacker_wsam_gamma', type=float, default=None,
