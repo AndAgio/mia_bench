@@ -451,6 +451,11 @@ class SelenaDefenseConfigs:
     K: int = 25
     L: int = 10
 
+    def __post_init__(self):
+        # Every sample needs at least one teacher that never saw it (L >= 1) and one model trained on it (L < K).
+        if not 1 <= self.L < self.K:
+            raise ValueError(f"Selena requires 1 <= L < K, got K={self.K} and L={self.L}")
+
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class MistDefenseConfigs:
     strategy: Literal["mist"] = "mist"

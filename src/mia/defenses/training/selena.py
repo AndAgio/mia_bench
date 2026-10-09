@@ -21,6 +21,7 @@ class SelenaDefender(BaseDefender):
         self.selena_configs = defender_configs.defense
         self.split_data_manager = SplitDataManager(dataset=self.dataset,
                                                     selena_configs=self.selena_configs,
+                                                    seed=defender_configs.train.seed,
                                                     logger=self.logger)
         self.split_model_manager = ShadowModelsManager(n_models=self.selena_configs.K,
                                                     model_configs=self.model_configs,
@@ -49,8 +50,9 @@ class SelenaDefender(BaseDefender):
             model = train_manager.train(return_best_model=True,
                                         return_last_model=False,
                                         return_stats=False)
+            # Keep finished split models off the accelerator; each is moved back only while it produces soft labels.
             self.split_model_manager.update(index=k,
-                                            model=model)
+                                            model=model.cpu())
             self.logger.print_it(f"Selena Defender: finished training split model {k+1}/{self.selena_configs.K}!")
 
     def train_distilled_model(self, train_configs: TrainConfigs, return_stats: bool = False):
@@ -81,50 +83,44 @@ class SelenaDefender(BaseDefender):
         device = self.get_device(dev_str=train_configs.device)
         dataset_to_return = MultiDatasets()
         train_dataset = self.dataset.get('train')
-        predictions_matrix = torch.zeros(self.selena_configs.K, len(train_dataset), self.model_configs.num_classes)
+        # exclusion_mask[i, k] is True when model k never saw sample i, i.e. k is one of its L teachers.
+        exclusion_mask = self.split_data_manager.get_exclusion_mask()
+        # Running sum of the teachers' softmax outputs, so only one model's predictions are held at a time.
+        masked_sum = torch.zeros(len(train_dataset), self.model_configs.num_classes)
         self.logger.print_it("Selena Defender: gathering distillation outputs from split models. This may take a while...")
         start_pred = time.time()
         for k in range(self.selena_configs.K):
             self.logger.print_it_same_line(f"Selena Defender: gathering distillation outputs from split model {k+1}/{self.selena_configs.K}...", console_only=True)
+            # Model k is only a teacher for the samples it never saw.
+            excluded_indices = np.nonzero(exclusion_mask[:, k])[0]
             model = self.split_model_manager.get(index=k)
             model = model.to(device)
             model.eval()
-            dataloader = DataLoader(train_dataset, batch_size=train_configs.batch_size, shuffle=False)
+            dataloader = DataLoader(Subset(train_dataset, indices=excluded_indices), batch_size=train_configs.batch_size, shuffle=False)
             all_outputs = []
             with torch.no_grad():
                 for batch_idx, (samples, _, _, _) in enumerate(dataloader):
                     samples = samples.to(device)
                     outputs = model(samples)
                     all_outputs.append(torch.nn.functional.softmax(outputs, dim=1).cpu())
-            all_outputs_tensor = torch.cat(all_outputs, dim=0)
-            predictions_matrix[k, :, :] = all_outputs_tensor.to(predictions_matrix.device)
+            if all_outputs:
+                masked_sum[torch.from_numpy(excluded_indices)] += torch.cat(all_outputs, dim=0)
+            model.cpu()
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Selena Defender: gathered distillation outputs in {time.time()-start_pred:.2f} seconds.")
 
-        self.logger.print_it(f"Selena Defender: Gathering masking matrix for distillation...")
-        start_mask = time.time()
-        mask_matrix = torch.zeros(self.selena_configs.K, len(train_dataset))
-        for i in range(len(train_dataset)):
-            self.logger.print_it_same_line(f"Selena Defender: gathering masking info for sample {i+1}/{len(train_dataset)}...", console_only=True)
-            included_models = self.split_data_manager.get_models_for_sample(sample_index=i)
-            for k in included_models:
-                mask_matrix[k, i] = 1.0
-        self.logger.set_logger_newline(console_only=True)
-        self.logger.print_it(f"Selena Defender: gathered masking matrix in {time.time()-start_mask:.2f} seconds.")
-
-        self.logger.print_it(f"Selena Defender: applying masking and averaging outputs for distillation dataset...")
-        mask_matrix = mask_matrix.bool().to(predictions_matrix.device)
-        mask_exp = mask_matrix.unsqueeze(-1)
-        masked_sum = (predictions_matrix * mask_exp.to(predictions_matrix.dtype)).sum(dim=0)
-        counts = mask_matrix.sum(dim=0).unsqueeze(-1)
-        mean_outputs = torch.where(counts > 0,
-                        masked_sum / counts.to(predictions_matrix.dtype),
-                        torch.tensor(float('nan'), device=predictions_matrix.device))
+        counts = torch.from_numpy(exclusion_mask.sum(axis=1)).unsqueeze(-1).to(masked_sum.dtype)
+        mean_outputs = masked_sum / counts
         assert torch.isfinite(mean_outputs).all(), "Found NaN or Inf in `mean_outputs`"
 
         distilled_dataset = TargetOverrideDataset(train_dataset, mean_outputs)
 
         dataset_to_return.add(distilled_dataset, id='train')
+        try:
+            val_dataset = self.dataset.get('val')
+            dataset_to_return.add(val_dataset, id='val')
+        except KeyError:
+            pass
         test_dataset = self.dataset.get('test')
         dataset_to_return.add(test_dataset, id='test')
         self.logger.print_it(f"Selena Defender: gathered distilled dataset in {time.time()-start:.2f} seconds.")
@@ -137,39 +133,28 @@ class SelenaDefender(BaseDefender):
     
 
 class SplitDataManager:
-    def __init__(self, dataset: MultiDatasets, selena_configs: SelenaDefenseConfigs, logger=None):
+    def __init__(self, dataset: MultiDatasets, selena_configs: SelenaDefenseConfigs, seed: int = 12345, logger=None):
         self.dataset = dataset
         self.selena_configs = selena_configs
+        self.seed = seed
         self.logger = logger
         self.split_data()
 
     def split_data(self):
-        all_train_indices = np.arange(len(self.dataset.get('train')))
-        exclusion_matrix = np.zeros((all_train_indices.shape[0], self.selena_configs.L))
-        for i in range(len(exclusion_matrix)):
-            tmp = np.arange(self.selena_configs.K)
-            np.random.shuffle(tmp)
-            exclusion_matrix[i, :] = tmp[:self.selena_configs.L]
-        exclusion_matrix = exclusion_matrix.astype(np.int32)
-        self.exclusion_matrix = exclusion_matrix
-        inclusion_matrix = np.zeros((all_train_indices.shape[0], self.selena_configs.K - self.selena_configs.L))
-        for i in range(len(inclusion_matrix)):
-            inc = []
-            for k in range(self.selena_configs.K):
-                if k not in exclusion_matrix[i, :]:
-                    inc.append(k)
-            inclusion_matrix[i, :] = np.array(inc)
-        inclusion_matrix = inclusion_matrix.astype(np.int32)
-        self.inclusion_matrix = inclusion_matrix
+        n_samples = len(self.dataset.get('train'))
+        K, L = self.selena_configs.K, self.selena_configs.L
+        rng = np.random.default_rng(self.seed)
+        # One random permutation of the K model ids per sample: the first L are the models that never see it.
+        permutations = rng.permuted(np.tile(np.arange(K), (n_samples, 1)), axis=1)
+        self.exclusion_matrix = np.sort(permutations[:, :L], axis=1).astype(np.int32)
+        self.inclusion_matrix = np.sort(permutations[:, L:], axis=1).astype(np.int32)
+        self.exclusion_mask = np.zeros((n_samples, K), dtype=bool)
+        np.put_along_axis(self.exclusion_mask, self.exclusion_matrix, True, axis=1)
         self.logger.print_it("Selena Defender: data split into K={} models with L={} exclusions per sample.".format(self.selena_configs.K, self.selena_configs.L))
 
     def get_dataset_for_model(self, model_index: int) -> TensorDataset:
         dataset_to_return = MultiDatasets()
-        indices = []
-        for i in range(self.exclusion_matrix.shape[0]):
-            if model_index not in self.exclusion_matrix[i, :]:
-                indices.append(i)
-        indices = np.array(indices)
+        indices = np.nonzero(~self.exclusion_mask[:, model_index])[0]
 
         #TODO: Refactor selena as well to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
         #Issue URL: https://github.com/AndAgio/mia_bench/issues/46
@@ -194,6 +179,10 @@ class SplitDataManager:
     
     def get_excluded_models_for_sample(self, sample_index: int) -> list[int]:
         return self.exclusion_matrix[sample_index, :].tolist()
+
+    def get_exclusion_mask(self) -> np.ndarray:
+        # (N, K) boolean: True where model k is excluded from (never trained on) sample i.
+        return self.exclusion_mask
 
     def get_all_datasets(self) -> MultiDatasets:
         datasets = MultiDatasets()
@@ -251,9 +240,20 @@ class DistillTrainManager(TrainManager):
 
 
 class DistillLoss(torch.nn.Module):
-    def __init__(self):
+    # Like nn.CrossEntropyLoss, starts with reduction='none' (per-sample losses, needed by ESAM) and is switched
+    # to 'mean' by TrainManager.setup_optimizer for plain optimizers.
+    def __init__(self, reduction: str = 'none'):
         super().__init__()
+        self.reduction = reduction
 
     def forward(self, outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        loss = (-torch.sum(targets*torch.log(torch.nn.functional.softmax(outputs,dim=1))))/outputs.shape[0]
+        # Only the train split carries soft labels; val/test keep integer class ids.
+        if targets.dim() == 1:
+            loss = torch.nn.functional.cross_entropy(outputs, targets.long(), reduction='none')
+        else:
+            loss = -torch.sum(targets*torch.nn.functional.log_softmax(outputs,dim=1), dim=1)
+        if self.reduction == 'mean':
+            return loss.mean()
+        if self.reduction == 'sum':
+            return loss.sum()
         return loss
