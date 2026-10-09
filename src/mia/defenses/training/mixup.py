@@ -38,7 +38,7 @@ class MixupDefender(BaseDefender):
             return self.trained_model
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
-        self.logger.info("MixupDefender: defend_model does not modify the model at inference time.")
+        self.logger.print_it("Mixup Defender: defend_model does not modify the model at inference time.")
         self.defended_model = self.trained_model
         return self.defended_model
 
