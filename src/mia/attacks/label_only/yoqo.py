@@ -84,8 +84,6 @@ class Yoqo(BaseMIA):
                 logits = defender_model(adversarial_example.to(device))
                 pred_label = torch.argmax(logits, dim=1)
                 print(f"DEBUG: Sample {batch_index+1}/{len(dataloader)}, original label: {label.item()}, adversarial example predicted label: {pred_label.item()}")    
-            # YOQO observes only the predicted label. Raw logits are neither
-            # available to this attack nor comparable membership evidence.
             is_member = pred_label.item() == label.item()
             decisions.append(int(is_member))
             scores.append(int(is_member))
