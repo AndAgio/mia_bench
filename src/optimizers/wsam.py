@@ -2,7 +2,7 @@ import torch
 import torch.distributed as dist
 from typing import Callable
 
-from .utils import BaseOptimizerStateMixin, disable_running_stats, enable_running_stats
+from .utils import BaseOptimizerStateMixin, asam_scale, disable_running_stats, enable_running_stats
 
 
 class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
@@ -15,19 +15,21 @@ class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         gamma=0.9,
         sam_eps=1e-12,
         adaptive=False,
+        eta=0.01,
         decouple=True,
         max_norm=None,
         **kwargs,
     ):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
         assert 0.0 <= gamma < 1.0, f"Invalid gamma, should be in [0, 1): {gamma}"
+        assert eta >= 0.0, f"Invalid eta, should be non-negative: {eta}"
         # print('Adaptive set to {}'.format(adaptive))
 
         # self.model = model
         self.decouple = decouple
         self.max_norm = max_norm
         alpha = gamma / (1 - gamma)
-        defaults = dict(rho=rho, alpha=alpha, sam_eps=sam_eps, adaptive=adaptive, **kwargs)
+        defaults = dict(rho=rho, alpha=alpha, sam_eps=sam_eps, adaptive=adaptive, eta=eta, **kwargs)
         super(WSAM, self).__init__(params, defaults)
 
         self.base_optimizer = base_optimizer(self.param_groups, **kwargs)
@@ -43,7 +45,7 @@ class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
             for p in group["params"]:
                 if p.grad is None:
                     continue
-                e_w = (torch.pow(p, 2) if group["adaptive"] else 1.0) * p.grad * scale.to(p)
+                e_w = asam_scale(p, group) ** 2 * p.grad * scale.to(p)
                 p.add_(e_w, alpha=1.0)  # climb to the local maximum "w + e(w)"
                 self.state[p]["e_w"] = e_w
                 if torch.distributed.is_initialized():
@@ -119,7 +121,7 @@ class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         norm = torch.norm(
             torch.stack(
                 [
-                    ((torch.abs(p) if group["adaptive"] else 1.0) * p.grad).norm(p=2).to(shared_device)
+                    (asam_scale(p, group) * p.grad).norm(p=2).to(shared_device)
                     for group in self.param_groups
                     for p in group["params"]
                     if p.grad is not None

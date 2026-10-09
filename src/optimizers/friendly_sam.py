@@ -1,5 +1,5 @@
 import torch
-from .utils import BaseOptimizerStateMixin, get_global_gradient_norm
+from .utils import BaseOptimizerStateMixin, asam_scale, get_global_gradient_norm
 from typing import Callable
 
 
@@ -13,18 +13,20 @@ class FriendlySAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         sigma: float = 1.0,
         lmbda: float = 0.9,
         adaptive: bool = False,
+        eta: float = 0.01,
         perturb_eps: float = 1e-12,
         **kwargs,
     ):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
         assert sigma >= 0.0, f"Invalid sigma, should be non-negative: {sigma}"
         assert 0.0 <= lmbda <= 1.0, f"Invalid lmbda, should be in [0, 1]: {lmbda}"
+        assert eta >= 0.0, f"Invalid eta, should be non-negative: {eta}"
         assert perturb_eps >= 0.0, f"Invalid perturb_eps, should be non-negative: {perturb_eps}"
         # print('Adaptive set to {}'.format(adaptive))
 
         self.perturb_eps = perturb_eps
 
-        defaults = {'rho': rho, 'sigma': sigma, 'lmbda': lmbda, 'adaptive': adaptive}
+        defaults = {'rho': rho, 'sigma': sigma, 'lmbda': lmbda, 'adaptive': adaptive, 'eta': eta}
         defaults.update(kwargs)
 
         super().__init__(params, defaults)
@@ -72,7 +74,7 @@ class FriendlySAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
 
                 self.state[p]['old_p'] = p.clone()
 
-                e_w = (torch.pow(p, 2) if group['adaptive'] else 1.0) * grad * scale.to(p)
+                e_w = asam_scale(p, group) ** 2 * grad * scale.to(p)
 
                 p.add_(e_w)
 

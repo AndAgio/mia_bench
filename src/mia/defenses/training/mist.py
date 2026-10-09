@@ -63,20 +63,23 @@ class MistTrainManager(TrainManager):
         self.sub_optimizers = {}
         for i in range(self.mist_configs.num_submodels):
             model = self.sub_models[i]
-            optimizer = self.clone_optimizer_for_model(self.optimizer, model)
+            optimizer = self.clone_optimizer_for_model(self.optimizer, self.model, model)
             self.sub_optimizers[i] = optimizer
         self.logger.print_it(f"MIST TrainManager: cloned optimizers for {self.mist_configs.num_submodels} sub-models.")
 
     @staticmethod
-    def clone_optimizer_for_model(old_opt, new_model):
+    def clone_optimizer_for_model(old_opt, old_model, new_model):
         # 1) make new optimizer with same param-group hyperparams
         old_sd = old_opt.state_dict()
-        # replicate param_groups structure but with new model params in the same order
-        new_param_iter = iter(new_model.parameters())
+        # replicate param_groups structure, with each parameter of old_model replaced by the parameter at the same
+        # position in new_model (a copy of it), which also holds when the groups do not follow the order of the model
+        # (e.g. the weights and biases groups of the adaptive SAM variants)
+        position = {id(p): i for i, p in enumerate(old_model.parameters())}
+        new_params = list(new_model.parameters())
         new_param_groups = []
-        for old_pg in old_sd['param_groups']:
+        for old_pg, old_group in zip(old_sd['param_groups'], old_opt.param_groups):
             pg = {k: v for k, v in old_pg.items() if k != 'params'}
-            pg['params'] = [next(new_param_iter) for _ in range(len(old_pg['params']))]
+            pg['params'] = [new_params[position[id(p)]] for p in old_group['params']]
             new_param_groups.append(pg)
         # new_opt = type(old_opt)(new_param_groups)
         new_opt = copy.deepcopy(old_opt)
@@ -266,7 +269,7 @@ class MistTrainManager(TrainManager):
     
     def reset_submodel_optimizers(self):
         for submodel_index in range(self.mist_configs.num_submodels):
-            optimizer = self.clone_optimizer_for_model(self.optimizer, self.sub_models[submodel_index])
+            optimizer = self.clone_optimizer_for_model(self.optimizer, self.model, self.sub_models[submodel_index])
             self.sub_optimizers[submodel_index] = optimizer
         self.logger.print_it(f"MIST TrainManager: reset optimizer state for all sub-models.")
     

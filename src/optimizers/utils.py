@@ -26,6 +26,23 @@ def enable_running_stats(model):
     model.apply(_enable)
 
 
+def asam_scale(p: torch.Tensor, group: dict):
+    """Normalization T_w of the adaptive variants (ASAM, Kwon et al., ICML 2021): |w| + eta element-wise in the
+    parameter groups with adaptive=True (the weights), 1 in the others (the biases, which the paper and its official
+    code do not normalize). The perturbation is then rho * T_w^2 g / ||T_w g||."""
+    return torch.abs(p) + group['eta'] if group.get('adaptive', False) else 1.0
+
+
+def asam_param_groups(model: nn.Module) -> list:
+    """Parameter groups for the adaptive variants: as in the official code of ASAM, the parameters whose name contains
+    'weight' (including the scales of normalization layers) are normalized, the others (biases, but also e.g. the
+    class token and position embeddings of ViTs) are not."""
+    named = list(model.named_parameters())
+    groups = [{'params': [p for name, p in named if 'weight' in name]},
+              {'params': [p for name, p in named if 'weight' not in name], 'adaptive': False}]
+    return [group for group in groups if group['params']]
+
+
 class BaseOptimizerStateMixin:
     """For optimizers wrapping a base optimizer (SAM and its variants), whose state (e.g. the SGD momentum
     buffers) lives in the base optimizer: checkpoints include it, and loading one keeps the parameter groups
@@ -92,10 +109,9 @@ def get_global_gradient_norm(param_groups, device: torch.device) -> torch.Tensor
     norms: list[torch.Tensor] = []
     for group in param_groups or []:
         params: list[torch.Tensor] = group.get('params', []) or []
-        adaptive: bool = group.get('adaptive', False)
         for p in params:
             if p.grad is not None:
-                norm = ((torch.abs(p) if adaptive else 1.0) * p.grad).norm(p=2).to(device)
+                norm = (asam_scale(p, group) * p.grad).norm(p=2).to(device)
                 norms.append(norm)
 
     if not norms:

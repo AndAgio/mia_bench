@@ -1,15 +1,16 @@
 import torch
-from .utils import BaseOptimizerStateMixin
+from .utils import BaseOptimizerStateMixin, asam_scale
 from typing import Callable
 
 
 class SAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     # Sharpness-Aware Minimization for Efficiently Improving Generalization.
-    def __init__(self, params, base_optimizer, rho=0.05, adaptive=False, **kwargs):
+    def __init__(self, params, base_optimizer, rho=0.05, adaptive=False, eta=0.01, **kwargs):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
+        assert eta >= 0.0, f"Invalid eta, should be non-negative: {eta}"
         # print('Adaptive set to {}'.format(adaptive))
 
-        defaults = dict(rho=rho, adaptive=adaptive, **kwargs)
+        defaults = dict(rho=rho, adaptive=adaptive, eta=eta, **kwargs)
         super(SAM, self).__init__(params, defaults)
 
         self.base_optimizer = base_optimizer(self.param_groups, **kwargs)
@@ -24,7 +25,7 @@ class SAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
             for p in group["params"]:
                 if p.grad is None: continue
                 self.state[p]["old_p"] = p.data.clone()
-                e_w = (torch.pow(p, 2) if group["adaptive"] else 1.0) * p.grad * scale.to(p)
+                e_w = asam_scale(p, group) ** 2 * p.grad * scale.to(p)
                 p.add_(e_w)  # climb to the local maximum "w + e(w)"
 
         if zero_grad: self.zero_grad()
@@ -63,7 +64,7 @@ class SAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         shared_device = self.param_groups[0]["params"][0].device  # put everything on the same device, in case of model parallelism
         norm = torch.norm(
                     torch.stack([
-                        ((torch.abs(p) if group["adaptive"] else 1.0) * p.grad).norm(p=2).to(shared_device)
+                        (asam_scale(p, group) * p.grad).norm(p=2).to(shared_device)
                         for group in self.param_groups for p in group["params"]
                         if p.grad is not None
                     ]),

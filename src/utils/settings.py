@@ -89,7 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
         # Settings of the SAM-like optimizers: unset (None) means the default given in the help, so that setting a
         # new option does not change the hashes of existing runs.
         parser.add_argument('--defender_sam_rho', type=float, default=None,
-                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05)')
+                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05, or 0.5 for the adaptive versions)')
+        parser.add_argument('--defender_asam_eta', type=float, default=None,
+                                help='Adaptive versions (ASAM): eta in the normalization |w| + eta of the weights, for stability (default: 0.01)')
         parser.add_argument('--defender_esam_beta', type=float, default=None,
                                 help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 1.0, i.e. all of them)')
         parser.add_argument('--defender_esam_gamma', type=float, default=None,
@@ -382,7 +384,9 @@ def build_parser() -> argparse.ArgumentParser:
         # Settings of the SAM-like optimizers: unset (None) means the default given in the help, so that setting a
         # new option does not change the hashes of existing runs.
         parser.add_argument('--attacker_sam_rho', type=float, default=None,
-                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05)')
+                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05, or 0.5 for the adaptive versions)')
+        parser.add_argument('--attacker_asam_eta', type=float, default=None,
+                                help='Adaptive versions (ASAM): eta in the normalization |w| + eta of the weights, for stability (default: 0.01)')
         parser.add_argument('--attacker_esam_beta', type=float, default=None,
                                 help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 1.0, i.e. all of them)')
         parser.add_argument('--attacker_esam_gamma', type=float, default=None,

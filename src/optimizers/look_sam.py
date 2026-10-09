@@ -1,5 +1,5 @@
 import torch
-from .utils import BaseOptimizerStateMixin, get_global_gradient_norm
+from .utils import BaseOptimizerStateMixin, asam_scale, get_global_gradient_norm
 from typing import Callable
 
 
@@ -16,6 +16,7 @@ class LookSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         k: int = 5,
         alpha: float = 0.3,
         adaptive: bool = False,
+        eta: float = 0.01,
         perturb_eps: float = 1e-12,
         **kwargs,
     ):
@@ -25,13 +26,14 @@ class LookSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
         assert isinstance(k, int) and k > 0, f"Invalid k, should be a positive integer: {k}"
         assert alpha >= 0.0, f"Invalid alpha, should be non-negative: {alpha}"
+        assert eta >= 0.0, f"Invalid eta, should be non-negative: {eta}"
         assert perturb_eps >= 0.0, f"Invalid perturb_eps, should be non-negative: {perturb_eps}"
 
         self.k = k
         self.alpha = alpha
         self.perturb_eps = perturb_eps
 
-        defaults = {'rho': rho, 'adaptive': adaptive}
+        defaults = {'rho': rho, 'adaptive': adaptive, 'eta': eta}
         defaults.update(kwargs)
 
         super().__init__(params, defaults)
@@ -63,7 +65,7 @@ class LookSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
                 self.state[p]['old_p'] = p.clone()
                 self.state[p]['old_grad_p'] = p.grad.clone()
 
-                e_w = (torch.pow(p, 2) if group['adaptive'] else 1.0) * p.grad * scale.to(p)
+                e_w = asam_scale(p, group) ** 2 * p.grad * scale.to(p)
 
                 p.add_(e_w)
 

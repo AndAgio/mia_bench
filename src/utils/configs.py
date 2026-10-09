@@ -541,7 +541,7 @@ class ExperimentConfigs:
 
 # Settings of the SAM-like optimizers, without the defender_/attacker_ prefix of their command line options. They are
 # passed to the optimizers through OptimizerConfigs.extra, None when not set.
-SAM_SETTINGS = ['sam_rho', 'esam_beta', 'esam_gamma', 'wsam_gamma', 'looksam_k', 'looksam_alpha',
+SAM_SETTINGS = ['sam_rho', 'asam_eta', 'esam_beta', 'esam_gamma', 'wsam_gamma', 'looksam_k', 'looksam_alpha',
                 'friendlysam_sigma', 'friendlysam_lambda']
 
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:

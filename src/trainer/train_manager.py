@@ -11,7 +11,7 @@ import numpy as np
 from src.data.helpers import MultiDatasets
 from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
-from src.optimizers.utils import enable_running_stats, disable_running_stats
+from src.optimizers.utils import enable_running_stats, disable_running_stats, asam_param_groups
 from src.optimizers.schedulers import GradualWarmupScheduler
 from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs
 from src.utils import convert_to_hms
@@ -20,6 +20,11 @@ from src.trainer.checkpoints import CheckpointManager
 from src.trainer.metrics import get_performance_metric_func
 from src.trainer.distributed import maybe_init_ddp, is_rank0, ddp_barrier, maybe_cleanup_ddp
 from src.utils.log import Loggable, MyLogger
+
+
+# Default radius of the weight perturbation: the CIFAR-10 values of SAM (Foret et al., 2021) and of ASAM (Kwon et al.,
+# 2021) for the adaptive versions, whose perturbation is relative to the weights.
+SAM_RHO, ASAM_RHO = 0.05, 0.5
 
 
 def sam_setting(opt_cfg: OptimizerConfigs, name: str, default: Any) -> Any:
@@ -161,35 +166,38 @@ class TrainManager(Loggable):
             self.criterion.reduction = 'mean'
         elif opt_cfg.name.split('_')[-1] == 'sam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
-            self.optimizer = SAM(params=self.model.parameters(),
+            self.optimizer = SAM(params=asam_param_groups(self.model) if adaptive else self.model.parameters(),
                                 base_optimizer=SGD,
                                 lr=opt_cfg.lr,
-                                rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                rho=sam_setting(opt_cfg, 'sam_rho', ASAM_RHO if adaptive else SAM_RHO),
                                 adaptive=adaptive,
+                                eta=sam_setting(opt_cfg, 'asam_eta', 0.01),
                                 momentum=opt_cfg.momentum,
                                 nesterov=opt_cfg.nesterov,
                                 weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name.split('_')[-1] == 'esam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
-            self.optimizer = ESAM(params=self.model.parameters(),
+            self.optimizer = ESAM(params=asam_param_groups(self.model) if adaptive else self.model.parameters(),
                                 base_optimizer=SGD,
                                 lr=opt_cfg.lr,
-                                rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                rho=sam_setting(opt_cfg, 'sam_rho', ASAM_RHO if adaptive else SAM_RHO),
                                 beta=sam_setting(opt_cfg, 'esam_beta', 1.0),
                                 gamma=sam_setting(opt_cfg, 'esam_gamma', 0.5),
                                 adaptive=adaptive,
+                                eta=sam_setting(opt_cfg, 'asam_eta', 0.01),
                                 momentum=opt_cfg.momentum,
                                 nesterov=opt_cfg.nesterov,
                                 weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name.split('_')[-1] == 'wsam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
-            self.optimizer = WSAM(params=self.model.parameters(),
+            self.optimizer = WSAM(params=asam_param_groups(self.model) if adaptive else self.model.parameters(),
                                 base_optimizer=SGD,
                                 lr=opt_cfg.lr,
-                                rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                rho=sam_setting(opt_cfg, 'sam_rho', ASAM_RHO if adaptive else SAM_RHO),
                                 gamma=sam_setting(opt_cfg, 'wsam_gamma', 0.9),
                                 sam_eps=1e-12,
                                 adaptive=adaptive,
+                                eta=sam_setting(opt_cfg, 'asam_eta', 0.01),
                                 decouple=True,
                                 max_norm=None,
                                 momentum=opt_cfg.momentum,
@@ -197,26 +205,28 @@ class TrainManager(Loggable):
                                 weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name.split('_')[-1] == 'looksam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
-            self.optimizer = LookSAM(params=self.model.parameters(),
+            self.optimizer = LookSAM(params=asam_param_groups(self.model) if adaptive else self.model.parameters(),
                                     base_optimizer=SGD,
                                     lr=opt_cfg.lr,
-                                    rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                    rho=sam_setting(opt_cfg, 'sam_rho', ASAM_RHO if adaptive else SAM_RHO),
                                     k=sam_setting(opt_cfg, 'looksam_k', 5),
                                     alpha=sam_setting(opt_cfg, 'looksam_alpha', 0.3),
                                     adaptive=adaptive,
+                                    eta=sam_setting(opt_cfg, 'asam_eta', 0.01),
                                     perturb_eps=1e-12,
                                     momentum=opt_cfg.momentum,
                                     nesterov=opt_cfg.nesterov,
                                     weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name.split('_')[-1] == 'friendlysam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
-            self.optimizer = FriendlySAM(params=self.model.parameters(),
+            self.optimizer = FriendlySAM(params=asam_param_groups(self.model) if adaptive else self.model.parameters(),
                                         base_optimizer=SGD,
                                         lr=opt_cfg.lr,
-                                        rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                        rho=sam_setting(opt_cfg, 'sam_rho', ASAM_RHO if adaptive else SAM_RHO),
                                         sigma=sam_setting(opt_cfg, 'friendlysam_sigma', 1.0),
                                         lmbda=sam_setting(opt_cfg, 'friendlysam_lambda', 0.9),
                                         adaptive=adaptive,
+                                        eta=sam_setting(opt_cfg, 'asam_eta', 0.01),
                                         perturb_eps=1e-12,
                                         momentum=opt_cfg.momentum,
                                         nesterov=opt_cfg.nesterov,
