@@ -15,8 +15,10 @@ def _dist_ready() -> bool:
     return (dist is not None) and dist.is_available() and dist.is_initialized()
 
 def _collective_device() -> torch.device:
-    # Use CUDA if available; otherwise CPU tensors for collectives.
-    return torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    # NCCL requires CUDA; Gloo reductions use CPU, including on hosts with MPS.
+    if _dist_ready() and dist.get_backend() == 'nccl':
+        return torch.device('cuda', torch.cuda.current_device())
+    return torch.device('cpu')
 
 @dataclass
 class StageSummary:

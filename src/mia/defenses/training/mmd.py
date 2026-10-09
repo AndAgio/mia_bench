@@ -1,6 +1,8 @@
 from typing import Union
 import torch
 from torch.utils.data import DataLoader, ConcatDataset, Subset
+from torch.utils.data.distributed import DistributedSampler
+import torch.distributed as dist
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
 from src.utils.configs import DefenderConfigs, MmdDefenseConfigs, TrainConfigs
@@ -49,19 +51,21 @@ class MmdTrainManager(TrainManager):
     def __init__(self, train_configs, name: str, logger=None, mmd_configs: MmdDefenseConfigs = None):
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.mmd_configs = mmd_configs
+        self._validation_index_dataset = None
+        self._validation_indices_by_label = {}
 
     def train_executions(self):
         assert self.run_val, "MMD training requires a validation set to compute the MMD loss. Please set run_val to True and provide a validation dataset!"
         self.train_epoch()
         train_acc = self.get_train_accuracy()
         val_acc = self.get_val_accuracy()
-        if abs(train_acc - val_acc) > 0.03:
+        if abs(train_acc - val_acc) >= 0.03:
             self.logger.print_it(f"Training accuracy: {train_acc:.4f}, Validation accuracy: {val_acc:.4f}. The gap between training and validation accuracy is {abs(train_acc - val_acc):.4f}, which is large enough...")
-            if self.mmd_configs.lmbd > 1e-5 and self.epoch < self.train_configs.scheduler_config.epochs:
-                self.logger.print_it(f"Other conditions for training with MMD loss are met (lambda {self.mmd_configs.lmbd} > 1e-5 and epoch {self.epoch} < max epochs {self.train_configs.scheduler_config.epochs}), we will run another epoch with MMD loss.")
+            if self.mmd_configs.lmbd >= 1e-5 and self.epoch < self.train_configs.scheduler_config.epochs:
+                self.logger.print_it(f"Other conditions for training with MMD loss are met (lambda {self.mmd_configs.lmbd} >= 1e-5 and epoch {self.epoch} < max epochs {self.train_configs.scheduler_config.epochs}), we will run another epoch with MMD loss.")
                 self.train_with_mmd_distance()
             else:
-                self.logger.print_it(f"Other conditions for training with MMD loss are not met (lambda {self.mmd_configs.lmbd} <= 1e-5 or epoch {self.epoch} >= max epochs {self.train_configs.scheduler_config.epochs}), we will NOT run another epoch with MMD loss.")
+                self.logger.print_it(f"Other conditions for training with MMD loss are not met (lambda {self.mmd_configs.lmbd} < 1e-5 or epoch {self.epoch} >= max epochs {self.train_configs.scheduler_config.epochs}), we will NOT run another epoch with MMD loss.")
         else:
             self.logger.print_it(f"Training accuracy: {train_acc:.4f}, Validation accuracy: {val_acc:.4f}. The gap between training and validation accuracy is {abs(train_acc - val_acc):.4f}, which is small enough, we will NOT run another epoch with MMD loss.")
         self.val_epoch()
@@ -81,11 +85,16 @@ class MmdTrainManager(TrainManager):
         self.epoch_stats_tracker.batch_start()
         if self.mmd_configs.use_mixup:
             self.train_step_mixup(mixed_inputs, targets_a, targets_b, lmbd)
+            # Clean-input metrics must not update BN a second time after the mixed training pass.
+            disable_running_stats(self.model)
+            try:
+                with torch.no_grad():
+                    outputs = self.model(inputs)
+            finally:
+                enable_running_stats(self.model)
         else:
-            self.train_step_standard(inputs, targets)
-        
-        with torch.no_grad():
-            outputs = self.model(inputs)
+            # Standard training already has clean predictions; reuse them for metrics.
+            outputs = self.train_step_standard(inputs, targets)
 
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
         self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
@@ -142,6 +151,7 @@ class MmdTrainManager(TrainManager):
             self.optimizer.step(closure, inputs, targets)
             self.optimizer.zero_grad()
             loss, outputs = self.optimizer.get_first_closure_outputs()
+            enable_running_stats(self.model)
         else:
             # Forward propagation, compute loss, get predictions (no GradScaler/AMP)
             self.optimizer.zero_grad()
@@ -150,73 +160,132 @@ class MmdTrainManager(TrainManager):
             loss = loss.mean() if self.to_be_averaged_loss(loss) else loss
             loss.backward()
             self.optimizer.step()
+        return outputs.detach()
 
     @torch.no_grad()
     def get_train_accuracy(self):
         self.model.eval()
         cumulative_correct = 0
         cumulative_total = 0
+        local_offset = 0
         for batch_idx, (inputs, targets, original_indices, resampled_indices) in enumerate(self.train_loader):
             self.logger.print_it_same_line(f"Computing training accuracy for batch {batch_idx+1}/{len(self.train_loader)}...", console_only=True)
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
             outputs = self.model(inputs)
-            cumulative_correct += (outputs.argmax(dim=-1) == targets).sum().item()
-            cumulative_total += targets.size(0)
+            correct, total = self._batch_accuracy_counts(outputs, targets, self.train_loader, local_offset)
+            cumulative_correct += correct
+            cumulative_total += total
+            local_offset += targets.size(0)
         self.logger.set_logger_newline(console_only=True)
-        accuracy = cumulative_correct / cumulative_total if cumulative_total > 0 else 0.0
-        return accuracy
+        return self._global_accuracy(cumulative_correct, cumulative_total)
 
     @torch.no_grad()
     def get_val_accuracy(self):
         self.model.eval()
         cumulative_correct = 0
         cumulative_total = 0
+        local_offset = 0
         for batch_idx, (inputs, targets, original_indices, resampled_indices) in enumerate(self.val_loader):
             self.logger.print_it_same_line(f"Computing validation accuracy for batch {batch_idx+1}/{len(self.val_loader)}...", console_only=True)
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
             outputs = self.model(inputs)
-            cumulative_correct += (outputs.argmax(dim=-1) == targets).sum().item()
-            cumulative_total += targets.size(0)
+            correct, total = self._batch_accuracy_counts(outputs, targets, self.val_loader, local_offset)
+            cumulative_correct += correct
+            cumulative_total += total
+            local_offset += targets.size(0)
         self.logger.set_logger_newline(console_only=True)
-        accuracy = cumulative_correct / cumulative_total if cumulative_total > 0 else 0.0
-        return accuracy
+        return self._global_accuracy(cumulative_correct, cumulative_total)
+
+    @staticmethod
+    def _batch_accuracy_counts(outputs, targets, loader, local_offset):
+        valid_count = targets.size(0)
+        sampler = loader.sampler
+        if isinstance(sampler, DistributedSampler) and not sampler.drop_last:
+            # DistributedSampler pads with repeated samples. Keep equal forward counts across ranks,
+            # but exclude these copies from the accuracy used to decide whether to regularize.
+            real_samples = max(0, (len(loader.dataset) - 1 - sampler.rank) // sampler.num_replicas + 1)
+            valid_count = min(valid_count, max(0, real_samples - local_offset))
+        correct = (outputs.argmax(dim=-1)[:valid_count] == targets[:valid_count]).sum().item()
+        return correct, valid_count
+
+    def _global_accuracy(self, correct, total):
+        if self.distributed:
+            counts = torch.tensor([correct, total], dtype=torch.long, device=self.device)
+            dist.all_reduce(counts, op=dist.ReduceOp.SUM)
+            correct, total = counts.tolist()
+        return correct / total if total > 0 else 0.0
     
     @staticmethod
-    def get_subset_by_label(dataset, target_label):
+    def get_indices_by_label(dataset):
         try:
             targets = dataset.get_all_targets(to_torch=True)
-            indices = (targets == target_label).nonzero(as_tuple=True)[0].tolist()
         except AttributeError:
             try:
                 targets = torch.tensor(dataset.targets)
-                indices = (targets == target_label).nonzero(as_tuple=True)[0].tolist()
             except AttributeError:
-                indices = [i for i in range(len(dataset)) if dataset[i][1] == target_label]
+                targets = [dataset[i][1] for i in range(len(dataset))]
+        indices_by_label = {}
+        for index, label in enumerate(targets):
+            label = label.item() if torch.is_tensor(label) else label
+            indices_by_label.setdefault(label, []).append(index)
+        return indices_by_label
+
+    @staticmethod
+    def get_subset_by_label(dataset, target_label):
+        indices = MmdTrainManager.get_indices_by_label(dataset).get(target_label, [])
         return Subset(dataset, indices)
 
     def train_with_mmd_distance(self):
         self.reset_epoch_stats(phase='mmd')
         training_data = self.dataset.get('train')
-        train_loader_in_order = DataLoader(training_data, batch_size=self.train_loader.batch_size, shuffle=False)
+        sampler = DistributedSampler(training_data, num_replicas=self.world_size,
+                                     rank=self.global_rank, shuffle=False) if self.distributed else None
+        train_loader_in_order = DataLoader(training_data, batch_size=self.train_loader.batch_size,
+                                          shuffle=False, sampler=sampler)
         validation_data = self.dataset.get('val')
+        # Cache local indices in the validation wrapper's current order. Rebuild if the split is replaced.
+        if self._validation_index_dataset is not validation_data:
+            self._validation_indices_by_label = self.get_indices_by_label(validation_data)
+            self._validation_index_dataset = validation_data
+        # Match the reference: deterministic outputs and frozen BN buffers, with gradients enabled.
+        self.model.eval()
+        enable_running_stats(self.model)
         
         for loss_index, (train_images, train_labels, original_indices, resampled_indices) in enumerate(train_loader_in_order):
+            self.epoch_stats_tracker.batch_start()
             batch_num = train_labels.size()[0]
             self.optimizer.zero_grad()
 
             unique_labels = torch.unique(train_labels)
+            missing_labels = [label.item() for label in unique_labels
+                              if not self._validation_indices_by_label.get(label.item())]
+            missing = bool(missing_labels)
+            if self.distributed:
+                # All ranks must fail together rather than leaving peers waiting in DDP backward.
+                missing_flag = torch.tensor(int(missing), device=self.device)
+                dist.all_reduce(missing_flag, op=dist.ReduceOp.MAX)
+                missing = bool(missing_flag.item())
+            if missing:
+                detail = str(missing_labels[0]) if missing_labels else 'on another distributed rank'
+                raise ValueError(f"MMD validation dataset has no samples for training class {detail}; "
+                                 "provide a validation split containing every training class.")
             subsets_val = []
             for label in unique_labels:
-                all_val_with_matching_class = MmdTrainManager.get_subset_by_label(validation_data, label.item())
+                all_val_with_matching_class = Subset(validation_data, self._validation_indices_by_label.get(label.item(), []))
                 freq = torch.count_nonzero(train_labels == label).item()
 
                 #TODO: Refactor also MMD to avoid creating Subset datasets and instead use the custom dataset classes defined in data helpers.
                 #Issue URL: https://github.com/AndAgio/mia_bench/issues/45
                 # assignees: AndAgio
 
-                subset_val = Subset(all_val_with_matching_class, torch.randperm(len(all_val_with_matching_class))[:freq])
+                available = len(all_val_with_matching_class)
+                if available < freq:
+                    sampled_indices = torch.randint(available, (freq,))
+                else:
+                    sampled_indices = torch.randperm(available)[:freq]
+                subset_val = Subset(all_val_with_matching_class, sampled_indices)
                 subsets_val.append(subset_val)
             sampled_val = ConcatDataset(subsets_val)
             valid_images, valid_labels, _, _ = next(iter(DataLoader(sampled_val, batch_size=self.train_loader.batch_size, shuffle=False)))
@@ -238,25 +307,31 @@ class MmdTrainManager(TrainManager):
                         disable_running_stats(self.model)
                     train_outputs = torch.nn.functional.softmax(self.model(train_images), dim=1)
                     # As in the paper, only the training outputs are optimized, not the validation ones.
-                    valid_outputs = torch.nn.functional.softmax(self.model(valid_images), dim=1).detach()
+                    with torch.no_grad():
+                        valid_outputs = torch.nn.functional.softmax(self.model(valid_images), dim=1)
                     loss = mix_rbf_mmd2(train_outputs, valid_outputs, sigma_list=[1]) * self.mmd_configs.lmbd
                     if backward:
                         loss.backward()
                     return loss, train_outputs
                 mmd_optimizer = self.optimizer.for_objective('mmd')
-                mmd_optimizer.step(closure, train_images, valid_images)
+                try:
+                    mmd_optimizer.step(closure, train_images, valid_images)
+                finally:
+                    enable_running_stats(self.model)
                 mmd_optimizer.zero_grad()
                 mmd_loss, _ = mmd_optimizer.get_first_closure_outputs()
             else:
                 outputs = self.model(train_images)
                 all_train_outputs = torch.nn.functional.softmax(outputs,dim=1)
-                outputs = self.model(valid_images)
-                all_valid_outputs = torch.nn.functional.softmax(outputs,dim=1)
-                all_valid_outputs = (all_valid_outputs).detach_()
+                with torch.no_grad():
+                    all_valid_outputs = torch.nn.functional.softmax(self.model(valid_images), dim=1)
                 mmd_loss = mix_rbf_mmd2(all_train_outputs,all_valid_outputs,sigma_list=[1])*self.mmd_configs.lmbd
                 mmd_loss.backward()
                 self.optimizer.step()
     
+            self.epoch_stats_tracker.update(preds=mmd_loss.detach(), targets=None,
+                                           metrics={'mmd_loss': lambda loss, _: loss})
+            self.epoch_stats_tracker.batch_end(batch_size=batch_num)
             message = self.build_message_for_batch_end_mmd(loss_index+1, len(train_loader_in_order), mmd_loss.item())
             self.logger.print_it_same_line(message, console_only=True)
         self.logger.set_logger_newline(console_only=True)

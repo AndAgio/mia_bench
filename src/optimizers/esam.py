@@ -92,10 +92,15 @@ class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
             loss, outputs = closure(*args, mean=False, backward=False, run_stats=True)
             l_before = loss.clone().detach()
             self.to_return = loss.mean(), outputs
-            loss.mean().backward()
         finally:
             for p in skipped:
                 p.requires_grad_(True)
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            # DDP expects every trainable parameter's hook on each backward. Parameters skipped by the
+            # stochastic forward contribute zero locally, so ranks can still reduce the full gradient together.
+            for p in skipped:
+                loss = loss + 0 * p.sum()
+        loss.mean().backward()
         self.first_step(zero_grad=True)
         if l_before.dim() == 0:
             # A loss of the whole batch (e.g. MMD, a function of the set of outputs) has no per-sample values to

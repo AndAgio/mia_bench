@@ -484,7 +484,7 @@ class MmdDefenseConfigs:
     strategy: Literal["mmd"] = "mmd"
     lmbd: float = 1.0
     use_mixup: bool = False
-    mixup_alpha: float = 0.0
+    mixup_alpha: float = 1.0
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class LdlDefenseConfigs:
