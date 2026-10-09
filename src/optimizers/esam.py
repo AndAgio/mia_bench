@@ -8,6 +8,7 @@ from typing import Callable
 class ESAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     def __init__(self, params, base_optimizer, rho=0.05,beta=1.0,gamma=1.0,adaptive=False,**kwargs):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
+        assert 0.0 < beta <= 1.0, f"Invalid beta, should be in (0, 1]: {beta}"
         assert 0.0 < gamma <= 1.0, f"Invalid gamma, should be in (0, 1]: {gamma}"
         # print('Adaptive set to {}'.format(adaptive))
         self.beta = beta

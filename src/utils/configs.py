@@ -539,6 +539,11 @@ class ExperimentConfigs:
     attacker: AttackerConfigs
 
 
+# Settings of the SAM-like optimizers, without the defender_/attacker_ prefix of their command line options. They are
+# passed to the optimizers through OptimizerConfigs.extra, None when not set.
+SAM_SETTINGS = ['sam_rho', 'esam_beta', 'esam_gamma', 'wsam_gamma', 'looksam_k', 'looksam_alpha',
+                'friendlysam_sigma', 'friendlysam_lambda']
+
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
     assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
@@ -598,8 +603,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                 weight_decay=settings.defender_weight_decay,
                                                 momentum=settings.defender_momentum,
                                                 nesterov=settings.defender_nesterov,
-                                                extra={'looksam_k': settings.defender_looksam_k,
-                                                       'looksam_alpha': settings.defender_looksam_alpha},)
+                                                extra={name: getattr(settings, f'defender_{name}') for name in SAM_SETTINGS},)
     defender_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='defender')
     defender_train_configs = TrainConfigs(optimizer_config=defender_optimizer_configs,
                                         scheduler_config=defender_scheduler_configs,
@@ -722,8 +726,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     weight_decay=settings.attacker_weight_decay,
                                                     momentum=settings.attacker_momentum,
                                                     nesterov=settings.attacker_nesterov,
-                                                    extra={'looksam_k': settings.attacker_looksam_k,
-                                                           'looksam_alpha': settings.attacker_looksam_alpha},)
+                                                    extra={name: getattr(settings, f'attacker_{name}') for name in SAM_SETTINGS},)
     attacker_scheduler_configs = build_scheduler_configs_from_settings(settings, mode='attacker')
     attacker_train_configs = TrainConfigs(optimizer_config=attacker_optimizer_configs,
                                             scheduler_config=attacker_scheduler_configs,

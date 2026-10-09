@@ -20,6 +20,7 @@ class WSAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
         **kwargs,
     ):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
+        assert 0.0 <= gamma < 1.0, f"Invalid gamma, should be in [0, 1): {gamma}"
         # print('Adaptive set to {}'.format(adaptive))
 
         # self.model = model

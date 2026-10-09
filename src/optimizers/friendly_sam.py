@@ -18,8 +18,8 @@ class FriendlySAM(BaseOptimizerStateMixin, torch.optim.Optimizer):
     ):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
         assert sigma >= 0.0, f"Invalid sigma, should be non-negative: {sigma}"
-        assert lmbda >= 0.0, f"Invalid lmbda, should be non-negative: {lmbda}"
-        assert perturb_eps >= 0.0, f"Invalid sigma, should be non-negative: {perturb_eps}"
+        assert 0.0 <= lmbda <= 1.0, f"Invalid lmbda, should be in [0, 1]: {lmbda}"
+        assert perturb_eps >= 0.0, f"Invalid perturb_eps, should be non-negative: {perturb_eps}"
         # print('Adaptive set to {}'.format(adaptive))
 
         self.perturb_eps = perturb_eps

@@ -86,10 +86,24 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='momentum')
         parser.add_argument('--defender_nesterov', action="store_true", default=False,
                                 help='nesterov')
+        # Settings of the SAM-like optimizers: unset (None) means the default given in the help, so that setting a
+        # new option does not change the hashes of existing runs.
+        parser.add_argument('--defender_sam_rho', type=float, default=None,
+                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05)')
+        parser.add_argument('--defender_esam_beta', type=float, default=None,
+                                help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 1.0, i.e. all of them)')
+        parser.add_argument('--defender_esam_gamma', type=float, default=None,
+                                help='ESAM: fraction of the batch used for the update, the samples whose loss the perturbation increases the most (default: 0.5)')
+        parser.add_argument('--defender_wsam_gamma', type=float, default=None,
+                                help='WSAM: weight of the sharpness term, added to the loss gamma / (1 - gamma) times (default: 0.9)')
         parser.add_argument('--defender_looksam_k', type=int, default=None,
                                 help='LookSAM: number of steps between two SAM steps (default: 5)')
         parser.add_argument('--defender_looksam_alpha', type=float, default=None,
                                 help='LookSAM: norm of the reused sharpness component relative to the gradient norm (default: 0.3)')
+        parser.add_argument('--defender_friendlysam_sigma', type=float, default=None,
+                                help='F-SAM: how much of the moving average of the gradients is removed from the perturbation direction (default: 1.0)')
+        parser.add_argument('--defender_friendlysam_lambda', type=float, default=None,
+                                help='F-SAM: decay of the moving average of the gradients (default: 0.9)')
         
         # Shared MIA parameters
         parser.add_argument("--defender_mode", default="none",
@@ -365,10 +379,24 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='momentum')
         parser.add_argument('--attacker_nesterov', action="store_true", default=False,
                                 help='nesterov')
+        # Settings of the SAM-like optimizers: unset (None) means the default given in the help, so that setting a
+        # new option does not change the hashes of existing runs.
+        parser.add_argument('--attacker_sam_rho', type=float, default=None,
+                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05)')
+        parser.add_argument('--attacker_esam_beta', type=float, default=None,
+                                help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 1.0, i.e. all of them)')
+        parser.add_argument('--attacker_esam_gamma', type=float, default=None,
+                                help='ESAM: fraction of the batch used for the update, the samples whose loss the perturbation increases the most (default: 0.5)')
+        parser.add_argument('--attacker_wsam_gamma', type=float, default=None,
+                                help='WSAM: weight of the sharpness term, added to the loss gamma / (1 - gamma) times (default: 0.9)')
         parser.add_argument('--attacker_looksam_k', type=int, default=None,
                                 help='LookSAM: number of steps between two SAM steps (default: 5)')
         parser.add_argument('--attacker_looksam_alpha', type=float, default=None,
                                 help='LookSAM: norm of the reused sharpness component relative to the gradient norm (default: 0.3)')
+        parser.add_argument('--attacker_friendlysam_sigma', type=float, default=None,
+                                help='F-SAM: how much of the moving average of the gradients is removed from the perturbation direction (default: 1.0)')
+        parser.add_argument('--attacker_friendlysam_lambda', type=float, default=None,
+                                help='F-SAM: decay of the moving average of the gradients (default: 0.9)')
         # Differential Privacy parameters for attacker model
         # parser.add_argument("--att_use_dp", action="store_true", default=False,
         #                         help="enable Differential Privacy for attacker model training",)

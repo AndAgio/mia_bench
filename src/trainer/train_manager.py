@@ -22,6 +22,12 @@ from src.trainer.distributed import maybe_init_ddp, is_rank0, ddp_barrier, maybe
 from src.utils.log import Loggable, MyLogger
 
 
+def sam_setting(opt_cfg: OptimizerConfigs, name: str, default: Any) -> Any:
+    """Setting of the SAM-like optimizers given on the command line (see SAM_SETTINGS), or the default if not given."""
+    value = opt_cfg.extra.get(name)
+    return default if value is None else value
+
+
 class TrainManager(Loggable):
     def __init__(self, train_configs: TrainConfigs, name: str, logger: MyLogger = None):
         super().__init__(logger=logger)
@@ -158,7 +164,7 @@ class TrainManager(Loggable):
             self.optimizer = SAM(params=self.model.parameters(),
                                 base_optimizer=SGD,
                                 lr=opt_cfg.lr,
-                                rho=0.05,
+                                rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
                                 adaptive=adaptive,
                                 momentum=opt_cfg.momentum,
                                 nesterov=opt_cfg.nesterov,
@@ -168,9 +174,9 @@ class TrainManager(Loggable):
             self.optimizer = ESAM(params=self.model.parameters(),
                                 base_optimizer=SGD,
                                 lr=opt_cfg.lr,
-                                rho=0.05,
-                                beta=1,
-                                gamma=0.5,
+                                rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                beta=sam_setting(opt_cfg, 'esam_beta', 1.0),
+                                gamma=sam_setting(opt_cfg, 'esam_gamma', 0.5),
                                 adaptive=adaptive,
                                 momentum=opt_cfg.momentum,
                                 nesterov=opt_cfg.nesterov,
@@ -180,8 +186,8 @@ class TrainManager(Loggable):
             self.optimizer = WSAM(params=self.model.parameters(),
                                 base_optimizer=SGD,
                                 lr=opt_cfg.lr,
-                                rho=0.05,
-                                gamma=0.9,
+                                rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                gamma=sam_setting(opt_cfg, 'wsam_gamma', 0.9),
                                 sam_eps=1e-12,
                                 adaptive=adaptive,
                                 decouple=True,
@@ -191,27 +197,25 @@ class TrainManager(Loggable):
                                 weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name.split('_')[-1] == 'looksam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
-            # k and alpha keep the LookSAM defaults unless set
-            looksam_settings = {name: opt_cfg.extra[f'looksam_{name}'] for name in ['k', 'alpha']
-                                if opt_cfg.extra.get(f'looksam_{name}') is not None}
             self.optimizer = LookSAM(params=self.model.parameters(),
                                     base_optimizer=SGD,
                                     lr=opt_cfg.lr,
-                                    rho=0.05,
+                                    rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                    k=sam_setting(opt_cfg, 'looksam_k', 5),
+                                    alpha=sam_setting(opt_cfg, 'looksam_alpha', 0.3),
                                     adaptive=adaptive,
                                     perturb_eps=1e-12,
                                     momentum=opt_cfg.momentum,
                                     nesterov=opt_cfg.nesterov,
-                                    weight_decay=opt_cfg.weight_decay,
-                                    **looksam_settings)
+                                    weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name.split('_')[-1] == 'friendlysam':
             adaptive = True if opt_cfg.name.split('_')[0] in ['a', 'ad', 'ada', 'adap', 'adaptive'] else False
             self.optimizer = FriendlySAM(params=self.model.parameters(),
                                         base_optimizer=SGD,
                                         lr=opt_cfg.lr,
-                                        rho=0.05,
-                                        sigma=1,
-                                        lmbda=0.9,
+                                        rho=sam_setting(opt_cfg, 'sam_rho', 0.05),
+                                        sigma=sam_setting(opt_cfg, 'friendlysam_sigma', 1.0),
+                                        lmbda=sam_setting(opt_cfg, 'friendlysam_lambda', 0.9),
                                         adaptive=adaptive,
                                         perturb_eps=1e-12,
                                         momentum=opt_cfg.momentum,
