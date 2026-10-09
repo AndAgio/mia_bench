@@ -155,6 +155,27 @@ replicas. Runs with different datasets, models, attack/defence settings, audit s
 or training configurations are deliberately kept in separate aggregate groups.
 - Use `python download_all_datasets.py` to download supported datasets to the default `datas/` folder.
 
+### MemGuard
+
+MemGuard uses balanced samples from the defender training and validation splits to
+fit its membership classifier; audit non-members are excluded. Its default classifier
+has hidden layers `[256, 128, 64]` and trains with SGD for 400 epochs at learning
+rate 0.001, with batches of 64, following the
+[authors' implementation](https://github.com/jinyuan-jia/MemGuard).
+
+Phase I sorts once, searches larger distortion weights after successful attempts,
+and retains the last successful output. Phase II rejects candidates whose membership
+probability is no closer to 0.5, and applies accepted candidates subject to the expected
+L1 budget. The budget bounds expected distortion, rather than every individual output.
+`forward` returns log probabilities compatible with the benchmark's logits interface;
+`defend` returns probabilities. Uniform mixing is disabled by default.
+
+Identical queries use repeatable randomness derived from a hash of the quantized input,
+independent of batching and global random seeds. Set
+`--defender_mem_guard_randomness_quantization` to choose the quantization width in
+model-input units (default: 0.001). The paper specifies quantization but no width.
+Nearby inputs within the same quantization cell share the random draw.
+
 ### Tests
 
 All tests live in `tests/` and are run from the repository root. The fast unit tests

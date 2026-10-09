@@ -137,12 +137,14 @@ def build_parser() -> argparse.ArgumentParser:
         # MemGuard parameters for defender model
         parser.add_argument('--defender_mem_guard_budget', type=float, default=0.1,
                                 help='Budget parameter for MemGuard defense')
-        parser.add_argument('--defender_mem_guard_shadow_model_layers', type=int, nargs="+", default=[64, 32],
+        parser.add_argument('--defender_mem_guard_shadow_model_layers', type=int, nargs="+", default=[256, 128, 64],
                                 help='List of hidden layer sizes for the shadow attacker model in MemGuard defense')
-        parser.add_argument('--defender_mem_guard_shadow_model_epochs', type=int, default=30,
+        parser.add_argument('--defender_mem_guard_shadow_model_epochs', type=int, default=400,
                                 help='Number of epochs to train the shadow attacker model in MemGuard defense')
-        parser.add_argument('--defender_mem_guard_shadow_model_lr', type=float, default=0.01,
+        parser.add_argument('--defender_mem_guard_shadow_model_lr', type=float, default=0.001,
                                 help='Learning rate to train the shadow attacker model in MemGuard defense')
+        parser.add_argument('--defender_mem_guard_randomness_quantization', type=float, default=1e-3,
+                                help='Query quantization width in model-input units for MemGuard one-time randomness')
         # Relax Loss parameters for defender model
         parser.add_argument('--defender_relax_loss_alpha', type=float, default=0.5,
                                 help='Alpha parameter for Relax Loss defense')

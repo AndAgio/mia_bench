@@ -414,10 +414,11 @@ class DPDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class MemGuardDefenseConfigs:
     strategy: Literal["mem_guard"] = "mem_guard"
-    budget: float = 10.0
-    shadow_attacker_model_layers: list[int] = field(default_factory=lambda: [64, 32])
-    shadow_attacker_model_epochs: int = 30
-    shadow_attacker_model_lr: float = 0.01
+    budget: float = 0.1
+    shadow_attacker_model_layers: list[int] = field(default_factory=lambda: [256, 128, 64])
+    shadow_attacker_model_epochs: int = 400
+    shadow_attacker_model_lr: float = 0.001
+    randomness_quantization: float = 1e-3
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class RelaxLossDefenseConfigs:
@@ -638,7 +639,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         defender_defense_configs = MemGuardDefenseConfigs(shadow_attacker_model_layers=settings.defender_mem_guard_shadow_model_layers,
                                                         shadow_attacker_model_epochs=settings.defender_mem_guard_shadow_model_epochs,
                                                         shadow_attacker_model_lr=settings.defender_mem_guard_shadow_model_lr,
-                                                        budget=settings.defender_mem_guard_budget)
+                                                        budget=settings.defender_mem_guard_budget,
+                                                        randomness_quantization=settings.defender_mem_guard_randomness_quantization)
     elif settings.defender_mode in ['relax_loss', 'relaxloss', 'relax-loss']:
         # Unset options follow the per-modality choices of the paper (App. B.3) and of the official configs.
         is_image_dataset = settings.dataset not in ["purchase", "news", "texas"]
