@@ -53,6 +53,7 @@ class MistTrainManager(TrainManager):
     def __init__(self, train_configs, name: str, logger: callable, mist_configs: MistDefenseConfigs):
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.mist_configs = mist_configs
+        self.train_labels = None
 
     def clone_model(self):
         # Clone the model to create the submodels used in MIST.
@@ -70,55 +71,15 @@ class MistTrainManager(TrainManager):
 
     @staticmethod
     def clone_optimizer_for_model(old_opt, old_model, new_model):
-        # 1) make new optimizer with same param-group hyperparams
-        old_sd = old_opt.state_dict()
-        # replicate param_groups structure, with each parameter of old_model replaced by the parameter at the same
-        # position in new_model (a copy of it), which also holds when the groups do not follow the order of the model
-        # (e.g. the weights and biases groups of the adaptive SAM variants)
-        position = {id(p): i for i, p in enumerate(old_model.parameters())}
-        new_params = list(new_model.parameters())
-        new_param_groups = []
-        for old_pg, old_group in zip(old_sd['param_groups'], old_opt.param_groups):
-            pg = {k: v for k, v in old_pg.items() if k != 'params'}
-            pg['params'] = [new_params[position[id(p)]] for p in old_group['params']]
-            new_param_groups.append(pg)
-        # new_opt = type(old_opt)(new_param_groups)
-        new_opt = copy.deepcopy(old_opt)
-        new_opt.param_groups = new_param_groups
-
-        # 2) remap parameter ids in state_dict
-        new_sd = new_opt.state_dict()
-        old_ids = [p for pg in old_sd['param_groups'] for p in pg['params']]
-        new_ids = [p for pg in new_sd['param_groups'] for p in pg['params']]
-        if len(old_ids) != len(new_ids):
-            raise ValueError("Parameter counts differ; cannot remap optimizer state.")
-        id_map = dict(zip(old_ids, new_ids))
-
-        remapped_state = {}
-        for old_id, state in old_sd['state'].items():
-            new_id = id_map.get(old_id)
-            if new_id is None:
-                continue
-            # optional: check shapes of tensor buffers before accepting
-            remapped_state[new_id] = state
-
-        # replace param group param ids
-        remapped_pgs = []
-        for pg in old_sd['param_groups']:
-            pg_copy = {k: v for k, v in pg.items()}
-            pg_copy['params'] = [id_map[p] for p in pg['params']]
-            remapped_pgs.append(pg_copy)
-
-        new_sd_mapped = {'state': remapped_state, 'param_groups': remapped_pgs}
-
-        # 3) load and move tensors to device
-        new_opt.load_state_dict(new_sd_mapped)
-        device = next(new_model.parameters()).device
-        for state in new_opt.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.to(device)
-
+        # Copy of the optimizer for new_model, a copy of old_model. The memo replaces every parameter of old_model with
+        # the one at the same position in new_model, wherever it appears: in the parameter groups, also when they do
+        # not follow the order of the model (e.g. the weights and biases groups of the adaptive SAM variants), and in
+        # the base optimizer of the SAM variants.
+        new_opt = copy.deepcopy(old_opt, memo={id(p): q for p, q in zip(old_model.parameters(), new_model.parameters())})
+        # The copy leaves out the state of the optimizers for the other losses of the SAM variants (see for_objective),
+        # so the whole state (e.g. the momentum buffers) is loaded again. It is loaded from a copy, since loading keeps
+        # the tensors that are already on the right device, which old_opt and new_opt would then share.
+        new_opt.load_state_dict(copy.deepcopy(old_opt.state_dict()))
         return new_opt
 
     def clone_criterion(self):
@@ -129,64 +90,13 @@ class MistTrainManager(TrainManager):
             self.sub_criteria[i] = criterion
         self.logger.print_it(f"MIST TrainManager: cloned criteria for {self.mist_configs.num_submodels} sub-models.")
 
-    @staticmethod
-    def clone_scheduler_for_optimizer(old_sched, new_opt):
-        # 1) create new scheduler instance (use same constructor args from your config)
-        new_sched = copy.deepcopy(old_sched)
-        new_sched.optimizer = new_opt
-        # 2) copy and adapt state dict
-        sd = old_sched.state_dict()
-        # adapt lists that are per-param-group
-        if 'base_lrs' in sd:
-            if len(sd['base_lrs']) != len(new_opt.param_groups):
-                # fallback: use current lr of new optimizer param groups
-                sd['base_lrs'] = [pg.get('lr', 0.0) for pg in new_opt.param_groups]
-        if 'last_lr' in sd:
-            if len(sd['last_lr']) != len(new_opt.param_groups):
-                sd['last_lr'] = [pg.get('lr', 0.0) for pg in new_opt.param_groups]
-        # move any tensor state to device
-        device = MistTrainManager.get_device_from_optimizer(new_opt)
-        for k, v in sd.items():
-            if isinstance(v, list):
-                sd[k] = [t.to(device) if isinstance(t, torch.Tensor) else t for t in v]
-            elif isinstance(v, torch.Tensor) and device is not None:
-                sd[k] = v.to(device)
-        # 3) load
-        new_sched.load_state_dict(sd)
-        return new_sched
-
-    @staticmethod
-    def get_device_from_optimizer(opt) -> torch.device:
-        devices = set()
-        for pg in opt.param_groups:
-            for p in pg.get("params", []):
-                # p is usually a torch.nn.Parameter (has .device)
-                try:
-                    devices.add(p.device)
-                except Exception:
-                    continue
-        if not devices:
-            return torch.device("cpu")  # fallback
-        if len(devices) > 1:
-            # optional: logger.warning("Optimizer parameters on multiple devices; using first.")
-            return next(iter(devices))
-        return devices.pop()
-    
-    def clone_lr_scheduler(self):
-        # Clone the LR scheduler for each submodel.
-        self.sub_lr_schedulers = {}
-        for i in range(self.mist_configs.num_submodels):
-            optimizer = self.sub_optimizers[i]
-            lr_scheduler = self.clone_scheduler_for_optimizer(self.scheduler, optimizer)
-            self.sub_lr_schedulers[i] = lr_scheduler
-        self.logger.print_it(f"MIST TrainManager: cloned LR schedulers for {self.mist_configs.num_submodels} sub-models.")
-    
     def clone_everything_for_submodels(self):
-        # Clone model, optimizer, criterion, and LR scheduler for each submodel.
+        # Clone model, optimizer and criterion for each submodel. The submodels have no LR scheduler of their own: their
+        # optimizers take the learning rate of the main one, which the main scheduler sets once per (global) epoch, so
+        # every step of an epoch, in both phases, uses the configured learning rate of that epoch.
         self.clone_model()
         self.clone_optimizer()
         self.clone_criterion()
-        self.clone_lr_scheduler()
 
     def split_data(self):
         # Split the training data into subsets for each submodel.
@@ -216,12 +126,16 @@ class MistTrainManager(TrainManager):
         self.logger.print_it(f"MIST TrainManager: split training data into {self.mist_configs.num_submodels} subsets for sub-models.")
 
     def split_data_stratified(self):
-        try:
-            y = self.train_loader.dataset.get_all_targets()
-        except AttributeError:
-            y = self.train_loader.dataset.targets
+        # The labels are read once, since reading them loads every sample.
+        if self.train_labels is None:
+            try:
+                self.train_labels = np.asarray(self.train_loader.dataset.get_all_targets(to_torch=True))
+            except AttributeError:
+                self.train_labels = np.asarray(self.train_loader.dataset.targets)
+        y = self.train_labels
         classes = np.unique(y)
-        rng = np.random.default_rng(self.seed)
+        # A new partition at every epoch, as in Algorithm 1 of the paper (and as the random split does).
+        rng = np.random.default_rng([self.seed, self.epoch])
         parts = [list() for _ in range(self.mist_configs.num_submodels)]
         for c in classes:
             idx = np.where(y == c)[0]
@@ -246,41 +160,44 @@ class MistTrainManager(TrainManager):
         with torch.no_grad():
             sd_list = [m.state_dict() for _, m in self.sub_models.items()]
             keys = sd_list[0].keys()
-            avg_params = {k: sum(sd[k] for sd in sd_list) / len(sd_list) for k in keys}
+            # Integer buffers (the num_batches_tracked of BatchNorm) are averaged with integer division, keeping their type.
+            avg_params = {k: sum(sd[k] for sd in sd_list) / len(sd_list) if sd_list[0][k].is_floating_point()
+                          else sum(sd[k] for sd in sd_list) // len(sd_list) for k in keys}
             self.model.load_state_dict(avg_params)
         self.logger.print_it("MIST TrainManager: averaged sub-models to update the main model.")
+
+    def average_submodel_optimizers(self):
+        # Average the optimizer states of the submodels into the main optimizer, as their parameters are averaged into
+        # the main model, so that the submodels of the next epoch start from it (e.g. with the momentum built so far)
+        # and checkpoints include it.
+        state_dicts = [optimizer.state_dict() for _, optimizer in self.sub_optimizers.items()]
+        self.optimizer.load_state_dict(self.average_optimizer_states(state_dicts))
+        self.logger.print_it("MIST TrainManager: averaged sub-model optimizer states into the main optimizer.")
+
+    @staticmethod
+    def average_optimizer_states(states: list):
+        # Entry by entry: floating point tensors (e.g. momentum buffers) are averaged, the rest (e.g. step counters and
+        # the parameter groups, the same for all the submodels) is taken from the first submodel.
+        first = states[0]
+        if isinstance(first, dict):
+            return {k: MistTrainManager.average_optimizer_states([s[k] for s in states if isinstance(s, dict) and k in s])
+                    for k in first}
+        if isinstance(first, torch.Tensor) and first.is_floating_point() and \
+                all(isinstance(s, torch.Tensor) and s.shape == first.shape for s in states):
+            return sum(states) / len(states)
+        return first
 
     @torch.no_grad()
     def avg_probs_other_models(self, exclude: int, inputs: torch.Tensor) -> torch.Tensor:
         tot, cnt = 0.0, 0
-        for j, model_j in self.sub_models.items():
+        for j, model_j in self.reference_models.items():
             if j == exclude:
                 continue
-            model_j.eval()
             logits = model_j(inputs)
             probs = torch.nn.functional.softmax(logits, dim=-1)
             tot = tot + probs
             cnt += 1
         return tot / cnt
-    
-    def reset_submodel_optimizers(self):
-        for submodel_index in range(self.mist_configs.num_submodels):
-            optimizer = self.clone_optimizer_for_model(self.optimizer, self.model, self.sub_models[submodel_index])
-            self.sub_optimizers[submodel_index] = optimizer
-        self.logger.print_it(f"MIST TrainManager: reset optimizer state for all sub-models.")
-    
-    def reset_submodel_lr_schedulers(self):
-        for submodel_index in range(self.mist_configs.num_submodels):
-            self.reset_submodel_lr_scheduler(submodel_index=submodel_index)
-        self.logger.print_it(f"MIST TrainManager: reset lr scheduler state for all sub-models.")
-    
-    def reset_submodel_lr_scheduler(self, submodel_index: int):
-        # Reset the LR scheduler state for a specific submodel.
-        lr_scheduler = copy.deepcopy(self.scheduler)
-        lr_scheduler.load_state_dict(self.scheduler.state_dict())
-        optimizer = self.sub_optimizers[submodel_index]
-        lr_scheduler.optimizer = optimizer
-        self.sub_lr_schedulers[submodel_index] = lr_scheduler
 
     def train_epoch(self):
         # reset epoch stats and per-epoch profiler
@@ -291,6 +208,7 @@ class MistTrainManager(TrainManager):
         self.train_submodels()
         self.optimize_difference_of_submodels()
         self.average_submodels()
+        self.average_submodel_optimizers()
 
         self.epoch_stats_tracker.ddp_reduce_current_stage()
         train_summary = self.epoch_stats_tracker.stage_end()
@@ -306,14 +224,12 @@ class MistTrainManager(TrainManager):
             model.train()
             optimizer = self.sub_optimizers[submodel_index]
             criterion = self.sub_criteria[submodel_index]
-            lr_scheduler = self.sub_lr_schedulers[submodel_index]
             # Setup data loader for this submodel
             submodel_dataset = self.get_submodel_dataset(submodel_index=submodel_index)
             submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=0)
             for epoch in range(self.mist_configs.submodel_epochs):
                 for batch_idx, (inputs, targets, _, _) in enumerate(submodel_loader):
                     model, optimizer, criterion = self.train_step_submodel(model, submodel_index, optimizer, criterion, inputs, targets, epoch, batch_idx=batch_idx, total_batches=len(submodel_loader))
-                lr_scheduler.step()
             self.logger.set_logger_newline(console_only=True)
             self.sub_models[submodel_index] = model
             self.logger.print_it(f"MIST TrainManager: finished training sub-model {submodel_index+1}/{self.mist_configs.num_submodels}!")
@@ -326,6 +242,7 @@ class MistTrainManager(TrainManager):
             return self.train_step_submodel_standard(model, model_index, optimizer, criterion, inputs, targets, epoch, batch_idx, total_batches)
         
     def train_step_submodel_with_mixup(self, model, model_index, optimizer, criterion,inputs, targets, epoch, batch_idx, total_batches) -> Union[torch.nn.Module, torch.optim.Optimizer, callable]:
+        self.epoch_stats_tracker.batch_start()
         # Map to available device
         mixed_inputs, targets_a, targets_b, lmbd = mixup_data(inputs, targets, alpha=self.mist_configs.alpha_mixup)
         mixed_inputs = mixed_inputs.to(self.device)
@@ -358,7 +275,18 @@ class MistTrainManager(TrainManager):
             loss = loss.mean() if self.to_be_averaged_loss(loss) else loss
             loss.backward()
             optimizer.step()
-        
+
+        # Train stats on the clean inputs, as in the Mixup defense. The submodel is in train mode, so freeze the BN
+        # running stats, which this pass would otherwise update with the clean batch.
+        inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
+        disable_running_stats(model)
+        with torch.no_grad():
+            clean_outputs = model(inputs)
+        enable_running_stats(model)
+        self.epoch_stats_tracker.update(preds=clean_outputs, targets=targets, extras=self.extra_configs)
+        self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
+
         message = f"{self.device.type.upper()}:{self.local_rank} |"
         message += f" GLOBAL-EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
         message += f" SUB-MODEL: {model_index+1}/{self.mist_configs.num_submodels} |"
@@ -382,6 +310,7 @@ class MistTrainManager(TrainManager):
         # Map to available device
         inputs = inputs.to(self.device)
         targets = targets.to(self.device)
+        self.epoch_stats_tracker.batch_start()
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
         if type(optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
@@ -409,7 +338,10 @@ class MistTrainManager(TrainManager):
             loss = loss.mean() if self.to_be_averaged_loss(loss) else loss
             loss.backward()
             optimizer.step()
-        
+
+        self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)
+        self.epoch_stats_tracker.batch_end(batch_size=targets.size(0))
+
         message = f"{self.device.type.upper()}:{self.local_rank} |"
         message += f" GLOBAL-EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
         message += f" SUB-MODEL: {model_index+1}/{self.mist_configs.num_submodels} |"
@@ -431,9 +363,12 @@ class MistTrainManager(TrainManager):
 
     
     def optimize_difference_of_submodels(self):
-        self.reset_submodel_optimizers()
-        self.reset_submodel_lr_schedulers()
-        # Optimize each submodel to maximize difference from average of other submodels.
+        # Each submodel keeps the optimizer of the training phase, so that the momentum is shared by the two losses
+        # (the SAM variants keep their own state for this loss, see optimize_difference_step).
+        # As in Algorithm 1 of the paper, every submodel is aligned to the other submodels as left by the training phase,
+        # not to those already updated by this phase, so the alignment does not depend on the order of the submodels.
+        self.reference_models = {i: copy.deepcopy(model).eval() for i, model in self.sub_models.items()}
+        # Optimize each submodel to minimize the cross-difference loss from the average of the other submodels.
         for submodel_index in range(self.mist_configs.num_submodels):
             self.logger.print_it(f"MIST TrainManager: optimizing difference for sub-model {submodel_index+1}/{self.mist_configs.num_submodels}...")
             model = self.sub_models[submodel_index]
@@ -441,32 +376,40 @@ class MistTrainManager(TrainManager):
             optimizer = self.sub_optimizers[submodel_index]
             # Element-wise, so that SAM-like optimizers can get per-sample losses (ESAM selects samples by them).
             criterion = torch.nn.L1Loss(reduction="none")
-            lr_scheduler = self.sub_lr_schedulers[submodel_index]
             # Setup data loader for this submodel
             submodel_dataset = self.get_submodel_dataset(submodel_index=submodel_index)
             submodel_loader = DataLoader(submodel_dataset, batch_size=self.train_configs.batch_size, shuffle=True, num_workers=0)
             for epoch in range(self.mist_configs.submodel_epochs):
                 for batch_idx, (inputs, targets, _, _) in enumerate(submodel_loader):
-                    model, optimizer, criterion = self.optimize_difference_step(model, submodel_index, optimizer, criterion, inputs, epoch, batch_idx=batch_idx, total_batches=len(submodel_loader))
-                lr_scheduler.step()
+                    model, optimizer, criterion = self.optimize_difference_step(model, submodel_index, optimizer, criterion, inputs, targets, epoch, batch_idx=batch_idx, total_batches=len(submodel_loader))
             self.logger.set_logger_newline(console_only=True)
             self.sub_models[submodel_index] = model
             self.logger.print_it(f"MIST TrainManager: finished optimizing difference for sub-model {submodel_index+1}/{self.mist_configs.num_submodels}!")
-    
-    def optimize_difference_step(self, model, model_index, optimizer, criterion, inputs, epoch, batch_idx, total_batches) -> Union[torch.nn.Module, torch.optim.Optimizer, callable]:
+        # Free the memory of the snapshots until the next alignment phase.
+        self.reference_models = None
+
+    def cross_difference_loss(self, criterion, outputs, targets, other_probs) -> torch.Tensor:
+        # Cross-difference loss of MIST (Eq. 3 of the paper), per sample: L1 distance between the sub-model's predicted
+        # probability of the true class and the average probability of the true class under the other sub-models.
+        probs = torch.nn.functional.softmax(outputs, dim=-1).gather(1, targets.unsqueeze(1)).squeeze(1)
+        return self.mist_configs.lmbd * criterion(probs, other_probs)
+
+    def optimize_difference_step(self, model, model_index, optimizer, criterion, inputs, targets, epoch, batch_idx, total_batches) -> Union[torch.nn.Module, torch.optim.Optimizer, callable]:
         # Map to available device
         inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
+        # The other sub-models are not updated by this step, so their probabilities of the true class are computed once.
+        other_probs = self.avg_probs_other_models(exclude=model_index, inputs=inputs).gather(1, targets.unsqueeze(1)).squeeze(1)
         # Compute loss and predictions (profile compute: forward + backward + optimizer)
         if type(optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
             # SAM-like optimizers use a closure that handles two forward/backward passes.
-            def closure(inputs, criterion, mean=True, backward=True, run_stats=True):
+            def closure(inputs, targets, other_probs, criterion, mean=True, backward=True, run_stats=True):
                 if run_stats:
                     enable_running_stats(model)
                 else:
                     disable_running_stats(model)
                 outputs = model(inputs)
-                targets = self.avg_probs_other_models(exclude=model_index, inputs=inputs)
-                loss = self.mist_configs.lmbd * criterion(outputs, targets).mean(dim=1)
+                loss = self.cross_difference_loss(criterion, outputs, targets, other_probs)
                 if mean:
                     loss = loss.mean()
                 if backward:
@@ -475,15 +418,14 @@ class MistTrainManager(TrainManager):
             # The alignment loss is minimized by an optimizer sharing parameters, momentum and learning rate with the
             # one training the sub-model, but with its own state for this loss.
             alignment_optimizer = optimizer.for_objective('alignment')
-            alignment_optimizer.step(closure, inputs, criterion)
+            alignment_optimizer.step(closure, inputs, targets, other_probs, criterion)
             alignment_optimizer.zero_grad()
             loss, outputs = alignment_optimizer.get_first_closure_outputs()
         else:
             # Forward propagation, compute loss, get predictions (no GradScaler/AMP)
             optimizer.zero_grad()
             outputs = model(inputs)
-            targets = self.avg_probs_other_models(exclude=model_index, inputs=inputs)
-            loss = self.mist_configs.lmbd * criterion(outputs, targets)
+            loss = self.cross_difference_loss(criterion, outputs, targets, other_probs)
             # loss = loss.mean() if loss.numel() > 1 else loss
             loss = loss.mean() if self.to_be_averaged_loss(loss) else loss
             loss.backward()

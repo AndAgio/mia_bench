@@ -47,11 +47,13 @@ def build_scheduler_configs_from_settings(settings: Any, mode: str = 'defender')
         extra['cycle_step'] = settings.defender_lr_cycle_step if mode == 'defender' else settings.attacker_lr_cycle_step
         extra['cycle_gamma'] = settings.defender_lr_cycle_gamma if mode == 'defender' else settings.attacker_lr_cycle_gamma
         extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.attacker_lr_cosine_min
+        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.attacker_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.attacker_lr_warmup_epochs
     elif name == 'step':
         extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.attacker_lr_step_size
         extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.attacker_lr_step_gamma
     elif name == 'multistep':
-        extra['step_milestones'] = settings.defender_lr_step_milestones  if mode == 'defender' else settings.defender_lr_step_milestones
+        extra['step_milestones'] = settings.defender_lr_step_milestones  if mode == 'defender' else settings.attacker_lr_step_milestones
         extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.attacker_lr_step_gamma
     elif name == 'exp':
         extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.attacker_lr_exp_gamma
@@ -460,10 +462,10 @@ class SelenaDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class MistDefenseConfigs:
     strategy: Literal["mist"] = "mist"
-    num_submodels: int = 5
+    num_submodels: int = 2  # defaults from the paper (Table 7 and Section 4.1.2), for CIFAR-10
     split_method: str = 'random'  # options: 'random', 'stratified'
-    submodel_epochs: int = 5
-    lmbd: float = 4
+    submodel_epochs: int = 1
+    lmbd: float = 3.5
     mix_up: bool = False
     alpha_mixup: float = 0.0
 
@@ -680,7 +682,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     split_method=settings.defender_mist_split_method,
                                                     submodel_epochs=settings.defender_mist_submodel_epochs,
                                                     lmbd=settings.defender_mist_lambda,
-                                                    mixup=mixup,
+                                                    mix_up=mixup,
                                                     alpha_mixup=settings.defender_mixup_alpha if mixup else 0.0)
     elif settings.defender_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
         defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
