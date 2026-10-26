@@ -187,22 +187,24 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=10,
                                 help='Number of warmup epochs to train the model without weighted smoothing in Weighted Smoothing defense')
         # Purifier parameters for defender model
-        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=16,
+        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=2,
                                 help='Latent dimension for the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=128,
-                                help='Hidden dimension for the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=20,
+        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=32,
+                                help='Width h of the first hidden layer of the reformer in Purifier defense; the next ones are 2h and 4h')
+        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=100,
                                 help='Number of epochs to train the reformer model in Purifier defense')
         parser.add_argument('--defender_purifier_reformer_lr', type=float, default=0.01,
                                 help='Learning rate to train the reformer model in Purifier defense')
         parser.add_argument('--defender_purifier_reformer_batch_size', type=int, default=256,
                                 help='Batch size to train the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_lambda', type=float, default=1.0,
+        parser.add_argument('--defender_purifier_reformer_lambda', type=float, default=0.1,
                                 help='Lambda parameter to weight the reformer loss in Purifier defense')
-        parser.add_argument('--defender_purifier_pindex_size', type=int, default=1000,
-                                help='Number of samples to use in the Pindex for the Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_noise_sigma', type=float, default=1.0,
+                                help='Std of the Gaussian noise added to the batch-normalised latent of the reformer in Purifier defense')
+        parser.add_argument('--defender_purifier_noise_quantization', type=float, default=1e-3,
+                                help='Quantization width (model-input units) of the query hash that seeds the reformer noise in Purifier defense, so repeated queries get the same output')
         parser.add_argument('--defender_purifier_swap_threshold', type=float, default=0.01,
-                                help='Threshold for label swapping in the Purifier defense')
+                                help='Maximum L2 distance between log-confidence vectors for a query to match a swap-set member in the Purifier defense')
         # MMD parameters for defender model
         parser.add_argument('--defender_mmd_lambda', type=float, default=1.0,
                                 help='Lambda parameter for MMD defense')

@@ -478,13 +478,14 @@ class WeightedSmoothingDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class PurifierDefenseConfigs:
     strategy: Literal["purifier"] = "purifier"
-    reformer_latent_dim: int = 16
-    reformer_hidden_dim: int = 128
-    reformer_epochs: int = 20
+    reformer_latent_dim: int = 2
+    reformer_hidden_dim: int = 32
+    reformer_epochs: int = 100
     reformer_lr: float = 0.01
     reformer_batch_size: int = 256
-    reformer_lambda: float = 1.0
-    pindex_size: int = 1000
+    reformer_lambda: float = 0.1
+    reformer_noise_sigma: float = 1.0
+    noise_quantization: float = 1e-3
     swap_threshold: float = 0.01
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -694,7 +695,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         reformer_lr=settings.defender_purifier_reformer_lr,
                                                         reformer_batch_size=settings.defender_purifier_reformer_batch_size,
                                                         reformer_lambda=settings.defender_purifier_reformer_lambda,
-                                                        pindex_size=settings.defender_purifier_pindex_size,
+                                                        reformer_noise_sigma=settings.defender_purifier_reformer_noise_sigma,
+                                                        noise_quantization=settings.defender_purifier_noise_quantization,
                                                         swap_threshold=settings.defender_purifier_swap_threshold)
     elif settings.defender_mode in ['mmd', 'mmd_mixup', 'mmd-mixup']:
         defender_defense_configs = MmdDefenseConfigs(lmbd=settings.defender_mmd_lambda,
