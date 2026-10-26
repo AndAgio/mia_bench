@@ -12,7 +12,7 @@ from src.data.helpers import MultiDatasets
 from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats, asam_param_groups
-from src.optimizers.schedulers import GradualWarmupScheduler
+from src.optimizers.schedulers import GradualWarmupScheduler, CosineAnnealingWarmupRestarts
 from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs
 from src.utils import convert_to_hms
 from src.trainer.stats_tracker import TrainStats, EpochStats, StageSummary
@@ -258,11 +258,16 @@ class TrainManager(Loggable):
         elif sched_cfg.name == 'warmup_cosine':
             assert sched_cfg.extra['cycle_step'] < sched_cfg.epochs, f"The number of epochs per cycle in warmup cosine scheduler should be less than the total number of epochs!"
             assert sched_cfg.extra['cycle_gamma'] <= 1, f"The decaying factor per cycle in warmup cosine scheduler should be less than or equal to 1 to avoid lr becoming too large!"
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
-                                                                                T_0=sched_cfg.extra['cycle_step'],
-                                                                                T_mult=sched_cfg.extra['cycle_gamma'],
-                                                                                eta_min=sched_cfg.extra['cosine_min'],
-                                                                                last_epoch=sched_cfg.epochs)
+            assert sched_cfg.extra['warmup_epochs'] < sched_cfg.extra['cycle_step'], f"The number of warmup epochs in warmup cosine scheduler should be less than the number of epochs per cycle! Found {sched_cfg.extra['warmup_epochs']} and {sched_cfg.extra['cycle_step']}"
+            # Every cycle of cycle_step epochs warms up linearly from cosine_min to the peak learning rate, then anneals
+            # it back to cosine_min with a cosine, and the peak decays by cycle_gamma at every restart. As in the other
+            # warmup schedulers, the peak is the learning rate times warmup_multiplier.
+            self.scheduler = CosineAnnealingWarmupRestarts(self.optimizer,
+                                                           first_cycle_steps=sched_cfg.extra['cycle_step'],
+                                                           max_lr=self.optimizer.param_groups[0]['lr'] * sched_cfg.extra['warmup_multiplier'],
+                                                           min_lr=sched_cfg.extra['cosine_min'],
+                                                           warmup_steps=sched_cfg.extra['warmup_epochs'],
+                                                           gamma=sched_cfg.extra['cycle_gamma'])
         elif sched_cfg.name == 'step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
             assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
