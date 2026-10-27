@@ -21,7 +21,8 @@ from src.utils.configs import get_dataset_info_from_name
 
 
 def get_dataset_mean_std(dataset: str):
-    if dataset == 'cifar10':
+    # CIFAR-100 uses the CIFAR-10 statistics, as the repository did before they moved into this function.
+    if dataset in ['cifar10', 'cifar100']:
         mean = [x / 255.0 for x in [125.3, 123.0, 113.9]]
         std = [x / 255.0 for x in [63.0, 62.1, 66.7]]
     elif dataset == 'svhn':
