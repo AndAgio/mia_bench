@@ -210,9 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Lambda parameter for MMD defense')
         # LDL parameters for defender model
         parser.add_argument('--defender_ldl_n_queries', type=int, default=100,
-                                help='Number of queries to train the LDL defense layer')
-        parser.add_argument('--defender_ldl_noise_scale', type=float, default=0.1,
-                                help='Standard deviation of the noise to be added in the LDL defense layer')
+                                help='Number of noisy copies of each query that the LDL defense layer averages')
+        parser.add_argument('--defender_ldl_noise_scale', type=float, default=0.02,
+                                help='Standard deviation of the Gaussian noise in the LDL defense layer, in pixel units for images as in the paper (default: 0.02, the paper value)')
+        parser.add_argument('--defender_ldl_flip_prob', type=float, default=None,
+                                help='Probability of flipping each binary feature in the LDL defense layer, used for purchase and texas (default: the paper values, 0.0166 for purchase and 0.00016 for texas)')
         # Data Augmentation parameters for defender model
         parser.add_argument('--defender_augment_horizontal_flip_prob', type=float, default=0.5,
                                 help='probability of applying horizontal flip augmentation in the Data Augmentation defense')

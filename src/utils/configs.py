@@ -499,8 +499,9 @@ class MmdDefenseConfigs:
 class LdlDefenseConfigs:
     strategy: Literal["ldl"] = "ldl"
     n_queries: int = 100
-    noise_type: str = 'bernoulli' # options: 'bernoulli', 'gaussian'
-    noise_scale: float = 0.1
+    noise_type: Literal["normal", "bernoulli"] = "normal" # bernoulli flips binary features (purchase, texas)
+    noise_scale: float = 0.02 # std of the Gaussian noise, in pixel units for images
+    flip_prob: float = 0.0166 # probability of flipping each feature with Bernoulli noise
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class DataAugmentationDefenseConfigs:
@@ -703,13 +704,16 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     use_mixup=True if settings.defender_mode in ['mmd_mixup', 'mmd-mixup'] else False,
                                                     mixup_alpha=settings.defender_mixup_alpha)
     elif settings.defender_mode in ['ldl']:
-        if settings.dataset in ["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet", "gtsrb"]:
-            noise_type = "normal"
-        elif settings.dataset in ["purchase", "news", "texas"]:
-            noise_type = "bernoulli"
+        # Bit-flip noise only suits binary features; every other dataset, news (TF-IDF) included, gets Gaussian noise.
+        noise_type = "bernoulli" if settings.dataset in ["purchase", "texas"] else "normal"
+        # Unset flip probabilities follow the paper (Table 1), which picks them by the number of features.
+        ldl_flip_prob = settings.defender_ldl_flip_prob
+        if ldl_flip_prob is None:
+            ldl_flip_prob = {"purchase": 0.0166, "texas": 0.00016}.get(settings.dataset, 0.0166)
         defender_defense_configs = LdlDefenseConfigs(n_queries=settings.defender_ldl_n_queries,
                                                     noise_type=noise_type,
-                                                    noise_scale=settings.defender_ldl_noise_scale)
+                                                    noise_scale=settings.defender_ldl_noise_scale,
+                                                    flip_prob=ldl_flip_prob)
     elif settings.defender_mode in ['data_augmentation', 'augmentation', 'data-augmentation', 'aug', 'dataaug', 'data_aug', 'augment']:
         defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip_prob,
                                                                 rotation=settings.defender_augment_rotation,
