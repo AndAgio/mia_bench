@@ -61,3 +61,5 @@ ARCHITECTURES = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
                     'mobile_small', 'mobile_large',
                     'inception_v3',
                     'vit']
+
+TABULAR_ARCHITECTURES = ['tabular_mlp']

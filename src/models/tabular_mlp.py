@@ -13,6 +13,7 @@ class TabularMLP(nn.Module):
             dropout_rate (float): Dropout probability to control overfitting (crucial for MIA tuning).
         """
         super(TabularMLP, self).__init__()
+        self.name = 'tabular_mlp'
         
         layers = []
         current_dim = input_dim

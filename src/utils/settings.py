@@ -348,7 +348,8 @@ def build_parser() -> argparse.ArgumentParser:
                                         "inception_v3", 
                                         "vgg11", "vgg13", "vgg16", "vgg19", 
                                         "mobile_small", "mobile_large", 
-                                        "vit"])
+                                        "vit",
+                                        "tabular_mlp",])
         parser.add_argument('--attacker_optimizer', type=str, required=False, default='sgd',
                                 help='optimizer')
         parser.add_argument('--attacker_epochs', type=int, default=100,

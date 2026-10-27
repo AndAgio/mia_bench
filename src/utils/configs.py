@@ -124,7 +124,7 @@ class ModelConfigs:
     model_name: str
     im_channels: int
     num_classes: int
-    im_size: Tuple[int, ...]
+    im_size: Optional[Tuple[int, ...]]  # None for tabular datasets
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -208,7 +208,7 @@ def get_im_channels_from_name(dataset: str):
     elif dataset == 'gtsrb':
         im_channels = 3
     elif dataset == 'news':
-        im_channels = 134,410
+        im_channels = 134410
     elif dataset == 'purchase':
         im_channels = 600
     elif dataset == 'texas':
