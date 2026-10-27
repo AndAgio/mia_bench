@@ -2,7 +2,7 @@ import pathlib
 import hashlib
 import json
 # from dataclasses import dataclass, field
-from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
+from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER, HAMP_PAPER_PARAMETERS, HAMP_FALLBACK_DATASET
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -445,8 +445,17 @@ class MixupDefenseConfigs:
 class HampDefenseConfigs:
     strategy: Literal["hamp"] = "hamp"
     mode: str = 'full'  # options: 'train_only', 'test_only', 'full'
-    gamma: float = 0.5
+    # The paper's CIFAR-10 values. generate_configs_from_settings sets the dataset's (HAMP_PAPER_PARAMETERS).
+    gamma: float = 0.95
     alpha: float = 0.001
+
+    def __post_init__(self):
+        # The paper takes gamma in [0, 1] (Eq. 4): above 1 no soft label reaches the entropy threshold. A negative alpha
+        # would reward confident predictions.
+        if not 0 <= self.gamma <= 1:
+            raise ValueError(f"Hamp requires 0 <= gamma <= 1, got gamma={self.gamma}")
+        if self.alpha < 0:
+            raise ValueError(f"Hamp requires alpha >= 0, got alpha={self.alpha}")
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SelenaDefenseConfigs:
@@ -672,9 +681,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
             hamp_mode = 'full'
         else:
             raise ValueError('Hamp defense mode "{}" not recognized!'.format(settings.defender_mode))
+        # Unset values follow the paper (Table III), which picks them per dataset.
+        paper_gamma, paper_alpha = HAMP_PAPER_PARAMETERS.get(settings.dataset, HAMP_PAPER_PARAMETERS[HAMP_FALLBACK_DATASET])
         defender_defense_configs = HampDefenseConfigs(mode=hamp_mode,
-                                                    gamma=settings.defender_hamp_gamma,
-                                                    alpha=settings.defender_hamp_alpha)
+                                                    gamma=paper_gamma if settings.defender_hamp_gamma is None else settings.defender_hamp_gamma,
+                                                    alpha=paper_alpha if settings.defender_hamp_alpha is None else settings.defender_hamp_alpha)
     elif settings.defender_mode in ['selena']:
         defender_defense_configs = SelenaDefenseConfigs(K=settings.defender_selena_K,
                                                         L=settings.defender_selena_L)

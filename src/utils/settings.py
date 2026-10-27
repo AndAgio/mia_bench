@@ -163,10 +163,10 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_mixup_alpha', type=float, default=1.0,
                                 help='Alpha parameter for Mixup defense')
         # HAMP parameters for defender model
-        parser.add_argument('--defender_hamp_gamma', type=float, default=0.5,
-                                help='gamma parameter for HAMP defense')
-        parser.add_argument('--defender_hamp_alpha', type=float, default=0.001,
-                                help='Alpha parameter for HAMP defense')
+        parser.add_argument('--defender_hamp_gamma', type=float, default=None,
+                                help='Entropy threshold gamma of HAMP, in [0, 1]. Unset: the paper\'s value for the dataset (Table III), see HAMP_PAPER_PARAMETERS in src/utils/variables.py')
+        parser.add_argument('--defender_hamp_alpha', type=float, default=None,
+                                help='Strength alpha of HAMP\'s entropy regularizer. Unset: the paper\'s value for the dataset (Table III), see HAMP_PAPER_PARAMETERS in src/utils/variables.py')
         # Selena parameters for defender model
         parser.add_argument('--defender_selena_K', type=int, default=25,
                                 help='Number of models K for Selena defense')
