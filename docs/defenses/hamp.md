@@ -18,6 +18,8 @@ python run.py --defender_mode hamp --dataset cifar10 --attacker_mode lira
 `hamp` (or `hamp_full`) applies both parts. `hamp_train` only changes training, and `hamp_test` trains normally and
 only replaces the outputs.
 
+The defense is {py:class}`~src.mia.defenses.hybrid.hamp.HampDefender`.
+
 ## Parameters
 
 `--defender_hamp_gamma` (between 0 and 1) sets how soft the labels are: their entropy is gamma times the maximum.

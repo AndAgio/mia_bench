@@ -71,8 +71,16 @@ def skip_undocumented_members(app, what, name, obj, skip, options):
     return skip or docstring == ''
 
 
+def note_class_source(app, docname, source):
+    # autoapi does not record the module behind a class page, so the page would keep the docstrings of the build that
+    # first read it.
+    if docname in API_SOURCES:
+        app.env.note_dependency(API_SOURCES[docname], docname=docname)
+
+
 def setup(app):
     app.connect('autodoc-skip-member', skip_undocumented_members)
+    app.connect('source-read', note_class_source)
 
 
 # ---- Tables generated from the code, so that the pages cannot drift from it ----
@@ -102,6 +110,17 @@ def hamp_parameters():
 
 
 write_generated('hamp_parameters.md', hamp_parameters())
+
+
+def ldl_parameters():
+    from src.utils.variables import LDL_CODE_N_QUERIES, LDL_PAPER_FLIP_PROBS
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | bit flips | {LDL_CODE_N_QUERIES["bernoulli"]} | {flip_prob} |'
+            for dataset, flip_prob in LDL_PAPER_FLIP_PROBS.items()]
+    return '\n'.join(['| Dataset | Noise | Copies per query | Flip probability |', '|---|---|---|---|', *rows,
+                      f'| Other datasets | Gaussian | {LDL_CODE_N_QUERIES["normal"]} | |', ''])
+
+
+write_generated('ldl_parameters.md', ldl_parameters())
 
 
 def format_default(value) -> str:
@@ -139,7 +158,7 @@ def option_table(prefixes: list) -> str:
 
 # The command-line options listed in the Parameters section of each method's page: the page's name and the prefixes
 # of the options' names.
-METHOD_OPTIONS = {'hamp': ['defender_hamp_']}
+METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))
@@ -189,11 +208,17 @@ API_SECTIONS = {
 }
 
 
+def class_source(path: str) -> pathlib.Path:
+    # The file of the class's module.
+    source = REPO / (path.rsplit('.', 1)[0].replace('.', '/') + '.py')
+    assert source.exists(), f'{path}: no module {source}'
+    return source
+
+
 def class_summary(path: str) -> str:
     # The first paragraph of the class's docstring, read from the source like the rest of the API reference.
-    module, name = path.rsplit('.', 1)
-    source = REPO / (module.replace('.', '/') + '.py')
-    assert source.exists(), f'{path}: no module {source}'
+    name = path.rsplit('.', 1)[1]
+    source = class_source(path)
     node = next((node for node in ast.parse(source.read_text()).body
                  if isinstance(node, ast.ClassDef) and node.name == name), None)
     assert node, f'{path}: no class {name} in {source}'
@@ -205,6 +230,10 @@ def class_summary(path: str) -> str:
     return summary
 
 
+# The module file of each class page, by page name.
+API_SOURCES = {}
+
+
 def api_pages():
     root = DOCS / 'reference' / 'api'
     # The folders are generated, so a removed section or class leaves no page behind outside every toctree.
@@ -214,9 +243,11 @@ def api_pages():
     for section, paths in API_SECTIONS.items():
         names = [path.rsplit('.', 1)[1] for path in paths]
         assert len(set(names)) == len(names), f'two classes of the {section} section have the same name'
-        pages = {f'{name}.md': '\n'.join([f'# {name}', '', '```{eval-rst}', f'.. autoapiclass:: {path}',
+        pages = {f'{name}.md': '\n'.join(['% Generated from API_SECTIONS by docs/conf.py: edits here are lost.', '',
+                                         f'# {name}', '', '```{eval-rst}', f'.. autoapiclass:: {path}',
                                          '   :members:', '   :show-inheritance:', '```', ''])
                  for name, path in zip(names, paths)}
+        API_SOURCES.update({f'reference/api/{section}/{name}': class_source(path) for name, path in zip(names, paths)})
         folder = root / section
         folder.mkdir(exist_ok=True)
         for page in folder.iterdir():

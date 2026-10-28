@@ -7,36 +7,16 @@ from src.mia.defenses.base import BaseDefender, DefendedModel
 
 
 class LdlDefender(BaseDefender):
-    """
-    LDL defense from "LDL: A Defense for Label-Based Membership Inference Attacks" (Rajabi et al., AsiaCCS 2023,
-    https://dl.acm.org/doi/pdf/10.1145/3579856.3582821). Use the arXiv version (https://arxiv.org/abs/2212.01688),
-    which has the appendix.
+    """LDL: answers each query with the logits averaged over noisy copies of it, and leaves training unchanged.
 
-    Where the paper is silent or the benchmark needs more, this implementation chooses as follows.
-
-    - Output: the logits averaged over n_queries noisy copies of the input (Alg. 1), not only the label. The paper
-      releases only their argmax (a label-only setting). Label-only attacks take the argmax, so they see exactly the
-      paper's defense. Score-based attacks read the averaged logits, so against them LDL is a smoothing defense, which
-      the paper does not evaluate: report those results as an extension. Returning the logits lets every attack run
-      against LDL.
-
-    - Noise: Gaussian for image datasets, and for news, whose TF-IDF features are continuous. noise_scale is its std in
-      pixel units of [0, 1] images, as in the paper and the authors' code (0.02 by default, their value). The inputs here
-      are normalized, so the noise is divided by the per-channel normalization std. News has no paper value, and its
-      noise_scale is in TF-IDF units. Bit flips with probability flip_prob for the binary Purchase and Texas features, as
-      in the paper (Sec. 6.3). Unset, flip_prob takes the paper's value for the dataset (Table 1).
-
-    - Bit flips on non-binary inputs: a flipped feature becomes 1 - x, which is the paper's flip on 0/1 values. Label-only
-      attacks query points between binary inputs (noise robustness, HopSkipJump). These then get the same noise as the
-      binary points nearby, instead of a different noise that would make the attacked defense differ from the evaluated one.
-
-    - Gradients: tracked only when the input requires them, so an adaptive attack can average input gradients over the
-      noise. Plain queries keep no graph.
+    Paper: "LDL: A Defense for Label-Based Membership Inference Attacks",
+    https://arxiv.org/abs/2212.01688. Documentation: docs/defenses/ldl.md.
     """
     inference_only = True
 
     def __init__(self, defender_configs: DefenderConfigs):
-        assert isinstance(defender_configs.defense, LdlDefenseConfigs), f"LdlDefender can only be used with LDLDefenseConfigs, got {type(defender_configs.defense)}"
+        """Check that the configs select LDL and keep its settings."""
+        assert isinstance(defender_configs.defense, LdlDefenseConfigs), f"LdlDefender can only be used with LdlDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'ldl_defender'
         self.ldl_configs = defender_configs.defense
@@ -44,10 +24,12 @@ class LdlDefender(BaseDefender):
         self.max_batch_size = defender_configs.train.batch_size
 
     def train_model(self, train_configs, return_stats: bool = False):
+        """Train normally, since LDL only changes how the trained model answers queries."""
         self.logger.print_it("LdlDefender: No training required for LDL defense, training with standard procedure.")
         return super().train_model(train_configs=train_configs, return_stats=return_stats)
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        """Wrap the trained model with LdlModel, which adds noise in pixel units to normalized images."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.logger.print_it('LdlDefender: building defense layer...')
@@ -61,22 +43,8 @@ class LdlDefender(BaseDefender):
                                 input_std=input_std,
                                 max_batch_size=self.max_batch_size
                                 ).to(device)
-        print('LdlDefender: defense layer built, moving to device {}...'.format(device))
         self.logger.print_it('LdlDefender: finished building defense layer!')
         return self.defended_model
-
-    @staticmethod
-    def get_device(dev_str: str = 'cpu'):
-        # Set appropriate devices
-        if torch.cuda.is_available() and dev_str != 'cpu':
-            dev_str = 'cuda:{}'.format(dev_str)
-            device = torch.device(dev_str)
-        elif torch.backends.mps.is_available() and dev_str != 'cpu':
-            dev_str = 'mps'
-            device = torch.device(dev_str)
-        else:
-            device = torch.device('cpu')
-        return device
 
 
 class LdlModel(DefendedModel):
@@ -111,7 +79,8 @@ class LdlModel(DefendedModel):
     def add_noise(self, x: torch.Tensor) -> torch.Tensor:
         """Return a noisy copy of the batch: Gaussian noise, or bit flips."""
         if self.noise_type == "normal":
-            # noise_scale is a std in pixel units, as in the paper: dividing by the normalization std moves it to the inputs' units.
+            # noise_scale is a std in pixel units, as in the authors' code: dividing by the normalization std moves it
+            # to the inputs' units.
             noise = torch.randn_like(x) * self.noise_scale
             if self.input_std is not None:
                 noise = noise / self.input_std

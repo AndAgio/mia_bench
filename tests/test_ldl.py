@@ -101,6 +101,13 @@ class LdlConfigsTest(unittest.TestCase):
         self.assertEqual(ldl_configs('--dataset', 'texas', *tabular).flip_prob, 0.00016)
         self.assertEqual(ldl_configs('--dataset', 'purchase', '--defender_ldl_flip_prob', '0.05', *tabular).flip_prob, 0.05)
 
+    def test_n_queries_follow_the_authors_code(self):
+        tabular = ['--defender_model', 'tabular_mlp', '--attacker_model', 'tabular_mlp']
+        self.assertEqual(ldl_configs('--dataset', 'cifar10').n_queries, 200)
+        self.assertEqual(ldl_configs('--dataset', 'news', *tabular).n_queries, 200)
+        self.assertEqual(ldl_configs('--dataset', 'purchase', *tabular).n_queries, 100)
+        self.assertEqual(ldl_configs('--dataset', 'cifar10', '--defender_ldl_n_queries', '50').n_queries, 50)
+
     def test_defend_model_rescales_only_image_noise(self):
         image = defender('cifar10', (32, 32)).defend_model(torch.device('cpu'))
         torch.testing.assert_close(image.input_std.flatten(), torch.tensor(get_dataset_mean_std('cifar10')[1]))
