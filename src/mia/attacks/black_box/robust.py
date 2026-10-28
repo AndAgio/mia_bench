@@ -10,7 +10,11 @@ import time
 
 
 class RobustMIA(BaseMIA):
-    # Implementation of Low-Cost High-Power Membership Inference Attacks (https://arxiv.org/pdf/2312.03262)
+    """RMIA: a likelihood ratio between the sample and population samples, computed with reference models.
+
+    Paper: "Low-Cost High-Power Membership Inference Attacks",
+    https://arxiv.org/pdf/2312.03262.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

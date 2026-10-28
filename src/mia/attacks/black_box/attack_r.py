@@ -12,7 +12,11 @@ BATCH_SIZE = 256
 
 
 class AttackRMIA(BaseMIA):
-    # Implementation of Attack-R in Enhanced Membership Inference Attacks against Machine Learning Models (https://arxiv.org/pdf/2111.09679).
+    """Attack-R: compares the target's score on a sample with the scores of reference models.
+
+    Paper: "Enhanced Membership Inference Attacks against Machine Learning Models",
+    https://arxiv.org/pdf/2111.09679.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

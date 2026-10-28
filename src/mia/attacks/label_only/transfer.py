@@ -16,7 +16,11 @@ PROCESSING_BATCH_SIZE = 128
 
 
 class TransferMIA(BaseMIA):
-    # Implementation of transfer attack of "Membership Leakage in Label-Only Exposures" (https://dl.acm.org/doi/pdf/10.1145/3460120.3484575)
+    """Transfer attack: a shadow model trained on the target's labels scores the samples.
+
+    Paper: "Membership Leakage in Label-Only Exposures",
+    https://dl.acm.org/doi/pdf/10.1145/3460120.3484575.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

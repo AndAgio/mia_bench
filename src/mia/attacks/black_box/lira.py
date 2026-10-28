@@ -11,7 +11,11 @@ import time
 
 
 class LiRA(BaseMIA):
-    # Implementation of Membership inference attacks from first principles (https://ieeexplore.ieee.org/abstract/document/9833649).
+    """LiRA: a likelihood-ratio test on the sample's score, using shadow models.
+
+    Paper: "Membership inference attacks from first principles",
+    https://ieeexplore.ieee.org/abstract/document/9833649.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

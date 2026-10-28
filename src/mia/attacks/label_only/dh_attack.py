@@ -13,7 +13,11 @@ from src.utils import convert_to_hms
 
 
 class DHAttack(BaseMIA):
-    # Implementation of DHAttack of "Enhanced Label-Only Membership Inference Attacks with Fewer Queries" (https://www.usenix.org/system/files/usenixsecurity25-li-hao.pdf).
+    """DHAttack: a label-only attack that needs few queries.
+
+    Paper: "Enhanced Label-Only Membership Inference Attacks with Fewer Queries",
+    https://www.usenix.org/system/files/usenixsecurity25-li-hao.pdf.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

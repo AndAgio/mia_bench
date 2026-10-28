@@ -14,7 +14,11 @@ from src.utils import convert_to_hms
 
 
 class NoiseRobustnessMIA(BaseMIA):
-    # Implementation of noise robustness based label-only attack of "Label-Only Membership Inference Attacks" (https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf)
+    """Label-only attack: members keep their label under input noise more often than non-members.
+
+    Paper: "Label-Only Membership Inference Attacks",
+    https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

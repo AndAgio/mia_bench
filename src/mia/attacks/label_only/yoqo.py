@@ -13,7 +13,11 @@ PROCESSING_BATCH_SIZE = 10
 
 
 class Yoqo(BaseMIA):
-    # Implementation of YOQO of "You only query once: An efficient label-only membership inference attack" (https://tianweiz07.github.io/Papers/24-iclr-1.pdf).
+    """YOQO: a label-only attack that queries the target once per sample.
+
+    Paper: "You only query once: An efficient label-only membership inference attack",
+    https://tianweiz07.github.io/Papers/24-iclr-1.pdf.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

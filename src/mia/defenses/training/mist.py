@@ -13,7 +13,11 @@ from src.mia.defenses.training.mixup import mixup_data
 
 
 class MistDefender(BaseDefender):
-    # Implementation of training time optimization component of MIST defense from "MIST: Defending Against Membership Inference Attacks Through Membership-Invariant Subspace Training" (https://www.usenix.org/system/files/usenixsecurity24-li-jiacheng.pdf).
+    """MIST: membership-invariant subspace training, with sub-models trained on subsets of the data.
+
+    Paper: "MIST: Defending Against Membership Inference Attacks Through Membership-Invariant Subspace Training",
+    https://www.usenix.org/system/files/usenixsecurity24-li-jiacheng.pdf.
+    """
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, MistDefenseConfigs), f"MistDefender can only be used with MistDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
