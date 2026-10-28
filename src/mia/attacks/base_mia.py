@@ -13,9 +13,16 @@ from src.utils.log import Loggable, get_logger_from_configs
 
 
 class BaseMIA(Loggable):
+    """Base class of the attacks: samples the auditing set, attacks the defended model and records the results."""
     requires_auxiliary_data = True
 
+    @staticmethod
+    def reads_features(attacker_configs: AttackerConfigs) -> bool:
+        """Return whether the attack reads the target model's internal features, not only its outputs."""
+        return False
+
     def __init__(self, defender_model: torch.nn.Module, attacker_configs: AttackerConfigs):
+        """Load the defender's data, and the attacker's when the attack needs it, then sample the auditing set."""
         logger = get_logger_from_configs(attacker_configs.log)
         super().__init__(logger=logger)
         self.logger.print_it('Setting up and MIA attacker. First thing to do is sampling the auditing dataset...')
@@ -58,9 +65,11 @@ class BaseMIA(Loggable):
         # self.shadow_configs=attacker_configs.shadow
 
     def optimize(self):
+        """Prepare the attack, e.g. train shadow models or calibrate a threshold. Implemented by each attack."""
         raise NotImplementedError('MIA should implement the method to optimize it!')
     
     def measure_effectiveness(self):
+        """Attack the auditing samples and record the results with compute_stats. Implemented by each attack."""
         raise NotImplementedError('MIA should implement the method to measure its effectiveness!')
     
     def compute_stats(self, scores: np.array, decisions: np.array = None, params: dict = None):
@@ -287,6 +296,7 @@ class BaseMIA(Loggable):
                 params, 'recovered_members_per_1000_target_queries', recovered_per_1000)
 
     def get_best_result(self, metric_name: str = 'auc', mode: str = 'max', aggregate: str = 'mean'):
+        """Return the parameters and results of the best attack configuration for a metric."""
         assert metric_name in ['auc', 'tpr', 'fpr', 'roc']
         assert mode in ['min', 'max']
         best_params, best_result = self.results_manager.get_best(metric_name=metric_name,
@@ -295,14 +305,17 @@ class BaseMIA(Loggable):
         return best_params, best_result
     
     def summarize_results(self):
+        """Return the results as rows, one per attack configuration."""
         return self.results_manager.to_rows()
     
     def save_results_to_json(self, file: Union[str, pathlib.Path]):
+        """Save the results to a JSON file, with the summaries and per-sample predictions next to it."""
         file = pathlib.Path(file)
         self.results_manager.save_json(str(file))
         self.results_manager.save_mia_artifacts(file.parent)
 
     def get_stats(self, scores: np.array, plot: bool = False):
+        """Unused: expects (input, label) pairs, but the auditing set yields 4-tuples."""
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         fpr, tpr, roc = roc_curve(audit_labels, scores)
@@ -320,6 +333,7 @@ class BaseMIA(Loggable):
         return auc_score, tpr, fpr, roc
     
     def compute_auc(self, scores: np.array):
+        """Unused: expects (input, label) pairs, but the auditing set yields 4-tuples."""
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         fpr, tpr, _ = roc_curve(audit_labels, scores)
@@ -327,18 +341,21 @@ class BaseMIA(Loggable):
         return auc_score
     
     def compute_tpr(self, scores: np.array):
+        """Unused: expects (input, label) pairs, but the auditing set yields 4-tuples."""
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         _, tpr, _ = roc_curve(audit_labels, scores)
         return tpr.tolist()
     
     def compute_fpr(self, scores: np.array):
+        """Unused: expects (input, label) pairs, but the auditing set yields 4-tuples."""
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         fpr, _, _ = roc_curve(audit_labels, scores)
         return fpr.tolist()
     
     def compute_roc(self, scores: np.array):
+        """Unused: expects (input, label) pairs, but the auditing set yields 4-tuples."""
         audit_data = self.audit_manager.get(labels='mia')
         audit_labels = [label for _, (_, label) in enumerate(audit_data)]
         _, _, roc = roc_curve(audit_labels, scores)
@@ -346,6 +363,7 @@ class BaseMIA(Loggable):
     
     @staticmethod
     def get_device(dev_str: str = 'cpu'):
+        """Map a device string to a torch device: a CUDA index, MPS when CUDA is missing, or CPU."""
         # Set appropriate devices
         if torch.cuda.is_available() and dev_str != 'cpu':
             dev_str = 'cuda:{}'.format(dev_str)

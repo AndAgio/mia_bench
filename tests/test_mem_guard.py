@@ -62,8 +62,8 @@ class MemGuardTests(unittest.TestCase):
     def test_stopping_and_escalation_are_independent_per_sample(self):
         logits = torch.tensor([[1., 0.], [20., 0.], [0., 1.]])
         settings = dict(max_iter=10, c3_max=10.)
-        batched = defense(**settings).defend(logits)
-        separate = torch.cat([defense(**settings).defend(row[None]) for row in logits])
+        batched = defense(**settings).defended_probabilities(logits)
+        separate = torch.cat([defense(**settings).defended_probabilities(row[None]) for row in logits])
         torch.testing.assert_close(batched, separate)
         self.assertFalse(torch.equal(batched[0], logits.softmax(1)[0]))
         torch.testing.assert_close(batched[1], logits.softmax(1)[1])
@@ -81,13 +81,13 @@ class MemGuardTests(unittest.TestCase):
         logits = torch.tensor([[0.7, 0.3]]).log()
         attacker = ConfidenceAttacker()
         model = defense(attacker, randomize_mix=0.1)
-        torch.testing.assert_close(model.defend(logits), logits.softmax(1))
+        torch.testing.assert_close(model.defended_probabilities(logits), logits.softmax(1))
         self.assertEqual(len(attacker.inputs), 1)
 
     def test_forward_obeys_logits_contract_including_extreme_inputs(self):
         logits = torch.tensor([[1., 0.], [1000., -1000.]])
         model = defense()
-        probabilities = model.defend(logits)
+        probabilities = model.defended_probabilities(logits)
         output = model(logits)
         self.assertTrue(output.isfinite().all())
         torch.testing.assert_close(output.softmax(1), probabilities)
@@ -103,14 +103,14 @@ class MemGuardTests(unittest.TestCase):
     def test_expected_budget_selects_clean_or_defended_output(self):
         logits = torch.tensor([[1., 0.]])
         model = defense(apply_expected_budget=True, budget_l1=0.)
-        torch.testing.assert_close(model.defend(logits), logits.softmax(1))
+        torch.testing.assert_close(model.defended_probabilities(logits), logits.softmax(1))
         model.budget_l1 = 0.001
         q_adv, l1 = model._optimize_confidence(logits)
         self.assertGreater(l1.item(), model.budget_l1)
         with patch.object(model, '_one_time_uniform', side_effect=lambda x, p: torch.zeros_like(p)):
-            torch.testing.assert_close(model.defend(logits), q_adv)
+            torch.testing.assert_close(model.defended_probabilities(logits), q_adv)
         with patch.object(model, '_one_time_uniform', side_effect=lambda x, p: torch.ones_like(p)):
-            torch.testing.assert_close(model.defend(logits), logits.softmax(1))
+            torch.testing.assert_close(model.defended_probabilities(logits), logits.softmax(1))
 
     def test_membership_training_uses_validation_not_audit_test(self):
         def data(values):
@@ -143,10 +143,10 @@ class MemGuardTests(unittest.TestCase):
         logits = torch.tensor([[0., 1., -2.]])
         attacker = ConfidenceAttacker()
         model = defense(attacker, use_sorted=False)
-        result = model.defend(logits)
+        result = model.defended_probabilities(logits)
         torch.testing.assert_close(attacker.inputs[0], logits.softmax(1))
         self.assertEqual(result.argmax(1).item(), 1)
-        sorted_result = defense().defend(logits)
+        sorted_result = defense().defended_probabilities(logits)
         torch.testing.assert_close(result, sorted_result)
 
     def test_published_defaults_match_cli_and_config(self):
@@ -201,25 +201,25 @@ class MemGuardTests(unittest.TestCase):
         self.assertGreater((attacker(candidate) - 0.5).abs().item(),
                            (attacker(logits.softmax(1)) - 0.5).abs().item())
         with patch.object(model, '_one_time_uniform', side_effect=lambda x, p: torch.zeros_like(p)):
-            torch.testing.assert_close(model.defend(logits), logits.softmax(1))
+            torch.testing.assert_close(model.defended_probabilities(logits), logits.softmax(1))
 
     def test_one_time_randomness_is_repeatable_and_batch_independent(self):
         logits = torch.tensor([[1., 0.], [2., 0.], [0., 1.]])
         model = defense(apply_expected_budget=True, budget_l1=0.05)
         torch_state = torch.random.get_rng_state().clone()
         python_state = random.getstate()
-        batched = model.defend(logits)
+        batched = model.defended_probabilities(logits)
         torch.testing.assert_close(torch.random.get_rng_state(), torch_state)
         self.assertEqual(random.getstate(), python_state)
         torch.manual_seed(234)
         torch.rand(20)
-        torch.testing.assert_close(model.defend(logits), batched)
+        torch.testing.assert_close(model.defended_probabilities(logits), batched)
         order = torch.tensor([2, 0, 1])
-        torch.testing.assert_close(model.defend(logits[order]), batched[order])
-        separate = torch.cat([model.defend(row[None]) for row in logits])
+        torch.testing.assert_close(model.defended_probabilities(logits[order]), batched[order])
+        separate = torch.cat([model.defended_probabilities(row[None]) for row in logits])
         torch.testing.assert_close(separate, batched)
         model.budget_l1 = 0.059
-        repeated = model.defend(logits[:1].expand(8, -1))
+        repeated = model.defended_probabilities(logits[:1].expand(8, -1))
         torch.testing.assert_close(repeated, repeated[:1].expand_as(repeated))
 
     def test_quantized_query_draw_is_stable_for_small_changes(self):

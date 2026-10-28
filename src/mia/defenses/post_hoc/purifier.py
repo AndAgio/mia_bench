@@ -1,9 +1,8 @@
-import hashlib
 from typing import Union
 import torch
 from torch.utils.data import DataLoader
 from src.utils.configs import DefenderConfigs, PurifierDefenseConfigs, TrainConfigs
-from src.mia.defenses.base import BaseDefender
+from src.mia.defenses.base import BaseDefender, DefendedModel
 
 BATCH_SIZE = 64
 
@@ -48,6 +47,8 @@ class PurifierDefender(BaseDefender):
 
     - Reformer shape: the appendix's, see ConfidenceReformer. Defaults are its CIFAR-10 settings.
     """
+    inference_only = True
+
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, PurifierDefenseConfigs), f"PurifierDefender can only be used with PurifierDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
@@ -73,7 +74,7 @@ class PurifierDefender(BaseDefender):
         self.label_swapper.set_Pindex(self.build_pindex())
         self.label_swapper.set_device(self.device)
         self.logger.print_it('PurifierDefender: building defended model to be used for future prediction...')
-        self.defended_model = PurifiedModelWrapper(original_model=self.trained_model,
+        self.defended_model = PurifiedModelWrapper(model=self.trained_model,
                                                 reformer=self.reformer,
                                                 label_swapper=self.label_swapper,
                                                 threshold=self.purifier_configs.swap_threshold,
@@ -260,41 +261,29 @@ class TorchLabelSwapper(torch.nn.Module):
         return self.query(inputs, threshold=threshold)
 
 
-class PurifiedModelWrapper(torch.nn.Module):
-    """
-    Drop-in model wrapper for MI benchmarking.
-    """
-    def __init__(self, original_model: torch.nn.Module, reformer: ConfidenceReformer, label_swapper: TorchLabelSwapper, threshold: float, noise_quantization: float):
-        super().__init__()
-        self.original_model = original_model
+class PurifiedModelWrapper(DefendedModel):
+    """Purifier's defended model: purifies each output with the reformer and swaps the swap-set members' labels."""
+    def __init__(self, model: torch.nn.Module, reformer: ConfidenceReformer, label_swapper: TorchLabelSwapper, threshold: float, noise_quantization: float):
+        """Wrap the classifier with the trained reformer and the label swapper."""
+        super().__init__(model)
         self.reformer = reformer
         self.label_swapper = label_swapper
         self.threshold = threshold
         self.noise_quantization = noise_quantization
 
     def query_noise(self, x: torch.Tensor) -> torch.Tensor:
+        """Return Gaussian latent noise seeded by each query's hash, so a repeated query gets the same output.
+
+        See PurifierDefender's docstring. x: (B, ...) model inputs; returns (B, latent_dim) noise on x's device.
         """
-        Standard Gaussian latent noise seeded by a hash of each quantized query, so a repeated query
-        gets the same purified output (see PurifierDefender's docstring). Same scheme as MemGuard's
-        one-time randomness: independent of batch order and of the global RNG, and queries within
-        the quantization width of each other share their noise.
-        x: (B, ...) model inputs
-        returns (B, latent_dim) noise on x's device
-        """
-        # Transfer first, then cast: MPS can attempt the dtype conversion on
-        # the source device when .to(device='cpu', dtype=float64) is combined.
-        quantized = (x.detach().cpu().to(dtype=torch.float64) / self.noise_quantization).round().to(torch.int64)
         noise = []
-        for row in quantized:
-            digest = hashlib.sha256()
-            digest.update(str(tuple(row.shape)).encode('ascii'))
-            digest.update(row.numpy().astype('<i8', copy=False).tobytes())
-            generator = torch.Generator().manual_seed(int.from_bytes(digest.digest()[:8], 'big'))
+        for digest in self.query_digests(x, self.noise_quantization):
+            generator = torch.Generator().manual_seed(int.from_bytes(digest[:8], 'big'))
             noise.append(torch.randn(self.reformer.latent_dim, generator=generator))
         return torch.stack(noise).to(x.device)
 
     @torch.no_grad()
-    def defend(self, inputs: torch.Tensor) -> torch.Tensor:
+    def defended_probabilities(self, inputs: torch.Tensor) -> torch.Tensor:
         """
         Batched PURIFIER inference: F -> G -> H
         x: (B, ...)
@@ -302,11 +291,11 @@ class PurifiedModelWrapper(torch.nn.Module):
         """
 
         x = inputs
-        self.original_model.eval()
+        self.model.eval()
         self.reformer.eval()
 
         # 1. classifier confidences
-        logits = self.original_model(x)
+        logits = self.model(x)
         c = torch.nn.functional.softmax(logits, dim=-1)            # (B,K)
         K = c.size(1)
 
@@ -332,10 +321,6 @@ class PurifiedModelWrapper(torch.nn.Module):
 
         return p
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.training:
-            raise RuntimeError("PurifierDefender: PurifiedModelWrapper should not be used in training mode!")
-        # Log probabilities satisfy the repository logits contract: softmax
-        # reconstructs the purified confidence vector without a second softmax.
-        probabilities = self.defend(x)
-        return probabilities.clamp_min(torch.finfo(probabilities.dtype).tiny).log()
+    def defend(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the purified probabilities as logits: softmax gives them back exactly."""
+        return self.probabilities_to_logits(self.defended_probabilities(x))

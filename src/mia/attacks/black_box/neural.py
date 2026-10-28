@@ -15,7 +15,16 @@ from src.utils.configs import AttackerConfigs, TrainConfigs
 PROCESSING_BATCH_SIZE = 256
 
 class NeuralMIA(BaseMIA):
-    # Implementation of Neural Network-based MIA (https://ieeexplore.ieee.org/document/7958568)
+    """Shadow-model attack: a neural network trained on shadow models' outputs predicts membership.
+
+    Paper: "Membership Inference Attacks Against Machine Learning Models",
+    https://ieeexplore.ieee.org/document/7958568.
+    """
+    @staticmethod
+    def reads_features(attacker_configs: AttackerConfigs) -> bool:
+        """Return whether the attack reads the target model's internal features: only in feat mode."""
+        return attacker_configs.attack.neural_input_mode == 'feat'
+
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

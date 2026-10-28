@@ -1,20 +1,25 @@
 from typing import Union
 import time
-import hashlib
 import math
 import random
 import torch
 from torch.utils.data import TensorDataset, DataLoader, ConcatDataset, Subset
 from src.data.helpers import ConstantLabelDataset 
 from src.utils.configs import DefenderConfigs, MemGuardDefenseConfigs
-from src.mia.defenses.base import BaseDefender
+from src.mia.defenses.base import BaseDefender, DefendedModel
 
 
 BATCH_SIZE = 64
 
 
 class MemGuardDefender(BaseDefender):
-    # Implementation of MemGuard defense from "MemGuard: Defending Against Black-Box Membership Inference Attacks via Adversarial Examples" (https://dl.acm.org/doi/pdf/10.1145/3319535.3363201).
+    """MemGuard: adds noise to each output to fool an attack classifier, keeping the predicted label.
+
+    Paper: "MemGuard: Defending Against Black-Box Membership Inference Attacks via Adversarial Examples",
+    https://dl.acm.org/doi/pdf/10.1145/3319535.3363201.
+    """
+    inference_only = True
+
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, MemGuardDefenseConfigs), f"MemGuardDefender can only be used with MemGuardDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
@@ -31,7 +36,7 @@ class MemGuardDefender(BaseDefender):
         self.logger.print_it('MemGuard Defender: fitting shadow attack model...')
         shadow_model = self.fit_shadow_attacker_model(device=device)
         self.logger.print_it('MemGuard Defender: building defense layer...')
-        self.defended_model = MemGuard(victim=self.trained_model,
+        self.defended_model = MemGuard(model=self.trained_model,
                                         membership_model=shadow_model,
                                         use_sorted=True,
                                         c1=1.0,
@@ -160,12 +165,12 @@ class AttackNet(torch.nn.Module):
         return out if return_logits else torch.sigmoid(out)
 
 
-class MemGuard(torch.nn.Module):
+class MemGuard(DefendedModel):
     """
     MemGuard defense (single class).
     - Wraps a victim (logits model) and a membership model (attacker/defense).
     - Membership features are probabilities, sorted when use_sorted=True.
-    - forward returns log probabilities; defend returns probabilities.
+    - defend returns log probabilities; defended_probabilities returns probabilities.
     - Internally runs an optimization to craft per-query defended outputs with:
         L_opt = c1 * |membership_logit|        (push sigmoid -> 0.5)
               + c2 * max(0, max_k!=y z_k - z_y)  (preserve original top-1 label in logits)
@@ -178,7 +183,7 @@ class MemGuard(torch.nn.Module):
 
     def __init__(
         self,
-        victim,                 # Victim
+        model,                  # Victim
         membership_model,       # attacker expecting (sorted) probabilities
         *,
         use_sorted: bool = True,
@@ -193,7 +198,8 @@ class MemGuard(torch.nn.Module):
         budget_l1: float = 0.10,
         randomness_quantization: float = 1e-3
     ):
-        super().__init__()
+        """Wrap the victim and the membership model, and check the optimization settings."""
+        super().__init__(model)
         if not (math.isfinite(c3_init) and math.isfinite(c3_max) and 0 < c3_init <= c3_max):
             raise ValueError('MemGuard requires 0 < c3_init <= c3_max, both finite.')
         if max_iter < 1 or not math.isfinite(step_size) or step_size <= 0:
@@ -204,7 +210,6 @@ class MemGuard(torch.nn.Module):
             raise ValueError('MemGuard requires a positive finite randomness_quantization.')
         if not 0 <= randomize_mix < 1:
             raise ValueError('MemGuard requires 0 <= randomize_mix < 1.')
-        self.victim = victim.eval()
         self.M = membership_model.eval()
         self.use_sorted = use_sorted
 
@@ -224,27 +229,18 @@ class MemGuard(torch.nn.Module):
         return self.M(features, return_logits=True).view(-1)
 
     def _one_time_uniform(self, x: torch.Tensor, like: torch.Tensor) -> torch.Tensor:
-        """Hash each quantized query, independently of batch order and global RNG.
+        """Return one uniform draw per query, seeded by its hash: independent of batch order and global RNG.
 
         The paper does not specify a quantization width. The default is 1e-3
         in model-input units; callers can choose a width appropriate to their data.
         """
-        # Transfer first, then cast: MPS can attempt the dtype conversion on
-        # the source device when .to(device='cpu', dtype=float64) is combined.
-        cpu_query = x.detach().cpu()
-        quantized = (cpu_query.to(dtype=torch.float64)
-                     / self.randomness_quantization).round().to(torch.int64)
-        draws = []
-        for row in quantized:
-            digest = hashlib.sha256()
-            digest.update(str(tuple(row.shape)).encode('ascii'))
-            digest.update(row.numpy().astype('<i8', copy=False).tobytes())
-            seed = int.from_bytes(digest.digest(), 'big')
-            draws.append(random.Random(seed).random())
+        draws = [random.Random(int.from_bytes(digest, 'big')).random()
+                 for digest in self.query_digests(x, self.randomness_quantization)]
         return torch.tensor(draws, device=like.device, dtype=like.dtype)
 
     @staticmethod
     def _mix_uniform(q: torch.Tensor, mix: float) -> torch.Tensor:
+        """Mix the probabilities with the uniform distribution, with weight mix on the uniform."""
         if mix <= 0: return q
         B, K = q.shape
         u = torch.full((B, K), 1.0 / K, device=q.device, dtype=q.dtype)
@@ -334,12 +330,9 @@ class MemGuard(torch.nn.Module):
 
     # ---------- public API ----------
     @torch.no_grad()
-    def defend(self, x: torch.Tensor) -> torch.Tensor:
+    def defended_probabilities(self, x: torch.Tensor) -> torch.Tensor:
         """Return defended probability vectors for batch x."""
-        if hasattr(self.victim, 'predict_logits'):
-            logits = self.victim.predict_logits(x)     # (B, K)
-        else:
-            logits = self.victim(x)                    # (B, K)
+        logits = self.model(x)                         # (B, K)
         q_orig = torch.nn.functional.softmax(logits, dim=1)
         q_adv, l1 = self._optimize_confidence(logits)
 
@@ -358,10 +351,6 @@ class MemGuard(torch.nn.Module):
         u = self._one_time_uniform(x, p)
         return torch.where((u < p)[:, None], q_adv, q_orig)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.training:
-            raise RuntimeError("MemGuard defense should not be used in training mode!")
-        # Log probabilities satisfy the repository logits contract: softmax
-        # reconstructs the defended confidence vector without a second softmax.
-        probabilities = self.defend(x)
-        return probabilities.clamp_min(torch.finfo(probabilities.dtype).tiny).log()
+    def defend(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the defended probabilities as logits: softmax gives them back exactly."""
+        return self.probabilities_to_logits(self.defended_probabilities(x))

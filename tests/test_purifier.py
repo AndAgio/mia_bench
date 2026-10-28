@@ -36,7 +36,7 @@ class IndexedData(Dataset):
 def wrapper(Pindex, threshold=0.01, reformer=None, noise_quantization=1e-3):
     swapper = TorchLabelSwapper(Pindex=Pindex)
     swapper.set_device(torch.device('cpu'))
-    model = PurifiedModelWrapper(original_model=torch.nn.Identity(), reformer=reformer or EchoReformer(),
+    model = PurifiedModelWrapper(model=torch.nn.Identity(), reformer=reformer or EchoReformer(),
                                  label_swapper=swapper, threshold=threshold, noise_quantization=noise_quantization)
     return model.eval()
 
@@ -56,7 +56,7 @@ class PurifierTests(unittest.TestCase):
     def test_forward_obeys_logits_contract_including_extreme_inputs(self):
         logits = torch.tensor([[1., 0., 0.], [1000., -1000., 0.]])
         model = wrapper(Pindex=[torch.tensor([0., 1., 0.]).log_softmax(0)])
-        probabilities = model.defend(logits)
+        probabilities = model.defended_probabilities(logits)
         output = model(logits)
         self.assertTrue(output.isfinite().all())
         torch.testing.assert_close(output.softmax(1), probabilities)
@@ -66,7 +66,7 @@ class PurifierTests(unittest.TestCase):
         logits = torch.tensor([[2., 1., 0.], [0., 0., 3.]])
         c = logits.softmax(1)
         model = wrapper(Pindex=[logits[0].log_softmax(0)])
-        probabilities = model.defend(logits)
+        probabilities = model.defended_probabilities(logits)
         torch.testing.assert_close(probabilities[0], c[0][[1, 0, 2]])
         torch.testing.assert_close(probabilities[1], c[1])
         self.assertTrue(model(logits).isfinite().all())
@@ -75,13 +75,13 @@ class PurifierTests(unittest.TestCase):
         member, other = torch.tensor([[30., 0., 0.]]), torch.tensor([[40., 0., 0.]])
         self.assertLess((member.softmax(1) - other.softmax(1)).norm().item(), 1e-12)
         model = wrapper(Pindex=[member[0].log_softmax(0)])
-        torch.testing.assert_close(model.defend(other), other.softmax(1))
-        self.assertEqual(model.defend(member).argmax(1).item(), 1)
+        torch.testing.assert_close(model.defended_probabilities(other), other.softmax(1))
+        self.assertEqual(model.defended_probabilities(member).argmax(1).item(), 1)
 
     def test_empty_swap_set_leaves_outputs_unchanged(self):
         logits = torch.tensor([[2., 1., 0.]])
         model = wrapper(Pindex=torch.empty(0, 3))
-        torch.testing.assert_close(model.defend(logits), logits.softmax(1))
+        torch.testing.assert_close(model.defended_probabilities(logits), logits.softmax(1))
 
     def test_swap_set_follows_paper_rate_from_val_accuracy_and_never_reads_test(self):
         train_logits = torch.randn(20, 3) * 5
@@ -118,13 +118,13 @@ class PurifierTests(unittest.TestCase):
         model = wrapper(Pindex=torch.empty(0, 3), reformer=ConfidenceReformer(num_classes=3, latent_dim=2, hidden=8))
         logits = torch.tensor([[2., 1., 0.], [0., 1., 0.5], [1., 0., 3.]])
         torch_state = torch.random.get_rng_state().clone()
-        batched = model.defend(logits)
+        batched = model.defended_probabilities(logits)
         torch.testing.assert_close(torch.random.get_rng_state(), torch_state)
         torch.rand(20)
-        torch.testing.assert_close(model.defend(logits), batched)
+        torch.testing.assert_close(model.defended_probabilities(logits), batched)
         order = torch.tensor([2, 0, 1])
-        torch.testing.assert_close(model.defend(logits[order]), batched[order])
-        torch.testing.assert_close(torch.cat([model.defend(row[None]) for row in logits]), batched)
+        torch.testing.assert_close(model.defended_probabilities(logits[order]), batched[order])
+        torch.testing.assert_close(torch.cat([model.defended_probabilities(row[None]) for row in logits]), batched)
         noise = model.query_noise(logits)
         self.assertFalse(torch.equal(noise[0], noise[1]))
 

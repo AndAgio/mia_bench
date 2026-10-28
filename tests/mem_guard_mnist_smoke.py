@@ -138,7 +138,7 @@ def main():
     defender.dataset = {'train': train, 'val': validation, 'test': test}
     defender.trained_model = victim.eval()
     model = defender.defend_model(device=device)
-    assert next(model.victim.parameters()).device.type == device.type
+    assert next(model.model.parameters()).device.type == device.type
     assert next(model.M.parameters()).device.type == device.type
     # Discard stale training gradients, then check that inference creates none.
     for parameter in model.parameters():

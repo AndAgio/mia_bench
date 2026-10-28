@@ -57,6 +57,67 @@ def evaluate_model_performance(model, dataset, device, batch_size: int) -> dict:
     }
 
 
+class TargetQueryCounter:
+    """Counts the samples sent to the target model through forward or feature, inside a with block."""
+
+    def __init__(self, model: torch.nn.Module):
+        """Prepare to count the queries to the model."""
+        self.model = model
+        self.count = 0
+        # Calls in progress: a call made inside another one, e.g. a forward calling feature, is not a new query.
+        self.depth = 0
+        self.hooks = []
+
+    def __enter__(self):
+        """Hook forward, and wrap feature if the model has one: NeuralMIA's feat mode queries it directly."""
+        self.hooks = [self.model.register_forward_pre_hook(lambda _module, inputs: self.start_call(inputs)),
+                      self.model.register_forward_hook(lambda _module, _inputs, _outputs: self.end_call(),
+                                                       always_call=True)]
+        if hasattr(self.model, 'feature'):
+            feature = self.model.feature
+
+            def counted_feature(inputs, *args, **kwargs):
+                self.start_call((inputs,))
+                try:
+                    return feature(inputs, *args, **kwargs)
+                finally:
+                    self.end_call()
+            # The instance attribute shadows the class's method until __exit__ deletes it.
+            self.model.feature = counted_feature
+        return self
+
+    def __exit__(self, *exc_info):
+        """Remove the hooks and the wrapper."""
+        for hook in self.hooks:
+            hook.remove()
+        if 'feature' in vars(self.model):
+            del self.model.feature
+
+    def start_call(self, inputs):
+        """Count the batch of a call, unless the call is made inside another one."""
+        if self.depth == 0:
+            if inputs and hasattr(inputs[0], 'shape') and len(inputs[0].shape) > 0:
+                self.count += int(inputs[0].shape[0])
+            else:
+                self.count += 1
+        self.depth += 1
+
+    def end_call(self):
+        """Mark the end of a call."""
+        self.depth -= 1
+
+
+def check_pairing(settings, defender, attacker_class, attacker_configs):
+    """Note in the log when the attack reads internal features that the defense leaves undefended.
+
+    The pairing still runs: its result is the undefended model's features' leakage, which readers may want to know.
+    """
+    if defender.inference_only and attacker_class.reads_features(attacker_configs):
+        defender.logger.print_it(f"Pairing [NOTE]: attack '{settings.attacker_mode}' reads the model's internal features, "
+                                 f"which defense '{settings.defender_mode}' does not defend: it acts only at inference. "
+                                 "The result measures the undefended model's features.")
+
+
 def process_peak_memory_mb() -> float:
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     divisor = 1024 * 1024 if sys.platform == 'darwin' else 1024
@@ -87,6 +148,8 @@ def main():
 
     defender_class = get_defender_class(settings.defender_mode)
     defender = defender_class(defender_configs=experiment_configs.defender)
+    attacker_class = get_attacker_class(settings.attacker_mode)
+    check_pairing(settings, defender, attacker_class, experiment_configs.attacker)
     defender_train_start = time.perf_counter()
     trained_defender_model, defender_stats = defender.train_model(train_configs=experiment_configs.defender.train, return_stats=True)
     defender_training_seconds = time.perf_counter() - defender_train_start
@@ -99,7 +162,6 @@ def main():
     # victim = Victim(victim_configs=experiment_configs.victim)
     # victim_model, victim_stats = victim.train_model(train_configs=experiment_configs.victim.train, return_stats=True)
 
-    attacker_class = get_attacker_class(settings.attacker_mode)
     attacker = attacker_class(defender_model=defender_model,
                             attacker_configs=experiment_configs.attacker)
     attack_optimization_start = time.perf_counter()
@@ -109,21 +171,11 @@ def main():
     # Compute class/correctness slices outside the query counter: this is evaluation,
     # not part of the attack's target-model query budget.
     attacker.prepare_audit_analysis(device=experiment_configs.attacker.train.device)
-    target_query_count = 0
-    def count_target_queries(_module, inputs):
-        nonlocal target_query_count
-        if inputs and hasattr(inputs[0], 'shape') and len(inputs[0].shape) > 0:
-            target_query_count += int(inputs[0].shape[0])
-        else:
-            target_query_count += 1
-
-    query_hook = defender_model.register_forward_pre_hook(count_target_queries)
     attack_evaluation_start = time.perf_counter()
-    try:
+    with TargetQueryCounter(defender_model) as query_counter:
         attacker.measure_effectiveness(device=experiment_configs.attacker.train.device)
-    finally:
-        query_hook.remove()
     attack_evaluation_seconds = time.perf_counter() - attack_evaluation_start
+    target_query_count = query_counter.count
 
     best_auc_params, best_auc = attacker.get_best_result('auc', mode='max')
     # TODO: Refactor stats tracking to make it easier to get victim training stats.

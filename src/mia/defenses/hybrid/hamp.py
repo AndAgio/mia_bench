@@ -4,43 +4,26 @@ from src.data import get_dataset_mean_std
 from src.trainer.train_manager import TrainManager
 from src.utils.configs import DefenderConfigs, HampDefenseConfigs
 from src.utils.variables import HAMP_PAPER_PARAMETERS, HAMP_FALLBACK_DATASET
-from src.mia.defenses.base import BaseDefender
+from src.mia.defenses.base import BaseDefender, DefendedModel
 
 
 class HampDefender(BaseDefender):
-    """
-    HAMP defense from "Overconfidence is a Dangerous Thing: Mitigating Membership Inference Attacks by Enforcing Less
-    Confident Prediction" (Chen and Pattabiraman, NDSS 2024, https://arxiv.org/pdf/2307.01610).
+    """HAMP: trains on high-entropy soft labels, and gives each output a random input's scores at inference.
 
-    Where the paper is silent or the benchmark needs more, this implementation chooses as follows.
-
-    - KL scaling: the authors' code averages the KL divergence over the classes as well as the samples (F.kl_div's default
-      reduction), while Eq. 6 sums it over the classes. This implementation follows the code, with which the paper's
-      gamma and alpha (Table III, the defaults here) were tuned. Following Eq. 6 instead would make the KL term
-      num_classes times larger, weakening the entropy regularizer by as much and changing the step size.
-
-    - Gamma and alpha: unset, they take the paper's values for the dataset (Table III, HAMP_PAPER_PARAMETERS), and
-      CIFAR-10's for datasets the paper does not evaluate. Other values are logged as a warning, since results with them
-      are not the paper's configuration.
-
-    - Random samples for the testing-time defense: for image datasets, pixels uniform in [0, 1] and then normalized like
-      the model inputs (the paper samples pixels in [0, 255], Sec. IV-A). For the binary Purchase and Texas features,
-      0 or 1 with equal probability, as in the paper (Sec. III-D). News has no paper value: its TF-IDF features lie in
-      [0, 1], so they are drawn uniformly from [0, 1].
-
-    - Soft labels for gamma close to 1: Eq. 4 asks for an entropy of at least gamma times the maximum with the true class
-      most likely, which gamma = 1 cannot satisfy. The search keeps the true class most likely and says so in the log.
-
-    - Validation and test loss: the cross-entropy on the true labels, as in the authors' code and the benchmark's reports.
-      The training loss is the HAMP objective (Eq. 7) on the soft labels, so the two are not comparable.
+    Paper: "Overconfidence is a Dangerous Thing: Mitigating Membership Inference Attacks by Enforcing Less Confident
+    Prediction", https://arxiv.org/abs/2307.01610. Documentation: docs/defenses/hamp.md.
     """
     def __init__(self, defender_configs: DefenderConfigs):
+        """Check that the configs select HAMP and keep its settings."""
         assert isinstance(defender_configs.defense, HampDefenseConfigs), f"Hamp Defender can only be used with HampDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'hamp_defender'
         self.hamp_configs = defender_configs.defense
+        # Only test_only mode keeps the standard training, so only there the trained model is undefended.
+        self.inference_only = self.hamp_configs.mode == 'test_only'
 
     def train_model(self, train_configs, return_stats: bool = False):
+        """Train with HAMP's soft labels and regularizer, or normally in test_only mode, and return the best model."""
         self.logger.print_it(f"Hamp Defender: selected mode {self.hamp_configs.mode}")
         if self.hamp_configs.mode in ['train_only', 'full']:
             self.logger.print_it(f'Hamp Defender: training defender model with alpha {self.hamp_configs.alpha} and gamma {self.hamp_configs.gamma}...')
@@ -74,6 +57,7 @@ class HampDefender(BaseDefender):
             return self.trained_model
 
     def warn_if_not_paper_parameters(self):
+        """Log a warning if gamma and alpha are not the paper's values for the dataset."""
         dataset = self.dataset_configs.name
         chosen = (self.hamp_configs.gamma, self.hamp_configs.alpha)
         if dataset not in HAMP_PAPER_PARAMETERS:
@@ -82,6 +66,7 @@ class HampDefender(BaseDefender):
             self.logger.print_it(f"Hamp Defender [WARNING]: (gamma, alpha) = {chosen} differ from the paper's {HAMP_PAPER_PARAMETERS[dataset]} for {dataset} (Table III); results are not the paper's configuration.")
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        """Wrap the trained model with HampTestWrapper, unless the mode is train_only."""
         if self.hamp_configs.mode in ['test_only', 'full']:
             self.logger.print_it(f'Hamp Defender: adding defense layer on outputs using entropy trick...')
             if isinstance(device, str):
@@ -102,7 +87,9 @@ class HampDefender(BaseDefender):
 
 
 class HampTrainManager(TrainManager):
+    """TrainManager that trains on HAMP's soft labels with HampLoss."""
     def __init__(self, train_configs, name: str, logger=None, hamp_configs: HampDefenseConfigs = None, num_classes: int = None):
+        """Set up training and build the soft-label template for the number of classes."""
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.hamp_configs = hamp_configs
         assert num_classes is not None, "HampTrainManager: num_classes must be provided."
@@ -111,14 +98,17 @@ class HampTrainManager(TrainManager):
         self.soft_label_top1, self.soft_label_other = self.get_soft_label_template()
 
     def setup_loss(self, loss: Union[str, Callable]):
+        """Use HampLoss, whatever loss the configs name."""
         self.criterion = HampLoss(gamma=self.hamp_configs.gamma, alpha=self.hamp_configs.alpha)
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        """Run the standard training step on the batch's soft labels."""
         # Train on the high-entropy soft labels; the rest is the standard step.
         super().train_step(inputs, self.get_soft_labels(original_labels=targets), batch_idx=batch_idx, total_batches=total_batches)
 
     @torch.no_grad()
     def get_soft_label_template(self):
+        """Return the probabilities of the true class and of each other class in a soft label."""
         # Probabilities of the true class and of each other class (Eq. 5). As in the authors' code, the true class gives
         # up 0.001 at a time until the entropy reaches gamma times the entropy of the uniform label (Eq. 4). The search
         # stops while the true class is still the most likely, which a gamma close to 1 could otherwise step past forever.
@@ -142,20 +132,24 @@ class HampTrainManager(TrainManager):
 
     @torch.no_grad()
     def get_soft_labels(self, original_labels):
+        """Turn class indices into HAMP soft labels."""
         new_soft_label = torch.full((original_labels.shape[0], self.num_classes), self.soft_label_other, device=original_labels.device)
         return new_soft_label.scatter_(1, original_labels.view(-1, 1), self.soft_label_top1)
 
 
 class HampLoss(torch.nn.Module):
+    """HAMP's training loss: KL divergence to the soft labels minus alpha times the prediction entropy."""
     # Like nn.CrossEntropyLoss, starts with reduction='none' (per-sample losses, needed by ESAM) and is switched
     # to 'mean' by TrainManager.setup_optimizer for plain optimizers.
     def __init__(self, gamma, alpha, reduction: str = 'none'):
+        """Store alpha and the reduction; gamma is kept for reference."""
         super(HampLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
         self.reduction = reduction
 
     def forward(self, outputs, targets):
+        """Return the loss: HAMP's objective for soft labels, the cross-entropy for class indices."""
         # Only the train split carries soft labels. Val/test keep integer class ids and get the cross-entropy, as in the
         # authors' code and the benchmark's reports.
         if targets.dim() == 1:
@@ -173,16 +167,18 @@ class HampLoss(torch.nn.Module):
         return loss
 
 
-class HampTestWrapper(torch.nn.Module):
+class HampTestWrapper(DefendedModel):
+    """Inference-time part of HAMP: each output takes a random input's scores, in its own class order."""
     def __init__(self, model: torch.nn.Module, binary_inputs: bool = False, input_mean: Optional[List[float]] = None, input_std: Optional[List[float]] = None):
-        super(HampTestWrapper, self).__init__()
-        self.model = model
+        """Wrap the model; the input type and normalization decide how random inputs are drawn."""
+        super().__init__(model)
         self.binary_inputs = binary_inputs
         # Per-channel normalization of image inputs. Buffers follow .to(device) and stay out of the state dict.
         self.register_buffer('input_mean', None if input_mean is None else torch.tensor(input_mean).view(-1, 1, 1), persistent=False)
         self.register_buffer('input_std', None if input_std is None else torch.tensor(input_std).view(-1, 1, 1), persistent=False)
 
     def random_inputs(self, inputs: torch.Tensor) -> torch.Tensor:
+        """Draw random inputs shaped like the batch: 0/1 features, or uniform values normalized like images."""
         # Binary features are 0 or 1 with equal probability; other inputs are uniform in [0, 1], normalized if images.
         if self.binary_inputs:
             return torch.randint_like(inputs, 2)
@@ -191,7 +187,8 @@ class HampTestWrapper(torch.nn.Module):
             random_inputs = (random_inputs - self.input_mean) / self.input_std
         return random_inputs
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def defend(self, inputs: torch.Tensor) -> torch.Tensor:
+        """Return the logits of a new random input, rearranged in the class order of the inputs' logits."""
         random_inputs = self.random_inputs(inputs)
         with torch.no_grad():
             original_outputs = self.model(inputs)
