@@ -7,49 +7,15 @@ from src.mia.defenses.base import BaseDefender, DefendedModel
 BATCH_SIZE = 64
 
 class PurifierDefender(BaseDefender):
-    """
-    Purifier defense from "Purifier: Defending Data Inference Attacks via Transforming Confidence Scores"
-    (Yang et al., AAAI 2023, https://ojs.aaai.org/index.php/AAAI/article/view/26289). Use the arXiv version
-    (https://arxiv.org/abs/2212.00612): its appendix has the architectures and training settings.
+    """Purifier: reforms each output with a noisy autoencoder trained on non-members, and swaps some members' labels.
 
-    Where the paper is silent or ambiguous, this implementation chooses as follows. The numbers come from
-    an overfit CIFAR-10 ResNet-18 (99.75% train / 45.5% test accuracy), checked in October 2026.
-
-    - Output: log-probabilities, so the attacks' softmax gives back the purified vector p exactly.
-
-    - Reformer G noise: fixed-scale Gaussian noise on a batch-normalised latent (no learnable scale).
-      Eq. 1 has no KL term, and without it a learned variance shrinks the noise away (latent std
-      1 -> 5e-6 in one epoch). A fixed scale on an unnormalised latent fails too: the latent grows until
-      the noise is negligible. Adding a KL term makes the decoder ignore the latent instead (one output per
-      predicted label). Batch-normalising the latent fixes its scale, so the noise keeps its effect.
-      The appendix also uses batch normalization in G's hidden layers.
-
-    - Reformer loss: per-sample squared L2 reconstruction ("L2 norm") + lambda * cross-entropy, with
-      lambda = 0.1 by default. With lambda = 1 the cross-entropy dominates and G outputs one-hot vectors
-      (every non-member top-1 = 1.000), which turns Purifier into one-hot encoding. The paper's Fig. 7 shows
-      spread-out confidences after purification instead.
-
-    - Repeated queries: the latent noise of each query is seeded by a hash of the quantized input, so the
-      same input always gets the same output (like MemGuard's one-time randomness). With fresh noise per
-      query, labels changed over 20 repeated queries for 89% of swapped members and 12% of test
-      non-members, against 0.3% of the other members: a replay signal the paper says Purifier defends.
-
-    - Label swapper H: a random p_swap = (acc_train - acc_test) / acc_train share of the members get the
-      second largest label of p, as in the paper. acc_test is estimated on the val (reference) split,
-      because the test split holds the auditing non-members.
-
-    - Swap-set lookup: kNN on the classifier's confidences c, not on the purified p, as in the paper ("H checks
-      if c has a match in P_index ... and swaps the label of p"). This is deliberate: p carries the reformer's
-      noise, so it could not match exactly. The match uses log-confidences rather than probabilities. Softmax
-      saturates on confident predictions, so distinct inputs can share the same probability vector: with
-      probabilities, 63.5% of non-members matched a member at the old threshold. Log-confidences of the same
-      input differ by at most ~1e-5 across batch compositions and those of distinct inputs by at least ~2.4.
-
-    - Reformer shape: the appendix's, see ConfidenceReformer. Defaults are its CIFAR-10 settings.
+    Paper: "Purifier: Defending Data Inference Attacks via Transforming Confidence Scores",
+    https://arxiv.org/abs/2212.00612. Documentation: docs/defenses/purifier.md.
     """
     inference_only = True
 
     def __init__(self, defender_configs: DefenderConfigs):
+        """Check that the configs select Purifier, and build the reformer and the label swapper."""
         assert isinstance(defender_configs.defense, PurifierDefenseConfigs), f"PurifierDefender can only be used with PurifierDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'purifier_defender'
@@ -61,10 +27,12 @@ class PurifierDefender(BaseDefender):
         self.label_swapper = TorchLabelSwapper()
 
     def train_model(self, train_configs, return_stats: bool = False):
+        """Train normally, since Purifier only changes how the trained model answers queries."""
         self.logger.print_it("PurifierDefender: training original model...")
         return super().train_model(train_configs=train_configs, return_stats=return_stats)
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        """Train the reformer, pick the swap set, and wrap the trained model with them."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.device = device
@@ -83,10 +51,12 @@ class PurifierDefender(BaseDefender):
         return self.defended_model
 
     def train_original_model(self, train_configs: TrainConfigs):
+        """Train the classifier normally and return it, without the training stats."""
         self.logger.print_it("PurifierDefender: training original model...")
         return super().train_model(train_configs=train_configs, return_stats=False)
 
     def train_reformer(self):
+        """Train the reformer with Eq. 1 on the classifier's confidences on the val (reference) split."""
         try:
             reformer_training_dataset = self.dataset.get('val')
         except (KeyError, AttributeError):
@@ -110,7 +80,7 @@ class PurifierDefender(BaseDefender):
                     c = torch.nn.functional.softmax(self.original_model(inputs), dim=-1)
                     l = torch.nn.functional.one_hot(c.argmax(dim=-1), num_classes=c.size(1)).float()
                 c_hat = self.reformer(c, l)  # fresh noise in training; inference seeds it per query
-                # Eq. 1 with per-sample squared L2; see the class docstring for why lambda defaults to 0.1
+                # Eq. 1 with per-sample squared L2; docs/defenses/purifier.md explains the default lambda
                 loss_R = ((c_hat - c)**2).sum(dim=-1).mean()
                 eps = 1e-12
                 loss_L = -(l * (c_hat + eps).log()).sum(dim=-1).mean()
@@ -128,6 +98,7 @@ class PurifierDefender(BaseDefender):
         self.logger.print_it("PurifierDefender: finished training reformer model!")
 
     def build_pindex(self):
+        """Pick the members whose labels are swapped, and return their log-confidences."""
         # Paper: swap the labels of a random share p_swap = (acc_train - acc_test) / acc_train of the members,
         # which brings their accuracy down to the test accuracy. The test split holds the auditing
         # non-members, so the test accuracy is estimated on the reference (val) split instead.
@@ -144,6 +115,7 @@ class PurifierDefender(BaseDefender):
 
     @torch.no_grad()
     def get_log_confidences(self, dataset):
+        """Return the classifier's log-confidences on a dataset, whether each prediction is right, and the indices."""
         self.trained_model.to(self.device).eval()
         log_c, correct, indices = [], [], []
         dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -157,23 +129,9 @@ class PurifierDefender(BaseDefender):
 
 
 class ConfidenceReformer(torch.nn.Module):
-    """
-    PURIFIER confidence reformer G_theta.
-    Gaussian noise of fixed scale is added to a batch-normalised latent, in training and at
-    inference. A learned or unnormalised latent scale lets training shrink the noise away
-    (see PurifierDefender's docstring).
-
-    Shape from the paper's appendix: layers [2K, h, 2h, 4h, latent, 4h, 2h, h, K], with batch
-    normalization and ReLU in the hidden layers. The appendix's settings per dataset:
-        dataset                         h    latent  epochs        lr
-        CIFAR10 (the defaults here)     32   2       100           0.01
-        UTKFace                         32   2       300           1e-4
-        Purchase100, Texas, Location    128  20      150/100/100   1e-4
-        FaceScrub530, CIFAR100          512  100     300           5e-4
-    The appendix's output sizes for CIFAR10 (20) and FaceScrub530 (1060) do not match K;
-    UTKFace (2) and Purchase100 (100) do, so the output here is K.
-    """
+    """Purifier's confidence reformer G: an autoencoder conditioned on the predicted label, with a noisy latent."""
     def __init__(self, num_classes, latent_dim=2, hidden=32, noise_sigma=1.0):
+        """Build the appendix's layers [2K, h, 2h, 4h, latent, 4h, 2h, h, K] for K = num_classes and h = hidden."""
         super().__init__()
         in_dim = num_classes * 2  # c || onehot(label)
         self.latent_dim = latent_dim
@@ -188,6 +146,7 @@ class ConfidenceReformer(torch.nn.Module):
             *hidden_layer(hidden, 2 * hidden),
             *hidden_layer(2 * hidden, 4 * hidden),
             torch.nn.Linear(4 * hidden, latent_dim),
+            # No learnable scale: with a learned or unnormalised scale, training shrinks the latent noise away.
             torch.nn.BatchNorm1d(latent_dim, affine=False),
         )
 
@@ -196,13 +155,15 @@ class ConfidenceReformer(torch.nn.Module):
             *hidden_layer(latent_dim + num_classes, 4 * hidden),
             *hidden_layer(4 * hidden, 2 * hidden),
             *hidden_layer(2 * hidden, hidden),
+            # K scores, as the appendix has for Purchase100 and UTKFace; its CIFAR10 and FaceScrub530 sizes are 2K.
             torch.nn.Linear(hidden, num_classes),
         )
         self.sm = torch.nn.Softmax(dim=-1)
-    
+
     def forward(self, c, l_onehot, noise=None):
-        """
-        noise: optional (B, latent_dim) standard Gaussian draws; fresh draws are used when None
+        """Return the reformed confidences of c given the one-hot labels.
+
+        noise: optional (B, latent_dim) standard Gaussian draws; fresh draws are used when None.
         """
         r = self.enc(torch.cat([c, l_onehot], dim=-1))
         if noise is None:
@@ -215,35 +176,29 @@ class ConfidenceReformer(torch.nn.Module):
 
 
 class TorchLabelSwapper(torch.nn.Module):
-    """
-    Pure PyTorch kNN lookup of the members whose label is swapped.
-    Computes nearest neighbors fully on GPU.
-    """
+    """Purifier's label swapper H: finds the queries that match a swap-set member, by 1-NN on log-confidences."""
     def __init__(self, Pindex: Union[torch.Tensor, list] = None):
-        """
-        Pindex: list of (K,) tensors OR a (T,K) tensor of swap-set log-confidences
-        """
+        """Keep the swap set's log-confidences, if given: a list of (K,) tensors or a (T, K) tensor."""
         super().__init__()
         self.P = None
         if Pindex is not None:
             self.set_Pindex(Pindex)
 
     def set_Pindex(self, Pindex: Union[torch.Tensor, list]):
+        """Set the swap set's log-confidences: a list of (K,) tensors or a (T, K) tensor."""
         if isinstance(Pindex, list):
             Pindex = torch.stack(Pindex)            # (T, K)
         self.P = Pindex.float()
 
     def set_device(self, device: torch.device):
+        """Move the swap set to the device the queries come on."""
         self.device = device
         if self.P is not None:
             self.P = self.P.to(device)
 
     @torch.no_grad()
     def query(self, log_C_batch, threshold):
-        """
-        log_C_batch: (B, K) log-confidence vectors
-        Returns: BoolTensor(B,), True where the query matches a swap-set member
-        """
+        """Return a (B,) boolean tensor, True where a row of the (B, K) log-confidences matches a swap-set member."""
         assert self.P is not None, "TorchLabelSwapper: Pindex must be provided to use the query function!"
 
         log_C_batch = log_C_batch.float().to(self.device)  # (B, K)
@@ -256,6 +211,7 @@ class TorchLabelSwapper(torch.nn.Module):
         return dist.min(dim=1).values <= threshold
 
     def forward(self, inputs, threshold):
+        """Return the matches of query; the swapper has no training mode."""
         if self.training:
             raise RuntimeError("TorchLabelSwapper: forward should not be used in training mode!")
         return self.query(inputs, threshold=threshold)
@@ -274,7 +230,7 @@ class PurifiedModelWrapper(DefendedModel):
     def query_noise(self, x: torch.Tensor) -> torch.Tensor:
         """Return Gaussian latent noise seeded by each query's hash, so a repeated query gets the same output.
 
-        See PurifierDefender's docstring. x: (B, ...) model inputs; returns (B, latent_dim) noise on x's device.
+        See docs/defenses/purifier.md. x: (B, ...) model inputs; returns (B, latent_dim) noise on x's device.
         """
         noise = []
         for digest in self.query_digests(x, self.noise_quantization):
@@ -284,11 +240,7 @@ class PurifiedModelWrapper(DefendedModel):
 
     @torch.no_grad()
     def defended_probabilities(self, inputs: torch.Tensor) -> torch.Tensor:
-        """
-        Batched PURIFIER inference: F -> G -> H
-        x: (B, ...)
-        returns purified confidence vectors p_out (B,K)
-        """
+        """Return the purified (B, K) probabilities of a batch: the classifier F, then the reformer G, then H."""
 
         x = inputs
         self.model.eval()

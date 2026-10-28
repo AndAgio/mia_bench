@@ -37,9 +37,25 @@ HAMP_PAPER_PARAMETERS = {'cifar10': (0.95, 0.001),
                          'texas': (0.6, 0.01)}
 HAMP_FALLBACK_DATASET = 'cifar10'
 
-# LDL's number of noisy copies per query, by noise type, from the authors' code (classifier.py): 200 with Gaussian noise
-# (images), 100 with bit flips (Purchase, Texas). Unset --defender_ldl_n_queries takes the value of the dataset's noise.
+# LDL's number of noisy copies per query, by noise type, from the authors' code (classifier.py): 200 with Gaussian
+# noise (images), 100 with bit flips (Purchase, Texas). Unset --defender_ldl_n_queries takes the value of the dataset's
+# noise.
 LDL_CODE_N_QUERIES = {'normal': 200, 'bernoulli': 100}
-# LDL's probability of flipping each feature of the binary datasets, from Table 1 of the paper (arXiv 2212.01688), which
-# picks it by the number of features. Unset --defender_ldl_flip_prob takes the dataset's value.
+# LDL's probability of flipping each feature of the binary datasets, from Table 1 of the paper (arXiv 2212.01688),
+# which picks it by the number of features. Unset --defender_ldl_flip_prob takes the dataset's value.
 LDL_PAPER_FLIP_PROBS = {'purchase': 0.0166, 'texas': 0.00016}
+
+# Purifier's reformer settings per dataset, from the paper's appendix (arXiv 2212.00612): the width h of the first
+# hidden layer, the latent size, and the training epochs and learning rate. The appendix gives 0.0005 "for
+# Facescrub530 and CIFAR10" right after 0.01 for CIFAR10, which we read as CIFAR100. Unset
+# --defender_purifier_reformer_* options take the dataset's values, and datasets the paper does not evaluate take
+# CIFAR-10's.
+PURIFIER_PAPER_REFORMER = {
+    'cifar10': {'reformer_hidden_dim': 32, 'reformer_latent_dim': 2, 'reformer_epochs': 100, 'reformer_lr': 0.01},
+    'cifar100': {'reformer_hidden_dim': 512, 'reformer_latent_dim': 100, 'reformer_epochs': 300,
+                 'reformer_lr': 0.0005},
+    'purchase': {'reformer_hidden_dim': 128, 'reformer_latent_dim': 20, 'reformer_epochs': 150,
+                 'reformer_lr': 0.0001},
+    'texas': {'reformer_hidden_dim': 128, 'reformer_latent_dim': 20, 'reformer_epochs': 100, 'reformer_lr': 0.0001},
+}
+PURIFIER_FALLBACK_DATASET = 'cifar10'

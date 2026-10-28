@@ -187,14 +187,14 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=10,
                                 help='Number of warmup epochs to train the model without weighted smoothing in Weighted Smoothing defense')
         # Purifier parameters for defender model
-        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=2,
-                                help='Latent dimension for the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=32,
-                                help='Width h of the first hidden layer of the reformer in Purifier defense; the next ones are 2h and 4h')
-        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=100,
-                                help='Number of epochs to train the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_lr', type=float, default=0.01,
-                                help='Learning rate to train the reformer model in Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=None,
+                                help='Latent dimension for the reformer model in Purifier defense. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
+        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=None,
+                                help='Width h of the first hidden layer of the reformer in Purifier defense; the next ones are 2h and 4h. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
+        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=None,
+                                help='Number of epochs to train the reformer model in Purifier defense. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
+        parser.add_argument('--defender_purifier_reformer_lr', type=float, default=None,
+                                help='Learning rate to train the reformer model in Purifier defense. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
         parser.add_argument('--defender_purifier_reformer_batch_size', type=int, default=256,
                                 help='Batch size to train the reformer model in Purifier defense')
         parser.add_argument('--defender_purifier_reformer_lambda', type=float, default=0.1,

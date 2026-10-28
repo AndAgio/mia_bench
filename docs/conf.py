@@ -123,6 +123,19 @@ def ldl_parameters():
 write_generated('ldl_parameters.md', ldl_parameters())
 
 
+def purifier_parameters():
+    from src.utils.variables import PURIFIER_PAPER_REFORMER, PURIFIER_FALLBACK_DATASET
+    names = ['reformer_hidden_dim', 'reformer_latent_dim', 'reformer_epochs', 'reformer_lr']
+    rows = ['| ' + ' | '.join([DATASET_NAMES.get(dataset, dataset), *[str(values[name]) for name in names]]) + ' |'
+            for dataset, values in PURIFIER_PAPER_REFORMER.items()]
+    fallback = DATASET_NAMES.get(PURIFIER_FALLBACK_DATASET, PURIFIER_FALLBACK_DATASET)
+    return '\n'.join(['| Dataset | h | Latent size | Epochs | Learning rate |', '|---|---|---|---|---|', *rows, '',
+                      f'Other datasets use the {fallback} values.', ''])
+
+
+write_generated('purifier_parameters.md', purifier_parameters())
+
+
 def format_default(value) -> str:
     # Defaults as they are typed on the command line.
     if value is None:
@@ -158,7 +171,7 @@ def option_table(prefixes: list) -> str:
 
 # The command-line options listed in the Parameters section of each method's page: the page's name and the prefixes
 # of the options' names.
-METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_']}
+METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))
