@@ -68,6 +68,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+For an existing PyTorch Apptainer image, create a persistent environment that can
+reuse the image's installed packages, then install the runtime requirements there:
+
+```bash
+srun apptainer exec --nv ../pytorch.sif python -m venv --system-site-packages .venv-mia
+srun apptainer exec --nv ../pytorch.sif .venv-mia/bin/python -m pip install --no-cache-dir -r requirements.txt
+srun apptainer exec --nv ../pytorch.sif .venv-mia/bin/python -u tests/smoke_test_all.py --device 0
+```
+
+Run these commands from the repository root. Create/install the environment once;
+use `.venv-mia/bin/python` inside the same image for subsequent runs.
+
 If using macOS Apple Silicon, you can enable MPS fallback (optional):
 
 ```bash
@@ -216,11 +228,136 @@ below, `test_transfer_mia.py`, `test_oslo_mia.py --smoke` and `test_robust_mia.p
 `test_relax_loss.py` checks RelaxLoss against the paper with every optimizer on
 synthetic data.
 
+Gaussian quantile attack scores use `sign(s) * log1p(abs(s))`, where `s` is the
+target score minus its predicted Gaussian quantile. The computation stays in log
+space to avoid overflowing `exp(log_std)`. The transform preserves ranking and
+the zero-threshold decision; recorded scores and ROC thresholds are on this
+transformed scale. Numeric and attack-evaluation regressions run with:
+
+```bash
+python tests/test_quantile_gaussian.py
+```
+
 ### Local smoke matrix
 
 `tests/smoke_test_all.py` exercises every distinct attack and defense and keeps going after
-individual failures. The default `quick` preset uses one epoch and tiny inputs. After
-that passes, the `medium` preset provides a moderately realistic stress check:
+individual failures. Run the default five-epoch check on the cluster from the repository
+root, using the same Python environment/container as `run.py`:
+
+```bash
+python -u tests/smoke_test_all.py --device 0 --output-dir /scratch/$USER/mia-smoke
+```
+
+For five targeted cases per attack/defense, use the `edge` preset:
+
+```bash
+srun apptainer exec --nv ../pytorch.sif \
+    .venv-mia/bin/python -u tests/smoke_test_all.py --preset edge --device 0
+```
+
+This runs **270 cases: 180 attack cases and 90 defense cases**. Each component has
+`baseline`, `minimal`, `uneven`, `strong`, and `alternate` cases, with component-specific
+settings defined in `tests/smoke_edge_cases.py`. Cases are intended to execute
+successfully on valid inputs; deliberately invalid hyperparameters are not counted as
+successful attack/defense runs. The default remains the original 54-case `smoke`
+preset, and CLI aliases are not rerun as separate algorithms.
+
+| Component family | Additional settings covered across its five cases |
+| --- | --- |
+| Robust MIA / LiRA | 1/2/4/6 references as appropriate; single-point and larger reference populations; likelihood-ratio limits; Adam shadows |
+| Quantile | A single median; log-spaced tails; Gaussian mean/variance head; Gaussian plus log spacing |
+| Neural feature/probability/logit | One-unit, two-layer and deeper networks; alternate learning rates and shadow optimizer |
+| Attack-P / Attack-R | Alpha 0, 0.001, 0.999 and 1; single-reference and multi-reference paths |
+| SBA / UBA, all five boundary variants | 128/256/512 queries; L2/L-infinity; minimum valid calibration population; quantile endpoints; odd and large reduction factors |
+| Noise robustness | One query; zero, tiny and large noise; multiple and repeated sigma values |
+| Transfer / DH | Tiny, odd and full surrogate batches; alternate optimizer; one and three DH surrogates; 1/5/16 DH queries |
+| OSLO, all four variants | Zero perturbation; different source/validation splits; multiple attack steps; stopping thresholds 0 and 1 |
+| Online/offline YOQO | Minimum reference ensembles; zero out-model weight or perturbation penalty; stronger penalties; early stopping |
+| Vanilla / HAMP inference-only | Tiny/odd/full batches; no momentum/decay; SGD/Adam; alternate learning rates |
+| DP | Ghost and hooks backends; zero and stronger noise; per-layer clipping; tight and loose gradient bounds |
+| MemGuard / Purifier | Zero/tiny/large budgets or noise; narrow/deeper auxiliary networks; latent/batch boundaries; query quantization |
+| RelaxLoss / Mixup / HAMP training/full | Descent/ascent/flattening branches; zero and strong mixing/entropy settings; upper bounds; SAM closures |
+| AdvReg / MMD / MMD+Mixup | Zero/weak/strong penalties; additional adversary steps or mixup limits; alternate optimizers |
+| SELENA / MIST / MIST+Mixup | Small ensembles; exclusion boundaries; random/stratified partitions; inner passes; zero/strong cross-difference loss |
+| Weighted smoothing | Zero/large prediction noise; early and final-epoch warmup transitions |
+| LDL / Data augmentation | Single/multiple noisy queries; zero/tiny/large input noise; disabled/always-on transforms; large rotations; SAM |
+
+Attack cases also vary audit size (2, 8, 10), member fraction (0.25, 0.5, 0.75), and
+shadow batch size (2, 7, 16, 32, 256). Both membership classes remain represented.
+Defense cases vary training batch size, and every defended model is probed on member
+and nonmember batches of size 1, 3 and 4, reordered and repeated queries, and zero/one
+inputs. Checks reject non-finite outputs/parameters, wrong shapes and input mutation.
+Attack checks require finite scores, binary decisions when provided, a finite AUC in
+[0, 1], correct audit counts, and an actual evaluation rather than a silent no-op.
+
+Target, shadow and auxiliary training still use five epochs by default. To keep MIST
+small, edge cases use one inner pass per phase per outer epoch, except `alternate`,
+which uses two. Shared targets are grouped by the final effective training settings,
+dataset path, split, seed and data limit. With default settings all 180 attack cases
+reuse one baseline target; it is deleted after the last consumer. Other defenses
+remain separate, and their artifacts are removed after each case.
+
+The edge workers seed model initialization as well as training so a recorded case
+can be reproduced (device-specific kernels can still differ). The report contains
+the complete case plan, descriptions, per-case commands and failures. A component
+passes only if all selected cases pass (five by default). Inspect the full
+plan without training or select a subset with:
+
+```bash
+python tests/smoke_test_all.py --preset edge --dry-run
+python tests/smoke_test_all.py --preset edge --device 0 \
+    --only attack:quantile defense:dp --profiles minimal alternate
+```
+
+Passing these cases provides regression coverage, not proof that no bugs exist. The
+default edge matrix uses CIFAR-10 and ResNet-18; it is not an exhaustive sweep of
+datasets, architectures, distributed training or attack-defense pairings.
+
+The default `smoke` preset runs **54 cases: 36 distinct attack modes and 18 defense
+configurations (including vanilla)**. It uses CIFAR-10, ResNet-18, one seed, 400 merged
+dataset samples, batches of 16, and eight balanced auditing samples. Target, shadow,
+neural attacker, MemGuard, MIST and Purifier training use five epochs. Ensembles use
+two models where possible; online attacks needing in/out reference distributions use
+four shadows. Boundary attacks get 256 queries per sample and eight random calibration
+inputs, since a handful of queries is often insufficient to find a boundary. These
+settings check execution, not attack strength or defense quality. Data must be available
+under `--datasets-folder` (default `datas`), or downloadable by the dataset loader;
+the full downloaded dataset stays there and is never removed by the harness.
+
+Each attack runs against the **same vanilla target** for its profile/grid combination.
+The vanilla defense check runs first and creates its checkpoints; subsequent attacks
+resume that completed training without running more target epochs. If only attacks
+are selected, the first attack creates the target. Attack-specific shadow models remain
+separate because their labels, architectures and in/out membership can differ. Each
+other defense is trained, applied, and queried on small member and nonmember batches,
+checking output shape and finiteness. This covers every component individually; it does
+not run the attack-by-defense cross product.
+
+The runner deletes each attack's checkpoints, shadow maps and internal artifacts after
+its case. It keeps the shared target only until the last attack that uses it finishes,
+then deletes it too; other defense artifacts are deleted after each defense. Profiles
+and grid combinations run sequentially, so their models do not accumulate. Only case
+logs and `report.json` persist by default. Existing checkpoints outside the new run
+directory are never used or deleted. Use `--no-reuse-defender` for isolated targets or
+`--keep-work` to retain all artifacts for debugging.
+
+The terminal summary and JSON report contain passed/failed attack and defense counts,
+case counts, errors, commands and log paths. The report is updated after every case.
+A failed case does not stop the matrix; the final exit code is 1 if any case fails,
+0 if all pass, or 130 if interrupted. Ctrl-C and SIGTERM stop the active worker,
+clean up owned artifacts, and save a partial report with a count of unrun cases.
+SIGKILL/node loss cannot run cleanup; in that situation the run's `work/` directory
+can be removed manually after its processes have stopped.
+
+Override the training duration or try a small subset first:
+
+```bash
+python tests/smoke_test_all.py --epochs 5 --device 0 \
+    --only attack:lira attack:quantile defense:dp defense:mem_guard
+```
+
+The original `quick` preset uses one epoch and three tiny profiles. The `medium`
+preset provides a moderately realistic stress check:
 
 ```bash
 python tests/smoke_test_all.py --preset medium --device 0
@@ -246,17 +383,15 @@ commands are checked against the options of `run.py`/`train_defender.py` before
 anything runs, so a typo or an invalid value fails immediately:
 
 ```bash
-python tests/smoke_test_all.py --device cpu --only defense:relax_loss --profiles small_a \
+python tests/smoke_test_all.py --preset quick --device cpu --only defense:relax_loss --profiles small_a \
 	--grid defender_optimizer=sgd,adam,sam,esam,wsam defender_relax_loss_flatten='*' \
 	-- --defender_epochs 2 --defender_relax_loss_alpha 3.0
 ```
 
 Use `--dry-run` to inspect the generated commands without training, and
-`--list-components` to see all accepted component names. Each case uses an isolated
-temporary work directory; its checkpoints, shadow data, generated result artifacts,
-and internal logs are deleted as soon as the case finishes. The top-level case logs
-and `report.json` are retained. Pass `--keep-work` when you need the full artifacts to
-debug a failure.
+`--list-components` to see all accepted component names. Options after `--` override
+`--epochs` and the preset; grid values override both. Reuse is restricted to the
+same profile and grid combination so different training settings cannot share targets.
 
 To run the focused TransferMIA regression and smoke tests for both loss and
 confidence scoring:
@@ -311,7 +446,8 @@ python train_defender.py \
 	--device 0
 ```
 
-The repository also supports training a defender model with Differential Privacy (DP) by enabling `--defender_use_dp` and the related DP flags which instruct the training pipeline to use the configured DP mechanism (see `src/utils/configs.py` where `DPConfigs` are assembled). Example:
+Select `--defender_mode dp` to train with Opacus DP-SGD. The default backend is
+ghost clipping; use hooks for per-layer clipping. Example:
 
 ```bash
 # Train only the defender with DP-SGD enabled
@@ -320,14 +456,23 @@ python train_defender.py \
 	--defender_model resnet18 \
 	--defender_epochs 50 \
 	--defender_batch_size 128 \
-	--defender_use_dp \
+	--defender_mode dp \
+	--defender_dp_grad_sample_mode hooks \
 	--defender_dp_noise_multiplier 1.2 \
 	--defender_dp_max_grad_norm 1.0 \
 	--defender_dp_clip_per_layer \
 	--device 0
 ```
 
-*Note*: depending on implementation and dependency (e.g., Opacus), extra packages may be required for DP training; check your environment if you plan to run DP experiments.
+Opacus is included in `requirements.txt`. Empty Poisson draws still run the noisy
+optimizer/accounting step with zero data gradient; they contribute no loss or
+accuracy observations. ResNet supports these empty inputs in both forward and
+feature extraction. A focused regression checks noise/accounting and subsequent
+nonempty steps for hooks, per-layer hooks, and ghost clipping:
+
+```bash
+python tests/test_dp_empty_batches.py
+```
 
 #### Notes on checkpointing and `--resume`:
 - When you run any command the repository computes deterministic hashes from the *relevant* CLI settings and saves settings and checkpoints under `outs/` using these hashes (see `src/utils/configs.py`).

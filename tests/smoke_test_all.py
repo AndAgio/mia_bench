@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run every current attack/defense with local test profiles, continuing on errors.
+"""Run every current attack/defense, reusing targets and cleaning temporary artifacts.
 
 Examples (from the repository root):
   python tests/smoke_test_all.py --device cpu --only defense:relax_loss
   python tests/smoke_test_all.py --list-options relax_loss
-  python tests/smoke_test_all.py --only defense:relax_loss --profiles small_a \\
+  python tests/smoke_test_all.py --preset quick --only defense:relax_loss --profiles small_a \\
       --grid defender_optimizer=sgd,sam,esam defender_relax_loss_flatten='*' -- --defender_epochs 2
 
 Anything after `--` is passed to every case (run.py / train_defender.py options, overriding the
@@ -15,6 +15,8 @@ commands are checked against the options of run.py / train_defender.py before an
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+import hashlib
 import itertools
 import json
 import os
@@ -37,6 +39,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Workers import run.py / train_defender.py and the src package from the repository root.
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from smoke_edge_cases import EDGE_NAMES, edge_spec
 
 # Distinct algorithms/modes from the current factories and config generator.
 # Aliases that produce the same class/config are recorded separately below.
@@ -111,6 +115,10 @@ PROFILES = (
     Profile("small_c", 303, 560, 16, 0.020, 12, 0.50),
 )
 
+# One seed is sufficient for an execution check; the larger presets cover variation.
+SMOKE_PROFILES = (Profile("smoke", 101, 400, 16, 0.010, 8, 0.20),)
+EDGE_PROFILES = tuple(Profile(name, 101, 400, 16, .010, 8, .20) for name in EDGE_NAMES)
+
 MEDIUM_PROFILES = (
     Profile("medium_a", 101, 1600, 32, 0.010, 64, 0.20),
     Profile("medium_b", 202, 2000, 48, 0.005, 96, 0.35),
@@ -148,6 +156,7 @@ class Case:
     command: list[str]
     log_file: str
     variant: str = ""
+    description: str = ""
 
 
 @dataclass
@@ -162,6 +171,7 @@ class Result:
     log_file: str
     command: list[str]
     variant: str = ""
+    description: str = ""
 
 
 def case_name(case: Case | Result) -> str:
@@ -186,10 +196,16 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=1800,
                         help="Maximum seconds for one combination")
     parser.add_argument(
-        "--preset", choices=("quick", "medium", "moderate"), default="quick",
-        help=("quick uses the original one-epoch settings; medium uses ten epochs "
+        "--preset", choices=("smoke", "edge", "quick", "medium", "moderate"), default="smoke",
+        help=("smoke (default) uses five epochs and one tiny profile; "
+              "edge runs five targeted cases per component at five epochs; "
+              "quick uses the original one-epoch settings; medium uses ten epochs "
               "and moderately sized stress-test workloads; moderate is an alias for medium"),
     )
+    parser.add_argument("--epochs", type=int, default=None,
+                        help="Override epochs for all target, shadow and auxiliary training")
+    parser.add_argument("--no-reuse-defender", dest="reuse_defender", action="store_false",
+                        help="Train an isolated baseline target for every attack instead of sharing it")
     parser.add_argument("--only", nargs="*", default=None, metavar="KIND:NAME",
                         help="Subset, e.g. attack:lira defense:dp")
     parser.add_argument("--profiles", nargs="+", default=None, metavar="NAME",
@@ -208,10 +224,14 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--always-zero", action="store_true")
     parser.add_argument(
         "--keep-work", action="store_true",
-        help=("Keep per-case checkpoints, shadow data, results, and internal logs. "
-              "By default these temporary artifacts are deleted after each case."),
+        help=("Keep checkpoints, shadow data, results, and internal logs. By default "
+              "only shared targets survive a case, until their last consumer finishes."),
     )
     args = parser.parse_args(argv)
+    if args.epochs is not None and args.epochs < 1:
+        parser.error("--epochs must be positive")
+    if args.timeout < 1:
+        parser.error("--timeout must be positive")
     args.extra_args = extra_args
     return args
 
@@ -279,7 +299,9 @@ def expand_grid(specs: Sequence[str], parser: argparse.ArgumentParser) -> list[V
 
 
 def selected_profiles(args: argparse.Namespace) -> tuple[Profile, ...]:
-    profiles = MEDIUM_PROFILES if args.preset in {"medium", "moderate"} else PROFILES
+    profiles = (EDGE_PROFILES if args.preset == "edge" else
+                SMOKE_PROFILES if args.preset == "smoke" else
+                MEDIUM_PROFILES if args.preset in {"medium", "moderate"} else PROFILES)
     if args.profiles:
         unknown = sorted(set(args.profiles) - {profile.name for profile in profiles})
         if unknown:
@@ -320,9 +342,9 @@ def validate_commands(cases: Sequence[Case], parser: argparse.ArgumentParser) ->
 
 
 def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -> list[str]:
-    """Build CLI flags for either the quick or medium local stress preset."""
+    """Build CLI flags for the selected smoke/stress preset."""
     medium = args.preset in {"medium", "moderate"}
-    epochs = "10" if medium else "1"
+    epochs = str(args.epochs or (5 if args.preset in {"smoke", "edge"} else 10 if medium else 1))
     hidden_layers = ["64", "32"] if medium else ["8"]
     queries = "50" if medium else "3"
     quantiles = "50" if medium else "3"
@@ -353,7 +375,8 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         "--attacker_neural_model_epochs", epochs,
         "--attacker_neural_model_lr", str(profile.learning_rate),
         "--attacker_rmia_alpha", statistical_alpha, "--attacker_pmia_alpha", statistical_alpha,
-        "--attacker_boundary_n_queries", queries,
+        "--attacker_boundary_n_queries", "256" if args.preset in {"smoke", "edge"} else queries,
+        "--attacker_boundary_calibration_samples", "8" if not medium else "32",
         "--attacker_boundary_qeba_reduction_factor", "8" if medium else "4",
         "--attacker_noise_robust_n_queries", queries, "--attacker_noise_robust_sigmas",
         *(["0.01", "0.05", "0.10"] if medium else ["0.05"]),
@@ -375,7 +398,7 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         "--defender_selena_K", "5" if medium else "2",
         "--defender_selena_L", "2" if medium else "1",
         "--defender_mist_num_submodels", "4" if medium else "2",
-        "--defender_mist_submodel_epochs", epochs,
+        "--defender_mist_submodel_epochs", "1" if args.preset == "edge" else epochs,
         "--defender_weighted_smoothing_warmup_epochs", "2" if medium else "0",
         "--defender_purifier_reformer_latent_dim", "16" if medium else "4",
         "--defender_purifier_reformer_hidden_dim", "64" if medium else "8",
@@ -423,6 +446,18 @@ def make_worker_command(profile: Profile, entrypoint: str, run_args: list[str]) 
             "--", *run_args]
 
 
+def target_cache_key(run_args: Sequence[str], profile: Profile,
+                     parser: argparse.ArgumentParser) -> str:
+    """Conservatively identify targets by their final effective training/data settings."""
+    settings = vars(parser.parse_args(run_args))
+    shared = {key: value for key, value in settings.items()
+              if key.startswith("defender_") or key in {
+                  "dataset", "datasets_folder", "seed", "data_augmentation", "device",
+                  "distributed", "perf_metrics", "perf_metric_to_track"}}
+    shared["data_limit"] = profile.data_limit
+    return hashlib.sha256(json.dumps(shared, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def component_args(kind: str, component: str) -> list[str]:
     if kind == "attack":
         return ["--defender_mode", "none", "--attacker_mode", component,
@@ -431,25 +466,48 @@ def component_args(kind: str, component: str) -> list[str]:
 
 
 def build_cases(args: argparse.Namespace, run_root: Path, variants: Sequence[Variant],
-                profiles: Sequence[Profile]) -> list[Case]:
+                profiles: Sequence[Profile], parser: argparse.ArgumentParser | None = None) -> list[Case]:
     cases: list[Case] = []
-    # Defenses run train_defender.py, which isolates them from failures in a probe attack.
-    for kind, components, entrypoint in (("attack", ATTACKS, "run"), ("defense", DEFENSES, "train_defender")):
-        for component in components:
-            if not selected(kind, component, args.only):
-                continue
-            for variant in variants:
-                for profile in profiles:
-                    # Isolate every case so its checkpoints and shadow data can be deleted
-                    # immediately without touching another case's files.
-                    case_path = Path(f"{kind}s", component, variant.folder, profile.name)
+    if args.preset == "edge" and parser is None:
+        parser = project_parser()
+    # Finish one seed/grid combination before starting another, bounding live storage.
+    # Run vanilla first, then reuse its completed checkpoints for every attack.
+    components = [("defense", "none"), *[("attack", a) for a in ATTACKS],
+                  *[("defense", d) for d in DEFENSES if d != "none"]]
+    for variant in variants:
+        groups: dict[str, list[Case]] = {}
+        for profile in profiles:
+            for kind, component in components:
+                if not selected(kind, component, args.only):
+                    continue
+                case_path = Path(f"{kind}s", component, variant.folder, profile.name)
+                shared_target = args.reuse_defender and (kind == "attack" or component == "none")
+                if shared_target and args.preset != "edge":
+                    out = run_root / "work" / "baseline" / variant.folder / profile.name
+                else:
                     out = run_root / "work" / case_path
-                    # Later options win: --grid values over the ones after '--', over the profile ones.
-                    run_args = (common_run_args(profile, args, out) + component_args(kind, component)
-                                + args.extra_args + list(variant.args))
-                    cases.append(Case(kind, component, profile.name,
-                                      make_worker_command(profile, entrypoint, run_args),
-                                      str(run_root / "logs" / f"{case_path}.log"), variant.label))
+                description, edge_args = "", ()
+                if args.preset == "edge":
+                    edge = edge_spec(kind, component, profile.name, args.epochs or 5)
+                    description, edge_args = edge.description, edge.args
+                # Later options win: grid > extra options > component edge case > preset.
+                run_args = (common_run_args(profile, args, out) + component_args(kind, component)
+                            + list(edge_args) + args.extra_args + list(variant.args))
+                if shared_target and args.preset == "edge":
+                    key = target_cache_key(run_args, profile, parser)
+                    out = run_root / "work" / "baseline" / variant.folder / key
+                    run_args[run_args.index("--out_folder") + 1] = str(out.resolve())
+                entrypoint = "run" if kind == "attack" else "probe_defender"
+                command = make_worker_command(profile, entrypoint, run_args)
+                if args.preset == "edge":
+                    command.insert(command.index("--"), "--strict-checks")
+                case = Case(kind, component, profile.name, command,
+                            str(run_root / "logs" / f"{case_path}.log"), variant.label, description)
+                groups.setdefault(str(out), []).append(case)
+        # Execute all consumers of a target together, including consumers in other
+        # edge profiles, then remove that target before the next group starts.
+        for group in groups.values():
+            cases.extend(group)
     return cases
 
 
@@ -522,42 +580,50 @@ def _run_case(case: Case, timeout: int, index: int, total: int) -> Result:
     started = time.monotonic()
     started_wall = time.time()
     print(f"[{index}/{total}] {case_name(case)} / {case.profile}", flush=True)
+    if case.description:
+        print(f"  CHECK: {case.description}", flush=True)
     try:
         with log_path.open("w", encoding="utf-8") as log:
             log.write("COMMAND: " + shlex.join(case.command) + "\n\n")
+            if case.description:
+                log.write("CHECK: " + case.description + "\n\n")
             log.flush()
             process = subprocess.Popen(
                 case.command, cwd=REPO_ROOT, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                start_new_session=(os.name == "posix"),
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 text=True, encoding="utf-8", errors="replace", bufsize=1)
 
             def tee_output() -> None:
                 assert process.stdout is not None
-                for line in process.stdout:
-                    log.write(line)
-                    log.flush()
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
+                with process.stdout:
+                    for line in process.stdout:
+                        log.write(line)
+                        log.flush()
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
 
             thread = threading.Thread(target=tee_output, daemon=True)
             thread.start()
             try:
                 return_code = process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                process.kill()
+                stop_worker(process, signal.SIGKILL)
                 process.wait()
                 thread.join(timeout=5)
                 raise
             except KeyboardInterrupt:
                 # Do not leave a worker writing into a directory that the outer
                 # per-case cleanup is about to remove.
-                process.terminate()
+                stop_worker(process, signal.SIGTERM)
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    process.kill()
+                    stop_worker(process, signal.SIGKILL)
                     process.wait()
+                # The worker may exit before a child that ignored SIGTERM.
+                stop_worker(process, signal.SIGKILL)
                 thread.join(timeout=5)
                 raise
             thread.join()
@@ -565,13 +631,13 @@ def _run_case(case: Case, timeout: int, index: int, total: int) -> Result:
         if return_code == 0:
             print(f"  PASS ({elapsed:.1f}s)", flush=True)
             return Result(case.kind, case.component, case.profile, "passed", elapsed,
-                          return_code, None, case.log_file, case.command, case.variant)
+                          return_code, None, case.log_file, case.command, case.variant, case.description)
         reason = failure_reason(return_code, log_path)
         print(f"  ERROR: {reason}", flush=True)
         dump_internal_logs(case, started_wall)
         print(f"  FAIL (exit {return_code}, {elapsed:.1f}s): {reason}", flush=True)
         return Result(case.kind, case.component, case.profile, "failed", elapsed,
-                      return_code, reason, case.log_file, case.command, case.variant)
+                      return_code, reason, case.log_file, case.command, case.variant, case.description)
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - started
         reason = f"timed out after {timeout} seconds"
@@ -579,17 +645,28 @@ def _run_case(case: Case, timeout: int, index: int, total: int) -> Result:
         dump_internal_logs(case, started_wall)
         print(f"  FAIL ({reason})", flush=True)
         return Result(case.kind, case.component, case.profile, "failed", elapsed,
-                      None, reason, case.log_file, case.command, case.variant)
+                      None, reason, case.log_file, case.command, case.variant, case.description)
     except Exception as exc:
         elapsed = time.monotonic() - started
         reason = f"runner error: {type(exc).__name__}: {exc}"
         print(f"  FAIL ({reason})", flush=True)
         return Result(case.kind, case.component, case.profile, "failed", elapsed,
-                      None, reason, case.log_file, case.command, case.variant)
+                      None, reason, case.log_file, case.command, case.variant, case.description)
 
 
-def cleanup_case_work(case: Case, work_root: Path) -> None:
-    """Delete one case's isolated artifacts, refusing paths outside work_root."""
+def stop_worker(process: subprocess.Popen, sig: int) -> None:
+    """Stop the worker and any children before deleting files they may be writing."""
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, sig)
+        else:
+            process.send_signal(sig)
+    except ProcessLookupError:
+        pass
+
+
+def cleanup_case_work(case: Case, work_root: Path, keep_defenders: bool = False) -> None:
+    """Delete owned artifacts; optionally retain targets with pending consumers."""
     raw_out_folder = command_option(case.command, "--out_folder")
     if raw_out_folder is None:
         print("  CLEANUP WARNING: case has no --out_folder", flush=True)
@@ -609,8 +686,18 @@ def cleanup_case_work(case: Case, work_root: Path) -> None:
         return
 
     try:
-        shutil.rmtree(out_folder)
-        print(f"  CLEANED temporary work: {out_folder}", flush=True)
+        if keep_defenders:
+            for child in out_folder.iterdir():
+                if child.name == "defenders":
+                    continue
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            print("  CLEANED case artifacts; retained shared target checkpoints", flush=True)
+        else:
+            shutil.rmtree(out_folder)
+            print(f"  CLEANED temporary work: {out_folder}", flush=True)
     except FileNotFoundError:
         # A case can fail before creating its output directory.
         pass
@@ -619,12 +706,13 @@ def cleanup_case_work(case: Case, work_root: Path) -> None:
 
 
 def run_case(case: Case, timeout: int, index: int, total: int,
-             work_root: Path, keep_work: bool = False) -> Result:
+             work_root: Path, keep_work: bool = False,
+             keep_defenders: bool = False) -> Result:
     try:
         return _run_case(case, timeout, index, total)
     finally:
         if not keep_work:
-            cleanup_case_work(case, work_root)
+            cleanup_case_work(case, work_root, keep_defenders)
 
 
 def aggregate(results: list[Result], kind: str,
@@ -637,7 +725,8 @@ def aggregate(results: list[Result], kind: str,
     passed = sorted(name for name, items in grouped.items()
                     if len(items) == profiles_per_component
                     and all(x.status == "passed" for x in items))
-    return passed, {name: items for name, items in sorted(grouped.items()) if name not in passed}
+    return passed, {name: items for name, items in sorted(grouped.items())
+                    if any(x.status != "passed" for x in items)}
 
 
 def print_summary(results: list[Result], report_path: Path,
@@ -648,6 +737,9 @@ def print_summary(results: list[Result], report_path: Path,
         passed, failed = aggregate(results, kind, profiles_per_component)
         print(f"\nPassed {kind}s ({len(passed)}):")
         print("  " + (", ".join(passed) if passed else "none"))
+        runs = [result for result in results if result.kind == kind]
+        print(f"  Case runs: {sum(r.status == 'passed' for r in runs)} passed, "
+              f"{sum(r.status != 'passed' for r in runs)} failed")
         print(f"Failed {kind}s ({len(failed)}):")
         if not failed:
             print("  none")
@@ -683,14 +775,110 @@ def write_report(results: list[Result], report_path: Path, started_at: str,
             name: [asdict(item) for item in items if item.status != "passed"]
             for name, items in failed.items()
         }
-    report_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    payload["counts"] = {
+        "passed": sum(r.status == "passed" for r in results),
+        "failed": sum(r.status != "passed" for r in results),
+        "completed": len(results),
+        "not_run": payload.get("planned_cases", len(results)) - len(results),
+        **{f"{status}_{kind}s": len(payload[f"{status}_{kind}s"])
+           for kind in ("attack", "defense") for status in ("passed", "failed")},
+        **{f"{status}_{kind}_cases": sum(r.kind == kind and r.status == status for r in results)
+           for kind in ("attack", "defense") for status in ("passed", "failed")},
+    }
+    temporary = report_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(report_path)
+
+
+def validate_attack_outputs(scores, decisions, n_samples: int) -> None:
+    """Check the numerical contract before a metric routine can cast/coerce outputs."""
+    import numpy as np
+
+    scores = np.asarray(scores).reshape(-1)
+    if len(scores) != n_samples:
+        raise ValueError(f"Expected {n_samples} membership scores, got shape {scores.shape}")
+    invalid = np.flatnonzero(~np.isfinite(scores))
+    if len(invalid):
+        raise ValueError(f"Non-finite membership scores: {len(invalid)}/{n_samples}, "
+                         f"audit positions {invalid[:8].tolist()}")
+    if decisions is not None:
+        decisions = np.asarray(decisions).reshape(-1)
+        if len(decisions) != n_samples or not np.isin(decisions, [0, 1]).all():
+            raise ValueError("Membership decisions must match audit length and contain only 0 or 1")
+
+
+def install_strict_attack_checks():
+    """Instrument only this worker; leave production attack behavior unchanged."""
+    import numpy as np
+    from src.mia.attacks.base_mia import BaseMIA
+
+    original_stats = BaseMIA.compute_stats
+    calls = []
+
+    def checked_stats(attack, scores, decisions=None, params=None):
+        n_samples = len(attack.audit_manager.get_all_ids())
+        validate_attack_outputs(scores, decisions, n_samples)
+        metrics = original_stats(attack, scores, decisions=decisions, params=params)
+        if not np.isfinite(metrics["auc"]) or not 0 <= metrics["auc"] <= 1:
+            raise ValueError("Attack evaluation must produce a finite AUC in [0, 1]")
+        counts = (metrics[k] for k in ("true_positives", "true_negatives", "false_positives", "false_negatives"))
+        if sum(counts) != n_samples:
+            raise ValueError("Attack confusion counts do not cover the audit set")
+        calls.append(n_samples)
+        print(f"[edge check] validated {n_samples} scores, decisions and metrics", flush=True)
+        return metrics
+
+    BaseMIA.compute_stats = checked_stats
+    return calls
+
+
+def probe_defender(strict_checks: bool = False) -> None:
+    """Train/apply a defense and execute member/nonmember queries through its wrapper."""
+    import torch
+    from torch.utils.data import DataLoader, Subset
+    from src.utils.settings import gather_settings, setup_configs_and_folder_from_settings
+    from src.mia.defenses import get_defender_class
+
+    settings = gather_settings()
+    configs, _ = setup_configs_and_folder_from_settings(settings)
+    defender = get_defender_class(settings.defender_mode)(defender_configs=configs.defender)
+    defender.train_model(train_configs=configs.defender.train, return_stats=True)
+    defender.defend_model(device=configs.defender.train.device)
+    device = defender.get_device(settings.device)
+    model = defender.get_defended_model().to(device).eval()
+    if strict_checks and any(not torch.isfinite(parameter).all() for parameter in model.parameters()):
+        raise ValueError("Defended model has non-finite parameters after training")
+    for split in ("train", "test"):
+        dataset = defender.get_dataset().get(split)
+        subset = Subset(dataset, range(min(4, len(dataset))))
+        if not len(subset):
+            raise ValueError(f"Defense probe has an empty {split} split")
+        inputs, _, _, _ = next(iter(DataLoader(subset, batch_size=len(subset))))
+        # MemGuard needs autograd inside inference; do not use inference_mode here.
+        inputs = inputs.to(device)
+        probes = [("batch", inputs)]
+        if strict_checks:
+            probes += [("singleton", inputs[:1]), ("odd_batch", inputs[:3]),
+                       ("permuted", inputs.flip(0)), ("repeat", inputs),
+                       ("zeros", torch.zeros_like(inputs[:1])), ("ones", torch.ones_like(inputs[:1]))]
+        for label, batch in probes:
+            original = batch.clone()
+            outputs = model(batch)
+            expected = (len(batch), configs.defender.model.num_classes)
+            if tuple(outputs.shape) != expected or not torch.isfinite(outputs).all():
+                raise ValueError(f"Invalid defended outputs on {split}/{label}: expected finite {expected}, "
+                                 f"got {tuple(outputs.shape)}")
+            if strict_checks and not torch.equal(batch, original):
+                raise ValueError(f"Defended model mutated its input on {split}/{label}")
+        print(f"[smoke worker] defense {settings.defender_mode}: {split} inference PASS", flush=True)
 
 
 def worker_main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--data-limit", type=int, required=True)
-    parser.add_argument("--entrypoint", choices=("run", "train_defender"), required=True)
+    parser.add_argument("--entrypoint", choices=("run", "train_defender", "probe_defender"), required=True)
+    parser.add_argument("--strict-checks", action="store_true")
     worker_args, run_args = parser.parse_known_args(argv)
     if run_args and run_args[0] == "--":
         run_args = run_args[1:]
@@ -722,13 +910,31 @@ def worker_main(argv: Sequence[str]) -> int:
         return limited
 
     data_module.import_dataset_by_name = import_limited_dataset
+    if worker_args.strict_checks:
+        # BaseDefender builds its model before TrainManager seeds the RNG. Seed
+        # here too, so an edge failure can be reproduced from the recorded CLI.
+        import random
+        import numpy as np
+        import torch
+
+        seed = project_parser().parse_args(run_args).seed
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        print(f"[edge check] seeded model initialization with {seed}", flush=True)
     sys.argv = [str(REPO_ROOT / f"{worker_args.entrypoint}.py"), *run_args]
     try:
-        if worker_args.entrypoint == "run":
+        if worker_args.entrypoint == "probe_defender":
+            probe_defender(strict_checks=worker_args.strict_checks)
+            return 0
+        elif worker_args.entrypoint == "run":
             import run as entrypoint_module
         else:
             import train_defender as entrypoint_module
+        checks = install_strict_attack_checks() if worker_args.strict_checks else None
         entrypoint_module.main()
+        if checks is not None and not checks:
+            raise ValueError("Attack completed without evaluating any membership scores")
         return 0
     except BaseException:
         traceback.print_exc()
@@ -764,9 +970,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    run_root = args.output_dir.resolve() / datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_root = args.output_dir.resolve() / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     report_path = run_root / "report.json"
-    cases = build_cases(args, run_root, variants, profiles)
+    try:
+        cases = build_cases(args, run_root, variants, profiles, parser=parser)
+    except ValueError as exc:
+        print(f"Invalid case settings; nothing was run: {exc}", file=sys.stderr)
+        return 2
     profiles_per_component = len(profiles)
     if not cases:
         print("No cases matched --only. Use --list-components for valid names.", file=sys.stderr)
@@ -779,33 +989,66 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"  {error}", file=sys.stderr)
         return 2
     options = {"profiles": [profile.name for profile in profiles], "grid": args.grid,
-               "extra_args": args.extra_args}
+               "extra_args": args.extra_args, "epochs_override": args.epochs,
+               "reuse_defender": args.reuse_defender, "planned_cases": len(cases),
+               "scope": "each attack against vanilla; each defense trained/applied/probed separately"}
+    options["case_plan"] = [dict(kind=c.kind, component=c.component, profile=c.profile,
+                                 variant=c.variant, description=c.description, log_file=c.log_file)
+                            for c in cases]
     print(f"Prepared {len(cases)} cases ({len(variants)} option combination(s) x "
           f"{profiles_per_component} profile(s) per component, {args.preset} preset).")
     print(f"Results directory: {run_root}")
     if args.keep_work:
         print("Temporary per-case work will be kept (--keep-work).")
     else:
-        print("Temporary per-case checkpoints and data will be deleted after each case.")
+        print("Temporary attack data/checkpoints are deleted after each case; shared targets "
+              "are deleted after their last consumer.")
+    if args.reuse_defender:
+        print("Compatible baseline targets are reused across attacks and grouped by training settings. "
+              "Attack-specific shadows are trained separately.")
     if args.dry_run:
         for case in cases:
+            if case.description:
+                print(f"  CHECK: {case.description}")
             print(f"{case_name(case)}/{case.profile}: {shlex.join(case.command)}")
         return 0
 
     started_at = datetime.now(timezone.utc).isoformat()
     results: list[Result] = []
+    remaining = Counter(command_option(case.command, "--out_folder") for case in cases)
+    interrupted = False
+
+    def on_terminate(_signum, _frame):
+        raise KeyboardInterrupt
+
+    old_handler = signal.signal(signal.SIGTERM, on_terminate)
     try:
         for index, case in enumerate(cases, start=1):
+            out = command_option(case.command, "--out_folder")
+            remaining[out] -= 1
             results.append(run_case(case, args.timeout, index, len(cases),
-                                    run_root / "work", args.keep_work))
+                                    run_root / "work", args.keep_work,
+                                    keep_defenders=remaining[out] > 0))
             write_report(results, report_path, started_at, args.preset,
                          profiles_per_component, options)
     except KeyboardInterrupt:
+        interrupted = True
         print("\nInterrupted; writing the partial report.", file=sys.stderr)
     finally:
+        signal.signal(signal.SIGTERM, old_handler)
+        # Also release shared targets if interrupted between their consumers.
+        if not args.keep_work:
+            for case in cases:
+                cleanup_case_work(case, run_root / "work")
+        options["interrupted"] = interrupted
         write_report(results, report_path, started_at, args.preset,
                      profiles_per_component, options)
     any_failed = print_summary(results, report_path, profiles_per_component)
+    print(f"\nCases: {sum(r.status == 'passed' for r in results)} passed, "
+          f"{sum(r.status != 'passed' for r in results)} failed, "
+          f"{len(cases) - len(results)} not run.")
+    if interrupted:
+        return 130
     return 0 if args.always_zero or not any_failed else 1
 
 

@@ -50,6 +50,35 @@ class DifferentialPrivacyTrainManager(TrainManager):
     def __init__(self, train_configs, name: str, logger=None):
         super().__init__(train_configs=train_configs, name=name, logger=logger)
 
+    def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        if targets.size(0) != 0:
+            return super().train_step(inputs, targets, batch_idx=batch_idx, total_batches=total_batches)
+
+        # An empty Poisson draw is a real DP-SGD step: the summed data gradient
+        # is zero, but noise, optimizer state and the accountant still advance.
+        # Use the normal Opacus forward/backward path to populate its hook state
+        # correctly for flat/per-layer and ghost clipping.
+        inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
+        self.epoch_stats_tracker.batch_start()
+        self.optimizer.zero_grad()
+        outputs = self.model(inputs)
+        loss = self.criterion(outputs, targets)
+        if isinstance(loss, torch.Tensor):
+            # The empty data objective is exactly zero, regardless of the
+            # criterion's configured mean reduction (which would yield NaN).
+            outputs.sum().backward()
+        else:
+            # Ghost clipping's loss wrapper performs its own two backward passes.
+            # This per-batch wrapper can use a zero sum instead of an empty mean;
+            # the criterion/optimizer keep their normal nonempty-batch reduction.
+            loss.loss_reduction = "sum"
+            loss.backward()
+        self.optimizer.step()
+        self.epoch_stats_tracker.batch_end(batch_size=0)
+        # Empty batches have no loss/accuracy observations to add to the meters.
+        self.logger.print_it("DP-SGD: completed optimizer/accounting step for an empty Poisson batch.")
+
     def check_and_set_dp(self, dp_config: DPDefenseConfigs):
         self.logger.print_it('Differential Privacy with Opacus: updating model, optimizer and data loaders accordingly...')
         
