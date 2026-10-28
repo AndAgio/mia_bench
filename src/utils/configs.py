@@ -2,7 +2,7 @@ import pathlib
 import hashlib
 import json
 # from dataclasses import dataclass, field
-from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER, HAMP_PAPER_PARAMETERS, HAMP_FALLBACK_DATASET
+from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER, HAMP_PAPER_PARAMETERS, HAMP_FALLBACK_DATASET, LDL_CODE_N_QUERIES, LDL_PAPER_FLIP_PROBS, PURIFIER_PAPER_REFORMER, PURIFIER_FALLBACK_DATASET
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -487,6 +487,7 @@ class WeightedSmoothingDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class PurifierDefenseConfigs:
     strategy: Literal["purifier"] = "purifier"
+    # The paper's CIFAR-10 values. generate_configs_from_settings sets the dataset's (PURIFIER_PAPER_REFORMER).
     reformer_latent_dim: int = 2
     reformer_hidden_dim: int = 32
     reformer_epochs: int = 100
@@ -507,7 +508,9 @@ class MmdDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class LdlDefenseConfigs:
     strategy: Literal["ldl"] = "ldl"
-    n_queries: int = 100
+    # The values for Gaussian noise. generate_configs_from_settings sets the dataset's (LDL_CODE_N_QUERIES,
+    # LDL_PAPER_FLIP_PROBS).
+    n_queries: int = 200
     noise_type: Literal["normal", "bernoulli"] = "normal" # bernoulli flips binary features (purchase, texas)
     noise_scale: float = 0.02 # std of the Gaussian noise, in pixel units for images
     flip_prob: float = 0.0166 # probability of flipping each feature with Bernoulli noise
@@ -701,10 +704,17 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
                                                                 warmup_epochs=settings.defender_weighted_smoothing_warmup_epochs)
     elif settings.defender_mode in ['purifier']:
-        defender_defense_configs = PurifierDefenseConfigs(reformer_latent_dim=settings.defender_purifier_reformer_latent_dim,
-                                                        reformer_hidden_dim=settings.defender_purifier_reformer_hidden_dim,
-                                                        reformer_epochs=settings.defender_purifier_reformer_epochs,
-                                                        reformer_lr=settings.defender_purifier_reformer_lr,
+        # Unset reformer settings take the paper's values for the dataset (appendix), or CIFAR-10's.
+        paper_reformer = PURIFIER_PAPER_REFORMER.get(settings.dataset,
+                                                     PURIFIER_PAPER_REFORMER[PURIFIER_FALLBACK_DATASET])
+        reformer = {}
+        for name, paper_value in paper_reformer.items():
+            value = getattr(settings, f'defender_purifier_{name}')
+            reformer[name] = paper_value if value is None else value
+        defender_defense_configs = PurifierDefenseConfigs(reformer_latent_dim=reformer['reformer_latent_dim'],
+                                                        reformer_hidden_dim=reformer['reformer_hidden_dim'],
+                                                        reformer_epochs=reformer['reformer_epochs'],
+                                                        reformer_lr=reformer['reformer_lr'],
                                                         reformer_batch_size=settings.defender_purifier_reformer_batch_size,
                                                         reformer_lambda=settings.defender_purifier_reformer_lambda,
                                                         reformer_noise_sigma=settings.defender_purifier_reformer_noise_sigma,
@@ -717,11 +727,15 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.defender_mode in ['ldl']:
         # Bit-flip noise only suits binary features; every other dataset, news (TF-IDF) included, gets Gaussian noise.
         noise_type = "bernoulli" if settings.dataset in ["purchase", "texas"] else "normal"
-        # Unset flip probabilities follow the paper (Table 1), which picks them by the number of features.
+        # Unset numbers of copies follow the authors' code, and unset flip probabilities the paper (Table 1). The flip
+        # probability only matters for bit flips.
+        ldl_n_queries = settings.defender_ldl_n_queries
+        if ldl_n_queries is None:
+            ldl_n_queries = LDL_CODE_N_QUERIES[noise_type]
         ldl_flip_prob = settings.defender_ldl_flip_prob
         if ldl_flip_prob is None:
-            ldl_flip_prob = {"purchase": 0.0166, "texas": 0.00016}.get(settings.dataset, 0.0166)
-        defender_defense_configs = LdlDefenseConfigs(n_queries=settings.defender_ldl_n_queries,
+            ldl_flip_prob = LDL_PAPER_FLIP_PROBS.get(settings.dataset, LDL_PAPER_FLIP_PROBS['purchase'])
+        defender_defense_configs = LdlDefenseConfigs(n_queries=ldl_n_queries,
                                                     noise_type=noise_type,
                                                     noise_scale=settings.defender_ldl_noise_scale,
                                                     flip_prob=ldl_flip_prob)

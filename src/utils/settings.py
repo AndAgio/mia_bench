@@ -187,14 +187,14 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=10,
                                 help='Number of warmup epochs to train the model without weighted smoothing in Weighted Smoothing defense')
         # Purifier parameters for defender model
-        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=2,
-                                help='Latent dimension for the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=32,
-                                help='Width h of the first hidden layer of the reformer in Purifier defense; the next ones are 2h and 4h')
-        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=100,
-                                help='Number of epochs to train the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_lr', type=float, default=0.01,
-                                help='Learning rate to train the reformer model in Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=None,
+                                help='Latent dimension for the reformer model in Purifier defense. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
+        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=None,
+                                help='Width h of the first hidden layer of the reformer in Purifier defense; the next ones are 2h and 4h. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
+        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=None,
+                                help='Number of epochs to train the reformer model in Purifier defense. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
+        parser.add_argument('--defender_purifier_reformer_lr', type=float, default=None,
+                                help='Learning rate to train the reformer model in Purifier defense. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')
         parser.add_argument('--defender_purifier_reformer_batch_size', type=int, default=256,
                                 help='Batch size to train the reformer model in Purifier defense')
         parser.add_argument('--defender_purifier_reformer_lambda', type=float, default=0.1,
@@ -209,12 +209,12 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_mmd_lambda', type=float, default=1.0,
                                 help='Lambda parameter for MMD defense')
         # LDL parameters for defender model
-        parser.add_argument('--defender_ldl_n_queries', type=int, default=100,
-                                help='Number of noisy copies of each query that the LDL defense layer averages')
+        parser.add_argument('--defender_ldl_n_queries', type=int, default=None,
+                                help='Number of noisy copies of each query that the LDL defense layer averages. Unset: the authors\' value for the dataset\'s noise, see LDL_CODE_N_QUERIES in src/utils/variables.py')
         parser.add_argument('--defender_ldl_noise_scale', type=float, default=0.02,
-                                help='Standard deviation of the Gaussian noise in the LDL defense layer, in pixel units for images as in the paper (default: 0.02, the paper value)')
+                                help='Standard deviation of the Gaussian noise in the LDL defense layer, in pixel units for images, as in the authors\' code')
         parser.add_argument('--defender_ldl_flip_prob', type=float, default=None,
-                                help='Probability of flipping each binary feature in the LDL defense layer, used for purchase and texas (default: the paper values, 0.0166 for purchase and 0.00016 for texas)')
+                                help='Probability of flipping each binary feature in the LDL defense layer, used for purchase and texas. Unset: the paper\'s value for the dataset (Table 1), see LDL_PAPER_FLIP_PROBS in src/utils/variables.py')
         # Data Augmentation parameters for defender model
         parser.add_argument('--defender_augment_horizontal_flip_prob', type=float, default=0.5,
                                 help='probability of applying horizontal flip augmentation in the Data Augmentation defense')

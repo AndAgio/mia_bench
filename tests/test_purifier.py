@@ -10,7 +10,8 @@ from torch.utils.data import Dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.mia.defenses.post_hoc.purifier import ConfidenceReformer, PurifiedModelWrapper, PurifierDefender, TorchLabelSwapper
-from src.utils.configs import PurifierDefenseConfigs
+from src.utils.configs import PurifierDefenseConfigs, generate_configs_from_settings
+from src.utils.settings import build_parser
 
 
 class EchoReformer(torch.nn.Module):
@@ -39,6 +40,13 @@ def wrapper(Pindex, threshold=0.01, reformer=None, noise_quantization=1e-3):
     model = PurifiedModelWrapper(model=torch.nn.Identity(), reformer=reformer or EchoReformer(),
                                  label_swapper=swapper, threshold=threshold, noise_quantization=noise_quantization)
     return model.eval()
+
+
+def reformer_settings(*argv):
+    # (h, latent, epochs, lr) of the reformer that the command line selects.
+    configs = generate_configs_from_settings(build_parser().parse_args([*argv, '--defender_mode', 'purifier']))
+    defense = configs.defender.defense
+    return defense.reformer_hidden_dim, defense.reformer_latent_dim, defense.reformer_epochs, defense.reformer_lr
 
 
 def defender(splits, seed=0):
@@ -156,6 +164,14 @@ class PurifierTests(unittest.TestCase):
         actual = model.query_noise(query.to('mps'))
         self.assertEqual(actual.device.type, 'mps')
         torch.testing.assert_close(actual.cpu(), model.query_noise(query))
+
+    def test_unset_reformer_settings_follow_the_paper_for_the_dataset(self):
+        tabular = ['--defender_model', 'tabular_mlp', '--attacker_model', 'tabular_mlp']
+        self.assertEqual(reformer_settings('--dataset', 'cifar100'), (512, 100, 300, 0.0005))
+        self.assertEqual(reformer_settings('--dataset', 'purchase', *tabular), (128, 20, 150, 0.0001))
+        # Datasets the paper does not evaluate take CIFAR-10's settings.
+        self.assertEqual(reformer_settings('--dataset', 'svhn'), (32, 2, 100, 0.01))
+        self.assertEqual(reformer_settings('--dataset', 'cifar100', '--defender_purifier_reformer_epochs', '5')[2], 5)
 
 
 if __name__ == '__main__':
