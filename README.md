@@ -39,6 +39,16 @@ run.py         # Main file to train defender model and run the MIA
 - **AuditDataManager**: constructs audit datasets combining member and non‑member samples.
 
 
+## 📚 Documentation
+
+The documentation is in [docs/](docs/index.md). To build it:
+
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -W --keep-going -b html docs docs/_build/html
+```
+
+
 ## 🚀 Quick Start
 
 
@@ -190,35 +200,7 @@ for each dataset (0.0166 for Purchase, 0.00016 for Texas).
 
 ### HAMP
 
-At test time, HAMP replaces the scores of each output with those of a random sample,
-keeping the class ranking (Algorithm 1 of the [paper](https://arxiv.org/abs/2307.01610)).
-As in the paper, the random image pixels are uniform in [0, 1] before the dataset's
-normalization, and the binary Purchase and Texas features are 0 or 1 with equal
-probability. The paper has no value for News, whose TF-IDF features get uniform samples
-in [0, 1]. The validation and test losses logged during training are the cross-entropy on
-the true labels, as in the authors' code; the training loss is the HAMP objective on the
-soft labels.
-
-The training loss follows the [authors' code](https://github.com/DependableSystemsLab/MIA_defense_HAMP)
-rather than Eq. 6 of the paper: the KL divergence to the soft labels is averaged over the
-classes, not summed. The paper's parameters were tuned with this scaling. Summing would
-make the KL term larger by the number of classes, which weakens the entropy regularizer
-by as much.
-
-Unset, `--defender_hamp_gamma` (the entropy threshold, in [0, 1]) and
-`--defender_hamp_alpha` (the strength of the entropy regularizer) take the paper's values
-for the dataset (Table III, `HAMP_PAPER_PARAMETERS` in `src/utils/variables.py`):
-
-| Dataset | gamma | alpha |
-|---|---|---|
-| CIFAR-10 | 0.95 | 0.001 |
-| CIFAR-100 | 0.5 | 0.005 |
-| Purchase | 0.8 | 0.01 |
-| Texas | 0.6 | 0.01 |
-
-Datasets the paper does not evaluate take CIFAR-10's values. The log warns when the
-values differ from the paper's for the dataset, or when the paper has none: report those
-results as a configuration of your own.
+See [docs/defenses/hamp.md](docs/defenses/hamp.md).
 
 ### Tests
 

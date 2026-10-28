@@ -1,0 +1,18 @@
+name: Docs
+on:
+  push:
+    paths: ["docs/**", "src/**", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["docs/**", "src/**", ".github/workflows/docs.yml"]
+jobs:
+  build:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4"
+      - uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.13"
+      - name: Install the documentation dependencies
+        run: pip install -r docs/requirements.txt
+      - name: Build, with warnings as errors
+        run: sphinx-build -W --keep-going -b html docs docs/_build/html

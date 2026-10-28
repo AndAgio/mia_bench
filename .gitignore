@@ -24,6 +24,7 @@ exes/
 *.txt
 !venv_files/requirements.txt
 !apptainers/*/requirements.txt
+!docs/requirements.txt
 apptainers/*/*.log
 apptainers/*/*.out
 apptainers/*/*.err
@@ -243,3 +244,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Documentation build output and generated pages
+docs/_build/
+docs/_generated/
