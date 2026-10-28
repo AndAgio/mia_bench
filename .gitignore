@@ -24,7 +24,6 @@ exes/
 *.txt
 !venv_files/requirements.txt
 !apptainers/*/requirements.txt
-!docs/requirements.txt
 apptainers/*/*.log
 apptainers/*/*.out
 apptainers/*/*.err
@@ -244,8 +243,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+output/gaussian-noise/make_figure.py
+output/gaussian-noise/gaussian-noise-overlap.svg
 
 # Documentation build output and generated pages
 docs/_build/
 docs/_generated/
 docs/reference/api/*/
+
+
