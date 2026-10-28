@@ -243,3 +243,5 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+output/gaussian-noise/make_figure.py
+output/gaussian-noise/gaussian-noise-overlap.svg
