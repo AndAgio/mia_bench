@@ -29,6 +29,9 @@ in the paper:
 
 The log shows a warning if you use other values.
 
+```{include} ../_generated/options_hamp.md
+```
+
 ## Differences from the paper
 
 - The KL term is averaged over the classes instead of summed (Eq. 6). This is what the authors' code does, and the

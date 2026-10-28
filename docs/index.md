@@ -4,6 +4,7 @@ mia_bench is a benchmark for membership inference attacks and defenses, in which
 defense. To install it and run a first experiment, see the [README](https://github.com/AndAgio/mia_bench#readme).
 
 - [Defenses](defenses/index.md)
+- [Attacks](attacks/index.md)
 - [Differences from the papers](fidelity.md)
 - [Command-line options](reference/cli.md)
 - [API reference](reference/api.md)
@@ -14,6 +15,7 @@ defense. To install it and run a first experiment, see the [README](https://gith
 :caption: Methods
 
 defenses/index
+attacks/index
 fidelity
 ```
 

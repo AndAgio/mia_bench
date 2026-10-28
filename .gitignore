@@ -248,3 +248,4 @@ __marimo__/
 # Documentation build output and generated pages
 docs/_build/
 docs/_generated/
+docs/reference/api/*/
