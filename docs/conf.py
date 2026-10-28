@@ -151,6 +151,21 @@ def format_default(value) -> str:
     return str(value)
 
 
+def memguard_parameters():
+    from src.utils.variables import MEMGUARD_PAPER_SETTINGS
+    meanings = {'c1': 'weight of the membership loss', 'c2': 'weight of the label loss',
+                'c3_init': 'first weight of the distortion loss', 'c3_max': 'largest weight of the distortion loss',
+                'max_iter': 'gradient steps for each weight of the distortion loss',
+                'step_size': 'step size β of the normalized gradient steps'}
+    assert set(meanings) == set(MEMGUARD_PAPER_SETTINGS), 'describe every MemGuard setting in memguard_parameters'
+    rows = [f'| `{name}` | {format_default(value)} | {meanings[name]} |'
+            for name, value in MEMGUARD_PAPER_SETTINGS.items()]
+    return '\n'.join(['| Setting | Value | Meaning |', '|---|---|---|', *rows, ''])
+
+
+write_generated('memguard_parameters.md', memguard_parameters())
+
+
 def option_table(prefixes: list) -> str:
     from src.utils.settings import build_parser
     actions = [action for action in build_parser()._actions
@@ -171,7 +186,8 @@ def option_table(prefixes: list) -> str:
 
 # The command-line options listed in the Parameters section of each method's page: the page's name and the prefixes
 # of the options' names.
-METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_']}
+METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_'],
+                  'memguard': ['defender_mem_guard_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

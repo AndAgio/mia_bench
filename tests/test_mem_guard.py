@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.mia.defenses.post_hoc.mem_guard import AttackNet, MemGuard, MemGuardDefender
 from src.utils.configs import MemGuardDefenseConfigs, generate_configs_from_settings
 from src.utils.settings import build_parser
+from src.utils.variables import MEMGUARD_PAPER_SETTINGS
 
 
 class ConfidenceAttacker(torch.nn.Module):
@@ -167,6 +168,19 @@ class MemGuardTests(unittest.TestCase):
         self.assertEqual(config.shadow_attacker_model_epochs, 400)
         self.assertEqual(config.shadow_attacker_model_lr, 0.001)
         self.assertEqual(MemGuard(torch.nn.Identity(), ConfidenceAttacker()).randomize_mix, 0)
+
+    def test_defense_layer_uses_the_paper_settings(self):
+        defender = object.__new__(MemGuardDefender)
+        defender.logger = Mock()
+        defender.trained_model = torch.nn.Identity()
+        defender.mem_guard_configs = MemGuardDefenseConfigs()
+        defender.fit_shadow_attacker_model = Mock(return_value=ConfidenceAttacker())
+        model = defender.defend_model(torch.device('cpu'))
+        for name, value in MEMGUARD_PAPER_SETTINGS.items():
+            self.assertEqual(getattr(model, name), value)
+        # The constructor's defaults are the same values, for callers that build MemGuard directly.
+        self.assertEqual({name: getattr(MemGuard(torch.nn.Identity(), ConfidenceAttacker()), name)
+                          for name in MEMGUARD_PAPER_SETTINGS}, MEMGUARD_PAPER_SETTINGS)
 
     def test_success_escalates_and_later_failure_retains_last_success(self):
         logits = torch.tensor([[2., 0.]])

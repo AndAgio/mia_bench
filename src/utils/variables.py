@@ -37,6 +37,11 @@ HAMP_PAPER_PARAMETERS = {'cifar10': (0.95, 0.001),
                          'texas': (0.6, 0.01)}
 HAMP_FALLBACK_DATASET = 'cifar10'
 
+# MemGuard's Phase I settings, from the paper (arXiv 1909.10594, Eq. 20 and Sec. 5.1) and the authors' code
+# (defense_framework.py): the weights c1 and c2 of the membership and label losses, the first and largest weight c3 of
+# the distortion loss, the gradient steps for each c3, and the step size beta. Only the code bounds c3.
+MEMGUARD_PAPER_SETTINGS = {'c1': 1.0, 'c2': 10.0, 'c3_init': 0.1, 'c3_max': 1e5, 'max_iter': 300, 'step_size': 0.1}
+
 # LDL's number of noisy copies per query, by noise type, from the authors' code (classifier.py): 200 with Gaussian
 # noise (images), 100 with bit flips (Purchase, Texas). Unset --defender_ldl_n_queries takes the value of the dataset's
 # noise.

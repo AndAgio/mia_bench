@@ -25,3 +25,8 @@ Where our implementations depart from the original papers. Each method's page ha
 | Purifier | the reformer outputs K scores | the appendix's 2K outputs cannot be confidences |
 | Purifier | CIFAR-100 gets the learning rate listed for CIFAR10 | the appendix names CIFAR10 twice |
 | Purifier | `neural_feat` attacks the undefended features | lets every attack run; the paper only attacks outputs |
+| [MemGuard](defenses/memguard.md#differences-from-the-paper) | quantization width of the one-time randomness is an option | the paper gives none |
+| MemGuard | defense classifier on as many training members as validation samples | keeps the paper's balance of members and non-members |
+| MemGuard | the search on c3 stops at the authors' bound | as in the authors' code |
+| MemGuard | a failed search on c3 returns the last noise that succeeded | as in the authors' code; Algorithm 1 as printed returns no noise |
+| MemGuard | `neural_feat` attacks the undefended features | lets every attack run; the paper only attacks outputs |
