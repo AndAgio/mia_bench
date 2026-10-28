@@ -15,7 +15,11 @@ from src.trainer.train_manager import TrainManager
 
 
 class QuantileMIA(BaseMIA):
-    # Implementation of Scalable membership inference attacks via quantile regression (https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html).
+    """Quantile regression attack: a model trained on non-members predicts a threshold for each sample.
+
+    Paper: "Scalable membership inference attacks via quantile regression",
+    https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

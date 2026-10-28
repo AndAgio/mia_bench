@@ -92,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_sam_rho', type=float, default=None,
                                 help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05, or 0.5 for the adaptive versions)')
         parser.add_argument('--defender_asam_eta', type=float, default=None,
-                                help='Adaptive versions (ASAM): eta in the normalization |w| + eta of the weights, for stability (default: 0.01)')
+                                help='Adaptive versions (ASAM): eta in the normalization abs(w) + eta of the weights, for stability (default: 0.01)')
         parser.add_argument('--defender_esam_beta', type=float, default=None,
                                 help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 0.6, the paper value for ResNet-18; 1.0 switches it off)')
         parser.add_argument('--defender_esam_gamma', type=float, default=None,
@@ -163,54 +163,58 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_mixup_alpha', type=float, default=1.0,
                                 help='Alpha parameter for Mixup defense')
         # HAMP parameters for defender model
-        parser.add_argument('--defender_hamp_gamma', type=float, default=0.5,
-                                help='gamma parameter for HAMP defense')
-        parser.add_argument('--defender_hamp_alpha', type=float, default=0.001,
-                                help='Alpha parameter for HAMP defense')
+        parser.add_argument('--defender_hamp_gamma', type=float, default=None,
+                                help='Entropy threshold gamma of HAMP, in [0, 1]. Unset: the paper\'s value for the dataset (Table III), see HAMP_PAPER_PARAMETERS in src/utils/variables.py')
+        parser.add_argument('--defender_hamp_alpha', type=float, default=None,
+                                help='Strength alpha of HAMP\'s entropy regularizer. Unset: the paper\'s value for the dataset (Table III), see HAMP_PAPER_PARAMETERS in src/utils/variables.py')
         # Selena parameters for defender model
         parser.add_argument('--defender_selena_K', type=int, default=25,
                                 help='Number of models K for Selena defense')
         parser.add_argument('--defender_selena_L', type=int, default=10,
                                 help='Number of exclusions L per sample for Selena defense')
         # MIST parameters for defender model
-        parser.add_argument('--defender_mist_num_submodels', type=int, default=5,
-                                help='Number of submodels to train for MIST defense')
+        parser.add_argument('--defender_mist_num_submodels', type=int, default=2,
+                                help='Number of submodels to train for MIST defense (default: 2, as in the paper for every CIFAR-10 model)')
         parser.add_argument('--defender_mist_split_method', type=str, default='random',
                                 help='Data split method for MIST defense', choices=['random', 'stratified'])
-        parser.add_argument('--defender_mist_submodel_epochs', type=int, default=5,
-                                help='Number of epochs to train each submodel for MIST defense')
-        parser.add_argument('--defender_mist_lambda', type=float, default=4,
-                                help='Lambda parameter for MIST defense')
+        parser.add_argument('--defender_mist_submodel_epochs', type=int, default=1,
+                                help='Number of passes over its subset per epoch for each submodel, in each of the two phases of MIST defense (default: 1, as in the paper)')
+        parser.add_argument('--defender_mist_lambda', type=float, default=3.5,
+                                help='Weight of the cross-difference loss for MIST defense (default: 3.5, the paper value for CIFAR-10 with AlexNet and ResNet-18)')
         # Weighted Smoothing parameters for defender model
         parser.add_argument('--defender_weighted_smoothing_sigma_noise', type=float, default=0.1,
                                 help='Standard deviation of the gaussian noise to be added in Weighted Smoothing defense')
         parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=10,
                                 help='Number of warmup epochs to train the model without weighted smoothing in Weighted Smoothing defense')
         # Purifier parameters for defender model
-        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=16,
+        parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=2,
                                 help='Latent dimension for the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=128,
-                                help='Hidden dimension for the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=20,
+        parser.add_argument('--defender_purifier_reformer_hidden_dim', type=int, default=32,
+                                help='Width h of the first hidden layer of the reformer in Purifier defense; the next ones are 2h and 4h')
+        parser.add_argument('--defender_purifier_reformer_epochs', type=int, default=100,
                                 help='Number of epochs to train the reformer model in Purifier defense')
         parser.add_argument('--defender_purifier_reformer_lr', type=float, default=0.01,
                                 help='Learning rate to train the reformer model in Purifier defense')
         parser.add_argument('--defender_purifier_reformer_batch_size', type=int, default=256,
                                 help='Batch size to train the reformer model in Purifier defense')
-        parser.add_argument('--defender_purifier_reformer_lambda', type=float, default=1.0,
+        parser.add_argument('--defender_purifier_reformer_lambda', type=float, default=0.1,
                                 help='Lambda parameter to weight the reformer loss in Purifier defense')
-        parser.add_argument('--defender_purifier_pindex_size', type=int, default=1000,
-                                help='Number of samples to use in the Pindex for the Purifier defense')
+        parser.add_argument('--defender_purifier_reformer_noise_sigma', type=float, default=1.0,
+                                help='Std of the Gaussian noise added to the batch-normalised latent of the reformer in Purifier defense')
+        parser.add_argument('--defender_purifier_noise_quantization', type=float, default=1e-3,
+                                help='Quantization width (model-input units) of the query hash that seeds the reformer noise in Purifier defense, so repeated queries get the same output')
         parser.add_argument('--defender_purifier_swap_threshold', type=float, default=0.01,
-                                help='Threshold for label swapping in the Purifier defense')
+                                help='Maximum L2 distance between log-confidence vectors for a query to match a swap-set member in the Purifier defense')
         # MMD parameters for defender model
         parser.add_argument('--defender_mmd_lambda', type=float, default=1.0,
                                 help='Lambda parameter for MMD defense')
         # LDL parameters for defender model
         parser.add_argument('--defender_ldl_n_queries', type=int, default=100,
-                                help='Number of queries to train the LDL defense layer')
-        parser.add_argument('--defender_ldl_noise_scale', type=float, default=0.1,
-                                help='Standard deviation of the noise to be added in the LDL defense layer')
+                                help='Number of noisy copies of each query that the LDL defense layer averages')
+        parser.add_argument('--defender_ldl_noise_scale', type=float, default=0.02,
+                                help='Standard deviation of the Gaussian noise in the LDL defense layer, in pixel units for images as in the paper (default: 0.02, the paper value)')
+        parser.add_argument('--defender_ldl_flip_prob', type=float, default=None,
+                                help='Probability of flipping each binary feature in the LDL defense layer, used for purchase and texas (default: the paper values, 0.0166 for purchase and 0.00016 for texas)')
         # Data Augmentation parameters for defender model
         parser.add_argument('--defender_augment_horizontal_flip_prob', type=float, default=0.5,
                                 help='probability of applying horizontal flip augmentation in the Data Augmentation defense')
@@ -346,7 +350,8 @@ def build_parser() -> argparse.ArgumentParser:
                                         "inception_v3", 
                                         "vgg11", "vgg13", "vgg16", "vgg19", 
                                         "mobile_small", "mobile_large", 
-                                        "vit"])
+                                        "vit",
+                                        "tabular_mlp",])
         parser.add_argument('--attacker_optimizer', type=str, required=False, default='sgd',
                                 help='optimizer')
         parser.add_argument('--attacker_epochs', type=int, default=100,
@@ -358,7 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_lr', type=float, required=False, default=0.01,
                                 help='learning rate')
         parser.add_argument('--attacker_lr_sched', type=str, required=False, default='cosine',
-                                help='lr scheduler', choices=['const', 'step', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+                                help='lr scheduler', choices=['const', 'step', 'multistep', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
         parser.add_argument('--attacker_lr_step_size', type=int, required=False, default=50,
                                 help='step size in epochs for the step, warmup step lr schedulers')
         parser.add_argument('--attacker_lr_step_gamma', type=float, required=False, default=0.1,
@@ -389,7 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_sam_rho', type=float, default=None,
                                 help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05, or 0.5 for the adaptive versions)')
         parser.add_argument('--attacker_asam_eta', type=float, default=None,
-                                help='Adaptive versions (ASAM): eta in the normalization |w| + eta of the weights, for stability (default: 0.01)')
+                                help='Adaptive versions (ASAM): eta in the normalization abs(w) + eta of the weights, for stability (default: 0.01)')
         parser.add_argument('--attacker_esam_beta', type=float, default=None,
                                 help='ESAM: probability that each parameter tensor is perturbed, in stochastic weight perturbation (default: 0.6, the paper value for ResNet-18; 1.0 switches it off)')
         parser.add_argument('--attacker_esam_gamma', type=float, default=None,

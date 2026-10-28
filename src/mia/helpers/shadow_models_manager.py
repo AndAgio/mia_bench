@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from typing import Union
-from src.models import get_model, ARCHITECTURES
+from src.models import get_model, ARCHITECTURES, TABULAR_ARCHITECTURES
 from src.utils.log import Loggable, MyLogger
 from src.utils.configs import ModelConfigs
 from typing import Union
@@ -12,7 +12,7 @@ class ShadowModelsManager(Loggable):
         assert 0 < n_models < 101, f"Invalid number of models should be between 1 and 100: {n_models}"
         self.n_models = n_models
         if not same_model_arch:
-            architectures = self.sample_model_architectures()
+            architectures = self.sample_model_architectures(model_name=model_configs.model_name)
         self.models = {i: get_model(model_name=model_configs.model_name if same_model_arch else architectures[i],
                                     im_channels=model_configs.im_channels,
                                     num_classes=model_configs.num_classes,
@@ -58,7 +58,9 @@ class ShadowModelsManager(Loggable):
     def check_id(self, index: int):
         return index in list(self.models.keys())
 
-    def sample_model_architectures(self):
+    def sample_model_architectures(self, model_name: str):
         # Sample model architectures for the shadow models. For now, we just sample randomly from a list of possible architectures, but more complex sampling strategies could be implemented.
-        sampled_architectures = np.random.choice(ARCHITECTURES, size=(self.n_models,), replace=True).tolist()
+        # Image architectures cannot take tabular inputs, so a tabular model only samples among tabular architectures.
+        candidates = TABULAR_ARCHITECTURES if model_name in TABULAR_ARCHITECTURES else ARCHITECTURES
+        sampled_architectures = np.random.choice(candidates, size=(self.n_models,), replace=True).tolist()
         return sampled_architectures

@@ -1,0 +1,13 @@
+# Documentation toolchain, pinned to the versions the docs were last built with.
+sphinx==9.2.0
+myst-parser==5.1.0
+furo==2025.12.19
+sphinx-autoapi==3.8.1
+sphinx-argparse==0.6.1
+
+# The command-line reference imports src.utils.settings, whose package also loads these. A CPU-only torch is enough;
+# an environment that already has torch keeps it.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+pydantic
+python-telegram-bot

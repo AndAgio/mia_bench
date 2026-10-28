@@ -17,7 +17,7 @@ from src.data.helpers import AugmentWrappedDataset
 
 
 class DataAugmentationDefender(BaseDefender):
-    # Implementation of Data Augmentation as a Defense approach.
+    """Trains with data augmentation: horizontal flips, rotations and random erasing."""
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, DataAugmentationDefenseConfigs), f"DataAugmentationDefender can only be used with DataAugmentationDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

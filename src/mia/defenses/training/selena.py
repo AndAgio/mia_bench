@@ -13,7 +13,11 @@ from src.trainer.distributed import is_rank0
 
 
 class SelenaDefender(BaseDefender):
-    # Implementation of training time optimization component of Selena defense from "Mitigating Membership Inference Attacks by Self-Distillation Through a Novel Ensemble Architecture" (https://www.usenix.org/system/files/sec22-tang.pdf).
+    """SELENA: trains models on overlapping subsets of the data, then distills them into one model.
+
+    Paper: "Mitigating Membership Inference Attacks by Self-Distillation Through a Novel Ensemble Architecture",
+    https://www.usenix.org/system/files/sec22-tang.pdf.
+    """
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, SelenaDefenseConfigs), f"Selena Defender can only be used with SelenaDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

@@ -39,6 +39,16 @@ run.py         # Main file to train defender model and run the MIA
 - **AuditDataManager**: constructs audit datasets combining member and non‑member samples.
 
 
+## 📚 Documentation
+
+The documentation is in [docs/](docs/index.md). To build it:
+
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -W --keep-going -b html docs docs/_build/html
+```
+
+
 ## 🚀 Quick Start
 
 
@@ -175,6 +185,22 @@ independent of batching and global random seeds. Set
 `--defender_mem_guard_randomness_quantization` to choose the quantization width in
 model-input units (default: 0.001). The paper specifies quantization but no width.
 Nearby inputs within the same quantization cell share the random draw.
+
+### LDL
+
+LDL returns the logits averaged over its noisy copies of each query (Algorithm 1 of the
+[paper](https://arxiv.org/abs/2212.01688)), so that every attack can run against it. The
+paper releases only the predicted label. Label-only attacks therefore see exactly the
+paper's defense, while score-based attacks see a smoothing defense the paper does not
+evaluate: report those results as an extension. Image datasets and News get Gaussian
+noise with std `--defender_ldl_noise_scale`, in pixel units of [0, 1] images as in the
+paper (default 0.02, the paper's value). The binary Purchase and Texas features get bit
+flips with probability `--defender_ldl_flip_prob`, which defaults to the paper's value
+for each dataset (0.0166 for Purchase, 0.00016 for Texas).
+
+### HAMP
+
+See [docs/defenses/hamp.md](docs/defenses/hamp.md).
 
 ### Tests
 

@@ -9,6 +9,7 @@ from src.mia.defenses.base import BaseDefender
 
 
 class MixupDefender(BaseDefender):
+    """Trains with mixup: convex combinations of pairs of inputs and of their labels."""
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, MixupDefenseConfigs), f"MixupDefender can only be used with MixupDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

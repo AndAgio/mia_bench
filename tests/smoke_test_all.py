@@ -382,7 +382,6 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         "--defender_purifier_reformer_epochs", epochs,
         "--defender_purifier_reformer_lr", str(profile.learning_rate),
         "--defender_purifier_reformer_batch_size", auxiliary_batch_size,
-        "--defender_purifier_pindex_size", (str(profile.audit_samples) if medium else "8"),
         "--defender_ldl_n_queries", queries,
         "--resume",
     ]

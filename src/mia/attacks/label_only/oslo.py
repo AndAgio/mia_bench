@@ -14,7 +14,11 @@ from src.utils import convert_to_hms
 
 
 class OsloMIA(BaseMIA):
-    # Implementation of "OSLO: One-Shot Label-Only Membership Inference Attacks" (https://proceedings.neurips.cc/paper_files/paper/2024/file/71f88122d414cfeb455ac0ed932fbe1f-Paper-Conference.pdf).
+    """OSLO: a one-shot label-only attack with transfer-based adversarial examples.
+
+    Paper: "OSLO: One-Shot Label-Only Membership Inference Attacks",
+    https://proceedings.neurips.cc/paper_files/paper/2024/file/71f88122d414cfeb455ac0ed932fbe1f-Paper-Conference.pdf.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

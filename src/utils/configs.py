@@ -2,7 +2,7 @@ import pathlib
 import hashlib
 import json
 # from dataclasses import dataclass, field
-from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER
+from src.utils.variables import DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_DATASETS_FOLDER, HAMP_PAPER_PARAMETERS, HAMP_FALLBACK_DATASET
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -47,11 +47,13 @@ def build_scheduler_configs_from_settings(settings: Any, mode: str = 'defender')
         extra['cycle_step'] = settings.defender_lr_cycle_step if mode == 'defender' else settings.attacker_lr_cycle_step
         extra['cycle_gamma'] = settings.defender_lr_cycle_gamma if mode == 'defender' else settings.attacker_lr_cycle_gamma
         extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.attacker_lr_cosine_min
+        extra['warmup_multiplier'] = settings.defender_lr_warmup_multiplier if mode == 'defender' else settings.attacker_lr_warmup_multiplier
+        extra['warmup_epochs'] = settings.defender_lr_warmup_epochs if mode == 'defender' else settings.attacker_lr_warmup_epochs
     elif name == 'step':
         extra['step_size'] = settings.defender_lr_step_size  if mode == 'defender' else settings.attacker_lr_step_size
         extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.attacker_lr_step_gamma
     elif name == 'multistep':
-        extra['step_milestones'] = settings.defender_lr_step_milestones  if mode == 'defender' else settings.defender_lr_step_milestones
+        extra['step_milestones'] = settings.defender_lr_step_milestones  if mode == 'defender' else settings.attacker_lr_step_milestones
         extra['step_gamma'] = settings.defender_lr_step_gamma if mode == 'defender' else settings.attacker_lr_step_gamma
     elif name == 'exp':
         extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.attacker_lr_exp_gamma
@@ -122,7 +124,7 @@ class ModelConfigs:
     model_name: str
     im_channels: int
     num_classes: int
-    im_size: Tuple[int, ...]
+    im_size: Optional[Tuple[int, ...]]  # None for tabular datasets
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -206,7 +208,7 @@ def get_im_channels_from_name(dataset: str):
     elif dataset == 'gtsrb':
         im_channels = 3
     elif dataset == 'news':
-        im_channels = 134,410
+        im_channels = 134410
     elif dataset == 'purchase':
         im_channels = 600
     elif dataset == 'texas':
@@ -443,8 +445,17 @@ class MixupDefenseConfigs:
 class HampDefenseConfigs:
     strategy: Literal["hamp"] = "hamp"
     mode: str = 'full'  # options: 'train_only', 'test_only', 'full'
-    gamma: float = 0.5
+    # The paper's CIFAR-10 values. generate_configs_from_settings sets the dataset's (HAMP_PAPER_PARAMETERS).
+    gamma: float = 0.95
     alpha: float = 0.001
+
+    def __post_init__(self):
+        # The paper takes gamma in [0, 1] (Eq. 4): above 1 no soft label reaches the entropy threshold. A negative alpha
+        # would reward confident predictions.
+        if not 0 <= self.gamma <= 1:
+            raise ValueError(f"Hamp requires 0 <= gamma <= 1, got gamma={self.gamma}")
+        if self.alpha < 0:
+            raise ValueError(f"Hamp requires alpha >= 0, got alpha={self.alpha}")
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class SelenaDefenseConfigs:
@@ -460,10 +471,10 @@ class SelenaDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class MistDefenseConfigs:
     strategy: Literal["mist"] = "mist"
-    num_submodels: int = 5
+    num_submodels: int = 2  # defaults from the paper (Table 7 and Section 4.1.2), for CIFAR-10
     split_method: str = 'random'  # options: 'random', 'stratified'
-    submodel_epochs: int = 5
-    lmbd: float = 4
+    submodel_epochs: int = 1
+    lmbd: float = 3.5
     mix_up: bool = False
     alpha_mixup: float = 0.0
 
@@ -476,13 +487,14 @@ class WeightedSmoothingDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class PurifierDefenseConfigs:
     strategy: Literal["purifier"] = "purifier"
-    reformer_latent_dim: int = 16
-    reformer_hidden_dim: int = 128
-    reformer_epochs: int = 20
+    reformer_latent_dim: int = 2
+    reformer_hidden_dim: int = 32
+    reformer_epochs: int = 100
     reformer_lr: float = 0.01
     reformer_batch_size: int = 256
-    reformer_lambda: float = 1.0
-    pindex_size: int = 1000
+    reformer_lambda: float = 0.1
+    reformer_noise_sigma: float = 1.0
+    noise_quantization: float = 1e-3
     swap_threshold: float = 0.01
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -496,8 +508,9 @@ class MmdDefenseConfigs:
 class LdlDefenseConfigs:
     strategy: Literal["ldl"] = "ldl"
     n_queries: int = 100
-    noise_type: str = 'bernoulli' # options: 'bernoulli', 'gaussian'
-    noise_scale: float = 0.1
+    noise_type: Literal["normal", "bernoulli"] = "normal" # bernoulli flips binary features (purchase, texas)
+    noise_scale: float = 0.02 # std of the Gaussian noise, in pixel units for images
+    flip_prob: float = 0.0166 # probability of flipping each feature with Bernoulli noise
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class DataAugmentationDefenseConfigs:
@@ -668,9 +681,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
             hamp_mode = 'full'
         else:
             raise ValueError('Hamp defense mode "{}" not recognized!'.format(settings.defender_mode))
+        # Unset values follow the paper (Table III), which picks them per dataset.
+        paper_gamma, paper_alpha = HAMP_PAPER_PARAMETERS.get(settings.dataset, HAMP_PAPER_PARAMETERS[HAMP_FALLBACK_DATASET])
         defender_defense_configs = HampDefenseConfigs(mode=hamp_mode,
-                                                    gamma=settings.defender_hamp_gamma,
-                                                    alpha=settings.defender_hamp_alpha)
+                                                    gamma=paper_gamma if settings.defender_hamp_gamma is None else settings.defender_hamp_gamma,
+                                                    alpha=paper_alpha if settings.defender_hamp_alpha is None else settings.defender_hamp_alpha)
     elif settings.defender_mode in ['selena']:
         defender_defense_configs = SelenaDefenseConfigs(K=settings.defender_selena_K,
                                                         L=settings.defender_selena_L)
@@ -680,7 +695,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     split_method=settings.defender_mist_split_method,
                                                     submodel_epochs=settings.defender_mist_submodel_epochs,
                                                     lmbd=settings.defender_mist_lambda,
-                                                    mixup=mixup,
+                                                    mix_up=mixup,
                                                     alpha_mixup=settings.defender_mixup_alpha if mixup else 0.0)
     elif settings.defender_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
         defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
@@ -692,20 +707,24 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         reformer_lr=settings.defender_purifier_reformer_lr,
                                                         reformer_batch_size=settings.defender_purifier_reformer_batch_size,
                                                         reformer_lambda=settings.defender_purifier_reformer_lambda,
-                                                        pindex_size=settings.defender_purifier_pindex_size,
+                                                        reformer_noise_sigma=settings.defender_purifier_reformer_noise_sigma,
+                                                        noise_quantization=settings.defender_purifier_noise_quantization,
                                                         swap_threshold=settings.defender_purifier_swap_threshold)
     elif settings.defender_mode in ['mmd', 'mmd_mixup', 'mmd-mixup']:
         defender_defense_configs = MmdDefenseConfigs(lmbd=settings.defender_mmd_lambda,
                                                     use_mixup=True if settings.defender_mode in ['mmd_mixup', 'mmd-mixup'] else False,
                                                     mixup_alpha=settings.defender_mixup_alpha)
     elif settings.defender_mode in ['ldl']:
-        if settings.dataset in ["cifar10", "cifar100", "svhn", "fmnist", "cinic10", "imagenet", "tinyimagenet", "gtsrb"]:
-            noise_type = "normal"
-        elif settings.dataset in ["purchase", "news", "texas"]:
-            noise_type = "bernoulli"
+        # Bit-flip noise only suits binary features; every other dataset, news (TF-IDF) included, gets Gaussian noise.
+        noise_type = "bernoulli" if settings.dataset in ["purchase", "texas"] else "normal"
+        # Unset flip probabilities follow the paper (Table 1), which picks them by the number of features.
+        ldl_flip_prob = settings.defender_ldl_flip_prob
+        if ldl_flip_prob is None:
+            ldl_flip_prob = {"purchase": 0.0166, "texas": 0.00016}.get(settings.dataset, 0.0166)
         defender_defense_configs = LdlDefenseConfigs(n_queries=settings.defender_ldl_n_queries,
                                                     noise_type=noise_type,
-                                                    noise_scale=settings.defender_ldl_noise_scale)
+                                                    noise_scale=settings.defender_ldl_noise_scale,
+                                                    flip_prob=ldl_flip_prob)
     elif settings.defender_mode in ['data_augmentation', 'augmentation', 'data-augmentation', 'aug', 'dataaug', 'data_aug', 'augment']:
         defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip_prob,
                                                                 rotation=settings.defender_augment_rotation,

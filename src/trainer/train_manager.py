@@ -12,7 +12,7 @@ from src.data.helpers import MultiDatasets
 from src.models import get_model
 from src.optimizers import SAM, SGD, Adam, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats, asam_param_groups
-from src.optimizers.schedulers import GradualWarmupScheduler
+from src.optimizers.schedulers import GradualWarmupScheduler, CosineAnnealingWarmupRestarts
 from src.utils.configs import TrainConfigs, ModelConfigs, OptimizerConfigs, SchedulerConfigs
 from src.utils import convert_to_hms
 from src.trainer.stats_tracker import TrainStats, EpochStats, StageSummary
@@ -36,7 +36,12 @@ def sam_setting(opt_cfg: OptimizerConfigs, name: str, default: Any) -> Any:
 
 
 class TrainManager(Loggable):
+    """Train a model on train, validation and test splits, with checkpoints and resuming.
+
+    Defenses subclass it and override setup_loss, train_step or train_epoch.
+    """
     def __init__(self, train_configs: TrainConfigs, name: str, logger: MyLogger = None):
+        """Set up the checkpoint folders, the device (and DDP) and the random seed."""
         super().__init__(logger=logger)
         self.train_configs = train_configs
         self.name = name
@@ -46,12 +51,14 @@ class TrainManager(Loggable):
 
     
     def reset_configs(self, configs: TrainConfigs):
+        """Replace the training configs, and set up the folders, device and seed again."""
         self.train_configs = configs
         self.setup_folders(train_configs=self.train_configs)
         self.set_devices_and_seed(train_configs=self.train_configs)
     
 
     def setup_folders(self, train_configs: TrainConfigs):
+        """Create the checkpoint and resume folders of this run."""
         models_folder = os.path.join(train_configs.ckpts_folder, self.name)
         self.logger.print_it(f"Setting up checkpoints folder to {models_folder}")
         os.makedirs(models_folder, exist_ok=True)
@@ -64,16 +71,19 @@ class TrainManager(Loggable):
 
 
     def set_devices_and_seed(self, train_configs: TrainConfigs):
+        """Pick the device, start DDP if requested, and seed the random generators."""
         self._setup_distributed_training(distributed=train_configs.distributed,
                                         device=train_configs.device)
         self._setup_seed(seed=train_configs.seed)
 
 
     def _setup_distributed_training(self, distributed: bool = False, device: str = 'cpu'):
+        """Start DDP if requested, and record the rank, world size and device."""
         self.global_rank, self.world_size, self.local_rank, self.device = maybe_init_ddp(use_ddp=distributed, device=device)
         self.distributed = True if (self.world_size > 1 and distributed) else False
 
     def _setup_seed(self, seed: int = 12345):
+        """Seed Python, NumPy and PyTorch (CPU, CUDA and MPS), and make cuDNN deterministic."""
         # Set random seed for initialization
         random.seed(seed)
         np.random.seed(seed)
@@ -89,6 +99,7 @@ class TrainManager(Loggable):
         self.seed = seed
 
     def setup_model_from_configs(self, model_configs: ModelConfigs):
+        """Build the model described by the configs."""
         self.setup_model_from_name_and_info(model_name=model_configs.model_name,
                                             im_channels=model_configs.im_channels,
                                             num_classes=model_configs.num_classes,
@@ -96,6 +107,7 @@ class TrainManager(Loggable):
 
 
     def setup_model_from_name_and_info(self, model_name: str, im_channels: int, num_classes: int, im_size: Tuple[int, ...]):
+        """Build a model by name, on the device and wrapped in DDP if distributed."""
         self.logger.print_it('Setting up model "{}"...'.format(model_name))
         # Setup model
         model = get_model(model_name=model_name,
@@ -112,6 +124,7 @@ class TrainManager(Loggable):
         self.logger.print_it('Model setup done!')
 
     def set_model(self, model: nn.Module):
+        """Train a copy of the given model, on the device and wrapped in DDP if distributed."""
         self.logger.print_it('Setting up model "{}"...'.format(model.name))
         self.model = copy.deepcopy(model)
         # Move model to device
@@ -123,9 +136,11 @@ class TrainManager(Loggable):
         self.logger.print_it('Model setup done!')
 
     def get_model_name(self):
+        """Return the name of the model being trained."""
         return self.model_name
 
     def setup_loss(self, loss: Union[str, Callable]):
+        """Set the criterion from a name ('crossentropy') or a loss function. Override to use another loss."""
         if isinstance(loss, str):
             self.logger.print_it('Setting up {} loss...'.format(loss))
             if loss == 'crossentropy':
@@ -137,6 +152,7 @@ class TrainManager(Loggable):
             self.criterion = loss
 
     def setup_performance_metrics(self, metrics: list[Union[str, Callable]], metric_to_track: str = None):
+        """Set the metrics to log and the one that picks the best checkpoint (the loss if none)."""
         self.performance_metrics = {}
         for metric in metrics:
             if isinstance(metric, str):
@@ -154,6 +170,7 @@ class TrainManager(Loggable):
             self.metric_to_track = metric_to_track
 
     def setup_optimizer(self, opt_cfg: OptimizerConfigs):
+        """Create the optimizer named in the configs, SAM-like ones included."""
         self.logger.print_it('Setting up "{}" optimizer...'.format(opt_cfg.name))
         if opt_cfg.name == 'adam':
             self.optimizer = Adam(params=self.model.parameters(),
@@ -237,6 +254,7 @@ class TrainManager(Loggable):
             raise ValueError('Specified optimizer "{}" not supported. Options are: adam and sgd and sam'.format(opt_cfg.name))
 
     def setup_lr_scheduler(self, sched_cfg: SchedulerConfigs):
+        """Create the learning rate scheduler named in the configs."""
         self.logger.print_it('Setting up "{}" learning rate scheduler...'.format(sched_cfg.name))
         if sched_cfg.name == 'const':
             self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=1)
@@ -258,11 +276,16 @@ class TrainManager(Loggable):
         elif sched_cfg.name == 'warmup_cosine':
             assert sched_cfg.extra['cycle_step'] < sched_cfg.epochs, f"The number of epochs per cycle in warmup cosine scheduler should be less than the total number of epochs!"
             assert sched_cfg.extra['cycle_gamma'] <= 1, f"The decaying factor per cycle in warmup cosine scheduler should be less than or equal to 1 to avoid lr becoming too large!"
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
-                                                                                T_0=sched_cfg.extra['cycle_step'],
-                                                                                T_mult=sched_cfg.extra['cycle_gamma'],
-                                                                                eta_min=sched_cfg.extra['cosine_min'],
-                                                                                last_epoch=sched_cfg.epochs)
+            assert sched_cfg.extra['warmup_epochs'] < sched_cfg.extra['cycle_step'], f"The number of warmup epochs in warmup cosine scheduler should be less than the number of epochs per cycle! Found {sched_cfg.extra['warmup_epochs']} and {sched_cfg.extra['cycle_step']}"
+            # Every cycle of cycle_step epochs warms up linearly from cosine_min to the peak learning rate, then anneals
+            # it back to cosine_min with a cosine, and the peak decays by cycle_gamma at every restart. As in the other
+            # warmup schedulers, the peak is the learning rate times warmup_multiplier.
+            self.scheduler = CosineAnnealingWarmupRestarts(self.optimizer,
+                                                           first_cycle_steps=sched_cfg.extra['cycle_step'],
+                                                           max_lr=self.optimizer.param_groups[0]['lr'] * sched_cfg.extra['warmup_multiplier'],
+                                                           min_lr=sched_cfg.extra['cosine_min'],
+                                                           warmup_steps=sched_cfg.extra['warmup_epochs'],
+                                                           gamma=sched_cfg.extra['cycle_gamma'])
         elif sched_cfg.name == 'step':
             assert sched_cfg.epochs is not None and sched_cfg.epochs > 0
             assert sched_cfg.extra['step_size'] < sched_cfg.epochs, f"In step-like schedulers the step size should be smaller than the total number of epochs. Found {sched_cfg.extra['step_size']} and {sched_cfg.epochs}!"
@@ -282,6 +305,7 @@ class TrainManager(Loggable):
             raise ValueError(f"Learning rate scheduler '{sched_cfg.name}' not available!")
 
     def setup_training(self):
+        """Set up the loss, metrics, optimizer and scheduler from the configs."""
         self.logger.print_it('Setting up training...')
         self.setup_loss(loss=self.train_configs.loss)
         self.setup_performance_metrics(metrics=self.train_configs.metrics,
@@ -291,6 +315,7 @@ class TrainManager(Loggable):
         self.logger.print_it('Training setup done!')
 
     def setup_dataloaders_from_multidatasets(self, dataset: MultiDatasets, batch_size: int = 128):
+        """Create the loaders of the train split and, when present, of the val and test splits."""
         self.dataset = dataset
         try:
             train_dataset = dataset.get('train')
@@ -338,6 +363,7 @@ class TrainManager(Loggable):
                 self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     def setup_dataloaders(self, dataset: MultiDatasets, batch_size: int = 128):
+        """Check that the dataset is a MultiDatasets and create its loaders."""
         assert isinstance(dataset, MultiDatasets), f"Dataset should be of type MultiDatasets. Found {type(dataset)} instead!"
         self.setup_dataloaders_from_multidatasets(dataset=dataset, batch_size=batch_size)
 
@@ -346,6 +372,7 @@ class TrainManager(Loggable):
                         model: Union[ModelConfigs,nn.Module],
                         configs: TrainConfigs,
                         ):
+        """Prepare a run: data loaders, model (a module or its configs) and training setup."""
         self.logger.print_it('Initializing training...')
 
         if not configs.__eq__(self.train_configs):
@@ -368,6 +395,7 @@ class TrainManager(Loggable):
 
 
     def reset_running_stats(self):
+        """Reset the tracking of the best epoch before a run."""
         # Start from the worst possible value so that the first epoch is always saved as best.pth.
         best_record = np.inf if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else -np.inf
         mode_to_track_best = "min" if self.metric_to_track in ["loss", "mse", "mae", "rmse"] else "max"
@@ -382,6 +410,7 @@ class TrainManager(Loggable):
 
     
     def reset_epoch_stats(self, phase: str = 'train'):
+        """Start tracking the loss and metrics of a stage (train, val or test)."""
         metrics = {"loss": self.criterion}
         for met, met_fn in self.performance_metrics.items():
             metrics[met] = met_fn
@@ -391,6 +420,7 @@ class TrainManager(Loggable):
                                             sync_mps=True)
 
     def train(self, extra_configs: dict[str, Any] = None, return_best_model: bool = True, return_last_model: bool = False, return_stats: bool = False):
+        """Train for the configured epochs, resuming if possible, and return the best and/or last model."""
         self.extra_configs = extra_configs
         
 
@@ -478,14 +508,17 @@ class TrainManager(Loggable):
                     return
 
     def get_checkpoint_extra(self) -> dict[str, Any]:
+        """Return extra training state to store in checkpoints. Override when a defense has some."""
         # Hook for subclasses with additional training state (e.g., auxiliary models) to be stored in checkpoints.
         return {}
 
     def load_checkpoint_extra(self, extra: dict[str, Any]):
+        """Restore the state saved by get_checkpoint_extra when resuming."""
         # Hook for subclasses to restore the state stored by get_checkpoint_extra when resuming.
         pass
 
     def train_executions(self):
+        """Run one epoch: training, validation and test when their splits exist, then a scheduler step."""
         self.train_epoch()
         if self.run_val:
             self.val_epoch()
@@ -494,6 +527,7 @@ class TrainManager(Loggable):
         self.scheduler.step()
 
     def train_epoch(self):
+        """Train for one epoch, calling train_step on each batch, and return the epoch summary."""
         # reset epoch stats and per-epoch profiler
         self.reset_epoch_stats(phase='train')
         self.model.train()
@@ -512,6 +546,7 @@ class TrainManager(Loggable):
         return train_summary
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        """Run one optimization step on a batch and log its metrics. Override to change how batches are used."""
         # Map to available device (profile this)
         inputs = inputs.to(self.device)
         targets = targets.to(self.device)
@@ -554,12 +589,14 @@ class TrainManager(Loggable):
         self.logger.print_it_same_line(message, console_only=True)
 
     def to_be_averaged_loss(self, loss: torch.Tensor) -> bool:
+        """Return whether the loss holds one value per sample and must be averaged."""
         try:
             return loss.numel() > 1
         except Exception:
             return isinstance(self.criterion, torch.nn.modules.loss._Loss) and self.criterion.reduction == 'none'
 
     def val_epoch(self):
+        """Evaluate on the validation split and return its summary."""
         # reset per-epoch profiler for test stage as well (keeps same epoch bucket)
         self.reset_epoch_stats(phase='val')
         self.model.eval()
@@ -577,9 +614,11 @@ class TrainManager(Loggable):
         return val_summary
 
     def val_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        """Evaluate one validation batch, like test_step."""
         self.test_step(inputs, targets, batch_idx=batch_idx, total_batches=total_batches)
 
     def test_epoch(self):
+        """Evaluate on the test split and return its summary."""
         # reset per-epoch profiler for test stage as well (keeps same epoch bucket)
         self.reset_epoch_stats(phase='test')
         self.model.eval()
@@ -598,6 +637,7 @@ class TrainManager(Loggable):
 
     
     def test_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        """Evaluate one batch and log its metrics."""
         self.epoch_stats_tracker.batch_start()
         # Map to available device (profile)
         inputs, targets = inputs.to(self.device), targets.to(self.device)
@@ -614,6 +654,7 @@ class TrainManager(Loggable):
         self.logger.print_it_same_line(message, console_only=True)
     
     def get_current_lr(self):
+        """Return the current learning rate, or a list when the parameter groups differ."""
         # Append current learning rate(s)
         current_lr = None
         try:
@@ -636,6 +677,7 @@ class TrainManager(Loggable):
         return current_lr
     
     def build_message_for_stage_end(self, stage_summary: StageSummary) -> str:
+        """Build the log line printed at the end of a stage."""
         message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
         message += ' {}: '.format(stage_summary.stage.upper())
         metrics = {}
@@ -647,6 +689,7 @@ class TrainManager(Loggable):
         return message
     
     def build_message_for_batch_end(self, index_batch, total_batches) -> str:
+        """Build the progress line printed after each batch."""
         message = f"{self.device.type.upper()}:{self.local_rank} | EPOCH: {self.epoch}/{self.train_configs.scheduler_config.epochs} |"
         bar_length = 10
         progress = float(index_batch) / float(total_batches)
@@ -665,6 +708,7 @@ class TrainManager(Loggable):
     
     @staticmethod
     def append_metrics(message: str, metrics: dict[str, float]) -> str:
+        """Append the metrics, except the timing ones, to a log line."""
         if metrics is not None:
             metrics_message = ''
             index = 0
@@ -680,6 +724,7 @@ class TrainManager(Loggable):
         return message
     
     def append_lr(self, message: str) -> str:
+        """Append the current learning rate to a log line."""
         current_lr = self.get_current_lr()
         if current_lr is not None:
             if isinstance(current_lr, (list, tuple)):
@@ -689,6 +734,7 @@ class TrainManager(Loggable):
         return message
     
     def append_times(self, message: str) -> str:
+        """Append the epoch and total running times to a log line."""
         h,m,s = convert_to_hms(self.epoch_stats_tracker.get_current_running_time())
         message += ' Epoch time {}:{:02d}:{:02d} |'.format(h,m,s)
         h,m,s = convert_to_hms(self.train_stats_tracker.get_current_running_time())

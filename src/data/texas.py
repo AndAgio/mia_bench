@@ -60,7 +60,9 @@ class Texas(Dataset):
         # Convert numpy arrays to PyTorch tensors
         features = torch.tensor(features, dtype=torch.float32)
         
-        # Ensure labels are 1D
+        # Ensure labels are 1D (the released .npz stores them one-hot)
+        if labels.ndim == 2 and labels.shape[1] > 1:
+            labels = labels.argmax(axis=1)
         labels = torch.tensor(labels, dtype=torch.long).squeeze()
 
         # Deterministic 80/20 split

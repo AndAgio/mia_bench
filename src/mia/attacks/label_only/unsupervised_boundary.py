@@ -14,9 +14,14 @@ from src.mia.attacks.label_only.helpers.qeba import Qeba, build_qeba_basis
 
 
 class UnsupervisedBoundaryMIA(BaseMIA):
+    """Label-only attack on the distance to the decision boundary, with a threshold set on random inputs.
+
+    Paper: "Membership Leakage in Label-Only Exposures",
+    https://dl.acm.org/doi/pdf/10.1145/3460120.3484575.
+    The distance is found with HopSkipJump or QEBA.
+    """
     requires_auxiliary_data = False
 
-    # Implementation of unsupervised boundary-based label-only attack using HopSkipJump or QEBA adversarial attack of "Membership Leakage in Label-Only Exposures" (https://dl.acm.org/doi/pdf/10.1145/3460120.3484575)
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

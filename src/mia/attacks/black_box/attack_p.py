@@ -12,7 +12,11 @@ BATCH_SIZE = 256
 
 
 class AttackPMIA(BaseMIA):
-    # Implementation of Attack-P in Enhanced Membership Inference Attacks against Machine Learning Models (https://arxiv.org/pdf/2111.09679).
+    """Attack-P: compares the target's score on a sample with its scores on population data.
+
+    Paper: "Enhanced Membership Inference Attacks against Machine Learning Models",
+    https://arxiv.org/pdf/2111.09679.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

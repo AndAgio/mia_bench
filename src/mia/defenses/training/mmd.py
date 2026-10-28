@@ -12,7 +12,11 @@ from src.trainer.train_manager import TrainManager
 
 
 class MmdDefender(BaseDefender):
-    # Implementation of training time optimization component of MMD defense from "Membership Inference Attacks and Defenses in Classification Models" (https://dl.acm.org/doi/pdf/10.1145/3422337.3447836).
+    """MMD defense: penalizes the distance between the model's outputs on training and validation data.
+
+    Paper: "Membership Inference Attacks and Defenses in Classification Models",
+    https://dl.acm.org/doi/pdf/10.1145/3422337.3447836.
+    """
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, MmdDefenseConfigs), f"MmdDefender can only be used with MmdDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

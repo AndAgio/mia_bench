@@ -15,7 +15,11 @@ from src.optimizers.utils import enable_running_stats, disable_running_stats
 
 
 class AdvRegDefender(BaseDefender):
-    # Implementation of adversarial regularization proposed in "Machine learning with membership privacy using adversarial regularization." (https://dl.acm.org/doi/pdf/10.1145/3243734.3243855).
+    """Adversarial regularization: trains the model against an inference attack that it learns alongside.
+
+    Paper: "Machine learning with membership privacy using adversarial regularization",
+    https://dl.acm.org/doi/pdf/10.1145/3243734.3243855.
+    """
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, AdvRegDefenseConfigs), f"AdvRegDefender can only be used with AdvRegDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

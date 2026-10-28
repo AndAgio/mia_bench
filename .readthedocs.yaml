@@ -1,0 +1,12 @@
+# Read the Docs builds the documentation for every push and release tag once the project is imported there.
+version: 2
+build:
+  os: "ubuntu-24.04"
+  tools:
+    python: "3.13"
+sphinx:
+  configuration: "docs/conf.py"
+  fail_on_warning: true
+python:
+  install:
+    - requirements: "docs/requirements.txt"

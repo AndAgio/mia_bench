@@ -10,9 +10,13 @@ from src.optimizers.utils import enable_running_stats, disable_running_stats
 
 
 class RelaxLossDefender(BaseDefender):
-    # Implementation of "RelaxLoss: Defending Membership Inference Attacks without Losing Utility" (https://arxiv.org/pdf/2207.05801),
-    # following Algorithm 1 and App. B.3 of the paper. See RelaxLossTrainManager.relax_loss for the differences with the
-    # official code (https://github.com/DingfanChen/RelaxLoss).
+    """RelaxLoss: keeps the training loss near a target value instead of driving it to zero.
+
+    Paper: "RelaxLoss: Defending Membership Inference Attacks without Losing Utility",
+    https://arxiv.org/pdf/2207.05801.
+    Follows Algorithm 1 and App. B.3; RelaxLossTrainManager.relax_loss lists the differences with the
+    official code (https://github.com/DingfanChen/RelaxLoss).
+    """
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, RelaxLossDefenseConfigs), f"RelaxLossDefender can only be used with RelaxLossDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

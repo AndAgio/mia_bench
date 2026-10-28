@@ -12,7 +12,11 @@ from src.mia.defenses.base import BaseDefender
 
 
 class WeightedSmoothingDefender(BaseDefender):
-    # Implementation of Weighted Smoothing defense from the paper: "Mitigating Membership Inference Attacks via Weighted Smoothing" (https://dl.acm.org/doi/pdf/10.1145/3627106.3627189).
+    """Weighted smoothing defense.
+
+    Paper: "Mitigating Membership Inference Attacks via Weighted Smoothing",
+    https://dl.acm.org/doi/pdf/10.1145/3627106.3627189.
+    """
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, WeightedSmoothingDefenseConfigs), f"WeightedSmoothingDefender can only be used with WeightedSmoothingDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

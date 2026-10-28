@@ -13,6 +13,7 @@ from src.mia.defenses.base import BaseDefender
 
 
 class DifferentialPrivacyDefender(BaseDefender):
+    """Trains with DP-SGD, using Opacus."""
     def __init__(self, defender_configs: DefenderConfigs):
         assert isinstance(defender_configs.defense, DPDefenseConfigs), f"DifferentialPrivacyDefender can only be used with DPDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)

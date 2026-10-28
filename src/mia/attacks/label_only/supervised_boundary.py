@@ -16,7 +16,12 @@ from src.mia.attacks.label_only.helpers.qeba import Qeba, build_qeba_basis
 
 
 class SupervisedBoundaryMIA(BaseMIA):
-    # Implementation of supervised boundary-based label-only attack using HopSkipJump or QEBA adversarial attack of "Label-Only Membership Inference Attacks" (https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf)
+    """Label-only attack on the distance to the decision boundary, with a threshold learned on shadow data.
+
+    Paper: "Label-Only Membership Inference Attacks",
+    https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf.
+    The distance is found with HopSkipJump or QEBA.
+    """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):

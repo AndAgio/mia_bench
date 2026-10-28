@@ -62,6 +62,9 @@ class Purchase(Dataset):
         features = torch.tensor(features, dtype=torch.float32)
         
         # Depending on how the labels were saved, they might be 2D. We ensure they are 1D.
+        # The released .npz stores them one-hot.
+        if labels.ndim == 2 and labels.shape[1] > 1:
+            labels = labels.argmax(axis=1)
         labels = torch.tensor(labels, dtype=torch.long).squeeze()
 
         # The raw .npz file is generally unsplit. We will do a deterministic 80/20 split here.
