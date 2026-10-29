@@ -7,6 +7,8 @@ from src.data.helpers import MultiDatasets
 from opacus import PrivacyEngine
 from opacus.validators import ModuleValidator
 from opacus.distributed import DifferentiallyPrivateDistributedDataParallel as DPDDP
+from opacus.optimizers import DPOptimizer, DPOptimizerFastGradientClipping
+from opacus.optimizers.ddp_perlayeroptimizer import DistributedPerLayerOptimizer
 from src.utils.configs import DefenderConfigs, DPDefenseConfigs, TrainConfigs, ModelConfigs 
 from src.trainer.train_manager import TrainManager
 from src.mia.defenses.base import BaseDefender
@@ -56,24 +58,28 @@ class DifferentialPrivacyTrainManager(TrainManager):
 
         # An empty Poisson draw is a real DP-SGD step: the summed data gradient
         # is zero, but noise, optimizer state and the accountant still advance.
-        # Use the normal Opacus forward/backward path to populate its hook state
-        # correctly for flat/per-layer and ghost clipping.
-        inputs = inputs.to(self.device)
-        targets = targets.to(self.device)
+        # Initialize the gradient inputs expected by Opacus directly. No model
+        # or criterion call is needed, so this works for backbones that cannot
+        # forward an empty tensor and does not modify their buffers or RNG state.
+        if not isinstance(self.optimizer, DPOptimizer):
+            raise TypeError("Empty DP batches require an Opacus DPOptimizer")
+        if isinstance(self.optimizer, DistributedPerLayerOptimizer):
+            # This optimizer adds noise inside backward hooks, not step(). Do
+            # not silently perform an unnoised/unaccounted update for this mode.
+            raise NotImplementedError(
+                "Empty Poisson batches with distributed per-layer clipping are not supported; "
+                "use distributed flat clipping or single-process per-layer clipping."
+            )
         self.epoch_stats_tracker.batch_start()
         self.optimizer.zero_grad()
-        outputs = self.model(inputs)
-        loss = self.criterion(outputs, targets)
-        if isinstance(loss, torch.Tensor):
-            # The empty data objective is exactly zero, regardless of the
-            # criterion's configured mean reduction (which would yield NaN).
-            outputs.sum().backward()
-        else:
-            # Ghost clipping's loss wrapper performs its own two backward passes.
-            # This per-batch wrapper can use a zero sum instead of an empty mean;
-            # the criterion/optimizer keep their normal nonempty-batch reduction.
-            loss.loss_reduction = "sum"
-            loss.backward()
+        for parameter in self.optimizer.params:
+            if isinstance(self.optimizer, DPOptimizerFastGradientClipping):
+                # Ghost clipping consumes the already clipped summed gradient.
+                parameter.grad = torch.zeros_like(parameter)
+            else:
+                # Hooks clipping consumes per-sample gradients. Zero samples
+                # means an empty tensor, not an invented training example.
+                parameter.grad_sample = parameter.new_empty((0, *parameter.shape))
         self.optimizer.step()
         self.epoch_stats_tracker.batch_end(batch_size=0)
         # Empty batches have no loss/accuracy observations to add to the meters.

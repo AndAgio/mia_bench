@@ -254,6 +254,8 @@ checkpoint.write_text('target')
             members = int(settings.n_auditing_samples * settings.audit_in_perc)
             self.assertGreater(members, 0)
             self.assertLess(members, settings.n_auditing_samples)
+            if case.kind == "defense" and case.component == "relax_loss":
+                self.assertGreater(settings.defender_relax_loss_alpha, 0)
 
     def test_edge_targets_shared_across_profiles_and_consumers_contiguous(self):
         _, cases = self.cases(["--preset", "edge"])

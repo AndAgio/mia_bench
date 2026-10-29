@@ -163,7 +163,7 @@ def defense_specs(component, epochs):
                      defender_mem_guard_shadow_model_layers=(16, 8)))
     if component == "relax_loss":
         return (baseline,
-                spec("Zero target loss: descent branch", defender_relax_loss_alpha=0.),
+                spec("Small positive target loss: descent branch", defender_relax_loss_alpha=1e-6),
                 spec("High target loss: ascent and flatten-all branches", defender_relax_loss_alpha=10.,
                      defender_relax_loss_flatten="all", defender_relax_loss_upper=.2),
                 spec("High target loss: flatten-incorrect branch", defender_relax_loss_alpha=10.,
