@@ -146,12 +146,12 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_mem_guard_randomness_quantization', type=float, default=1e-3,
                                 help='Query quantization width in model-input units for MemGuard one-time randomness')
         # Relax Loss parameters for defender model
-        parser.add_argument('--defender_relax_loss_alpha', type=float, default=0.5,
-                                help='Alpha parameter for Relax Loss defense')
+        parser.add_argument('--defender_relax_loss_alpha', type=float, default=None,
+                                help='Target loss alpha of Relax Loss defense, above 0. Unset: the official value for the dataset, see RELAXLOSS_CODE_PARAMETERS in src/utils/variables.py')
         parser.add_argument('--defender_relax_loss_upper', type=float, default=None,
-                                help='Upper bound on the ground-truth confidence during posterior flattening in Relax Loss defense (default: 1.0, i.e. no bound, for image datasets, 0.3 for purchase and news, 0.1 for texas)')
+                                help='Upper bound on the ground-truth confidence during posterior flattening in Relax Loss defense, in (0, 1]. Unset: the official value for the dataset, see RELAXLOSS_CODE_PARAMETERS in src/utils/variables.py')
         parser.add_argument('--defender_relax_loss_flatten', type=str, default=None, choices=['incorrect', 'all'],
-                                help='Samples to apply posterior flattening to in Relax Loss defense (default: incorrect for image datasets, all for purchase, news and texas)')
+                                help='Samples to apply posterior flattening to in Relax Loss defense. Unset: incorrect for image datasets, all for purchase, news and texas, as in the paper')
         # Adversarial Regularization parameters for defender model
         parser.add_argument('--defender_adv_reg_lambda', type=float, default=1.0,
                                 help='Lambda parameter for Adversarial Regularization defense')

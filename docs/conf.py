@@ -148,6 +148,21 @@ def mist_parameters():
 write_generated('mist_parameters.md', mist_parameters())
 
 
+def relax_loss_parameters():
+    from src.utils.variables import (RELAXLOSS_CODE_PARAMETERS, RELAXLOSS_IMAGE_FALLBACK_DATASET,
+                                     RELAXLOSS_NONIMAGE_FALLBACK_DATASET)
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | {values["relax_alpha"]} | {values["relax_upper"]} |'
+            for dataset, values in RELAXLOSS_CODE_PARAMETERS.items()]
+    image = DATASET_NAMES.get(RELAXLOSS_IMAGE_FALLBACK_DATASET, RELAXLOSS_IMAGE_FALLBACK_DATASET)
+    nonimage = DATASET_NAMES.get(RELAXLOSS_NONIMAGE_FALLBACK_DATASET, RELAXLOSS_NONIMAGE_FALLBACK_DATASET)
+    return '\n'.join(['| Dataset | α | Bound on the true-class score |', '|---|---|---|', *rows, '',
+                      f'Other image datasets use the {image} values, and other non-image datasets the {nonimage} '
+                      'values.', ''])
+
+
+write_generated('relax_loss_parameters.md', relax_loss_parameters())
+
+
 def format_default(value) -> str:
     # Defaults as they are typed on the command line.
     if value is None:
@@ -200,7 +215,8 @@ def option_table(prefixes: list) -> str:
 # of the options' names.
 METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_'],
                   'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha'],
-                  'selena': ['defender_selena_']}
+                  'selena': ['defender_selena_'],
+                  'relax_loss': ['defender_relax_loss_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

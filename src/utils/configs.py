@@ -5,7 +5,9 @@ import json
 from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_LOG_FOLDER,
                                  DEFAULT_DATASETS_FOLDER, HAMP_PAPER_PARAMETERS, HAMP_FALLBACK_DATASET,
                                  LDL_CODE_N_QUERIES, LDL_PAPER_FLIP_PROBS, PURIFIER_PAPER_REFORMER,
-                                 PURIFIER_FALLBACK_DATASET, MIST_PAPER_PARAMETERS, MIST_FALLBACK_DATASET)
+                                 PURIFIER_FALLBACK_DATASET, MIST_PAPER_PARAMETERS, MIST_FALLBACK_DATASET,
+                                 RELAXLOSS_CODE_PARAMETERS, RELAXLOSS_IMAGE_FALLBACK_DATASET,
+                                 RELAXLOSS_NONIMAGE_FALLBACK_DATASET)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -428,7 +430,8 @@ class MemGuardDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class RelaxLossDefenseConfigs:
     strategy: Literal["relax_loss"] = "relax_loss"
-    relax_alpha: float = 0.5
+    # The official CIFAR-10 values. generate_configs_from_settings sets the dataset's (RELAXLOSS_CODE_PARAMETERS).
+    relax_alpha: float = 1.0
     relax_upper: float = 1.0
     flatten_incorrect_only: bool = True
 
@@ -670,13 +673,18 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.defender_mode in ['relax_loss', 'relaxloss', 'relax-loss']:
         # Unset options follow the per-modality choices of the paper (App. B.3) and of the official configs.
         is_image_dataset = settings.dataset not in ["purchase", "news", "texas"]
+        fallback = RELAXLOSS_IMAGE_FALLBACK_DATASET if is_image_dataset else RELAXLOSS_NONIMAGE_FALLBACK_DATASET
+        official = RELAXLOSS_CODE_PARAMETERS.get(settings.dataset, RELAXLOSS_CODE_PARAMETERS[fallback])
+        relax_alpha = settings.defender_relax_loss_alpha
+        if relax_alpha is None:
+            relax_alpha = official['relax_alpha']
         relax_upper = settings.defender_relax_loss_upper
         if relax_upper is None:
-            relax_upper = 1.0 if is_image_dataset else {"purchase": 0.3, "texas": 0.1}.get(settings.dataset, 0.3)
+            relax_upper = official['relax_upper']
         relax_flatten = settings.defender_relax_loss_flatten
         if relax_flatten is None:
             relax_flatten = 'incorrect' if is_image_dataset else 'all'
-        defender_defense_configs = RelaxLossDefenseConfigs(relax_alpha=settings.defender_relax_loss_alpha,
+        defender_defense_configs = RelaxLossDefenseConfigs(relax_alpha=relax_alpha,
                                                             relax_upper=relax_upper,
                                                             flatten_incorrect_only=relax_flatten == 'incorrect')
     elif settings.defender_mode in ['adv_reg', 'advreg', 'adv-reg']:

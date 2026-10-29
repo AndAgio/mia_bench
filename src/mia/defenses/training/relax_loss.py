@@ -13,17 +13,17 @@ class RelaxLossDefender(BaseDefender):
     """RelaxLoss: keeps the training loss near a target value instead of driving it to zero.
 
     Paper: "RelaxLoss: Defending Membership Inference Attacks without Losing Utility",
-    https://arxiv.org/pdf/2207.05801.
-    Follows Algorithm 1 and App. B.3; RelaxLossTrainManager.relax_loss lists the differences with the
-    official code (https://github.com/DingfanChen/RelaxLoss).
+    https://arxiv.org/abs/2207.05801. Documentation: docs/defenses/relax_loss.md.
     """
     def __init__(self, defender_configs: DefenderConfigs):
+        """Check that the configs select RelaxLoss and keep its settings."""
         assert isinstance(defender_configs.defense, RelaxLossDefenseConfigs), f"RelaxLossDefender can only be used with RelaxLossDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'relax_loss_defender'
         self.relax_loss_configs = defender_configs.defense
 
     def train_model(self, train_configs: TrainConfigs, return_stats: bool = False):
+        """Train with RelaxLoss and return the best model, with the stats if return_stats."""
         self.logger.print_it(f'RelaxLoss Defender: training defender model with relaxed loss (alpha={self.relax_loss_configs.relax_alpha}, '
                              f'upper={self.relax_loss_configs.relax_upper}, posterior flattening on '
                              f'{"incorrect predictions" if self.relax_loss_configs.flatten_incorrect_only else "all samples"})...')
@@ -50,13 +50,16 @@ class RelaxLossDefender(BaseDefender):
             return self.trained_model
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        """Return the trained model unchanged: RelaxLoss only changes training."""
         self.logger.print_it('RelaxLoss Defender: returning trained model as defended model...')
         self.defended_model = self.trained_model
         return self.defended_model
 
 
 class RelaxLossTrainManager(TrainManager):
+    """TrainManager whose steps follow Algorithm 1 of RelaxLoss."""
     def __init__(self, train_configs, name: str, logger=None, relax_alpha: float = 0.5, relax_upper: float = 1.0, flatten_incorrect_only: bool = True):
+        """Set up the training as TrainManager does, and check and keep RelaxLoss's settings."""
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         assert relax_alpha > 0, f"RelaxLoss alpha should be positive, found {relax_alpha}!"
         assert 0 < relax_upper <= 1, f"RelaxLoss upper confidence should be in (0, 1], found {relax_upper}!"
@@ -65,6 +68,7 @@ class RelaxLossTrainManager(TrainManager):
         self.flatten_incorrect_only = flatten_incorrect_only
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        """Run one RelaxLoss step on a batch, with any optimizer, and record its stats."""
         # Map to available device (profile this)
         inputs = inputs.to(self.device)
         targets = targets.to(self.device)
@@ -114,21 +118,25 @@ class RelaxLossTrainManager(TrainManager):
 
 
     def relax_branch(self, outputs: torch.Tensor, targets: torch.Tensor) -> str:
-        # Branch of Algorithm 1 for a batch with these outputs: gradient descent while the batch loss is not below the
-        # target loss, otherwise gradient ascent on even epochs and posterior flattening on odd ones.
+        """Return the branch of Algorithm 1 for a batch with these outputs: 'descent', 'ascent' or 'flatten'.
+
+        Gradient descent while the batch loss is not below alpha, otherwise gradient ascent on even epochs and
+        posterior flattening on odd ones.
+        """
         if F.cross_entropy(outputs.detach(), targets).item() >= self.relax_alpha:
             return 'descent'
         return 'ascent' if self.epoch % 2 == 0 else 'flatten'
 
     def relax_loss(self, outputs: torch.Tensor, targets: torch.Tensor, branch: str = None) -> torch.Tensor:
-        # Algorithm 1 of the paper, with the per-modality techniques of its App. B.3. Returns per-sample terms whose
-        # batch mean is the objective of the current step, so that optimizers working on per-sample losses (e.g., ESAM)
-        # can be used as well. The cross-entropy is computed here instead of with self.criterion, whose reduction is
-        # changed by setup_optimizer depending on the optimizer in use. The branch of Algorithm 1 is the one of these
-        # outputs (see relax_branch), unless given.
-        # Following the paper, this differs from the official code in that: epochs are counted from 1 (the official code
-        # starts with a gradient ascent epoch), the soft labels are constants (the official code does not detach them),
-        # and, for image data, the flattened samples do not also get gradient ascent (as in the official code).
+        """Return the per-sample terms whose batch mean is the RelaxLoss objective of the current step.
+
+        Algorithm 1 of the paper, with the per-modality techniques of its App. B.3. The branch is the one of these
+        outputs (see relax_branch), unless given. docs/defenses/relax_loss.md lists the differences with the official
+        code.
+        """
+        # Per-sample terms, so that optimizers working on per-sample losses (e.g., ESAM) can be used as well. The
+        # cross-entropy is computed here instead of with self.criterion, whose reduction is changed by setup_optimizer
+        # depending on the optimizer in use.
         loss = F.cross_entropy(outputs, targets, reduction='none')
         if branch is None:
             branch = self.relax_branch(outputs=outputs, targets=targets)
