@@ -34,3 +34,4 @@ Where our implementations depart from the original papers. Each method's page ha
 | MIST | mixup in Phase 1 only | the paper does not say where |
 | MIST | optimizer state shared by the two phases and averaged over the copies | the paper does not say |
 | MIST | the best validation model, not the last epoch's | as for every defense in the benchmark |
+| [SELENA](defenses/selena.md#differences-from-the-paper) | the final model is picked on the validation split, not on test accuracy | the test split holds the audited non-members |

@@ -199,7 +199,8 @@ def option_table(prefixes: list) -> str:
 # The command-line options listed in the Parameters section of each method's page: the page's name and the prefixes
 # of the options' names.
 METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_'],
-                  'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha']}
+                  'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha'],
+                  'selena': ['defender_selena_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))
