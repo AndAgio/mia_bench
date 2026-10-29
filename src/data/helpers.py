@@ -45,6 +45,13 @@ class IndexTrackingMixin:
         """
         return list(self.original_indices)
     
+    def position_of(self, original_index: int) -> int:
+        """Return the position in this dataset layer of the sample with this original index."""
+        try:
+            return self._orig_to_local[int(original_index)]
+        except KeyError:
+            raise KeyError(f"{type(self).__name__} has no sample with original index {original_index}") from None
+
     def get_current_current_indices(self) -> List[int]:
         """
         1. Returns the current local indices of the samples in this dataset layer.

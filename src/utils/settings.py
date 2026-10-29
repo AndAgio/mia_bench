@@ -146,12 +146,12 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_mem_guard_randomness_quantization', type=float, default=1e-3,
                                 help='Query quantization width in model-input units for MemGuard one-time randomness')
         # Relax Loss parameters for defender model
-        parser.add_argument('--defender_relax_loss_alpha', type=float, default=0.5,
-                                help='Alpha parameter for Relax Loss defense')
+        parser.add_argument('--defender_relax_loss_alpha', type=float, default=None,
+                                help='Target loss alpha of Relax Loss defense, above 0. Unset: the official value for the dataset, see RELAXLOSS_CODE_PARAMETERS in src/utils/variables.py')
         parser.add_argument('--defender_relax_loss_upper', type=float, default=None,
-                                help='Upper bound on the ground-truth confidence during posterior flattening in Relax Loss defense (default: 1.0, i.e. no bound, for image datasets, 0.3 for purchase and news, 0.1 for texas)')
+                                help='Upper bound on the ground-truth confidence during posterior flattening in Relax Loss defense, in (0, 1]. Unset: the official value for the dataset, see RELAXLOSS_CODE_PARAMETERS in src/utils/variables.py')
         parser.add_argument('--defender_relax_loss_flatten', type=str, default=None, choices=['incorrect', 'all'],
-                                help='Samples to apply posterior flattening to in Relax Loss defense (default: incorrect for image datasets, all for purchase, news and texas)')
+                                help='Samples to apply posterior flattening to in Relax Loss defense. Unset: incorrect for image datasets, all for purchase, news and texas, as in the paper')
         # Adversarial Regularization parameters for defender model
         parser.add_argument('--defender_adv_reg_lambda', type=float, default=1.0,
                                 help='Lambda parameter for Adversarial Regularization defense')
@@ -173,14 +173,14 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_selena_L', type=int, default=10,
                                 help='Number of exclusions L per sample for Selena defense')
         # MIST parameters for defender model
-        parser.add_argument('--defender_mist_num_submodels', type=int, default=2,
-                                help='Number of submodels to train for MIST defense (default: 2, as in the paper for every CIFAR-10 model)')
+        parser.add_argument('--defender_mist_num_submodels', type=int, default=None,
+                                help='Number of submodels to train for MIST defense, at least 2. Unset: the paper\'s value for the dataset (Table 7), see MIST_PAPER_PARAMETERS in src/utils/variables.py')
         parser.add_argument('--defender_mist_split_method', type=str, default='random',
                                 help='Data split method for MIST defense', choices=['random', 'stratified'])
         parser.add_argument('--defender_mist_submodel_epochs', type=int, default=1,
-                                help='Number of passes over its subset per epoch for each submodel, in each of the two phases of MIST defense (default: 1, as in the paper)')
-        parser.add_argument('--defender_mist_lambda', type=float, default=3.5,
-                                help='Weight of the cross-difference loss for MIST defense (default: 3.5, the paper value for CIFAR-10 with AlexNet and ResNet-18)')
+                                help='Number of passes over its subset per epoch for each submodel, in each of the two phases of MIST defense, as in the paper')
+        parser.add_argument('--defender_mist_lambda', type=float, default=None,
+                                help='Weight of the cross-difference loss for MIST defense. Unset: the paper\'s value for the dataset (Table 7), see MIST_PAPER_PARAMETERS in src/utils/variables.py')
         # Weighted Smoothing parameters for defender model
         parser.add_argument('--defender_weighted_smoothing_sigma_noise', type=float, default=0.1,
                                 help='Standard deviation of the gaussian noise to be added in Weighted Smoothing defense')

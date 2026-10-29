@@ -16,15 +16,17 @@ class MistDefender(BaseDefender):
     """MIST: membership-invariant subspace training, with sub-models trained on subsets of the data.
 
     Paper: "MIST: Defending Against Membership Inference Attacks Through Membership-Invariant Subspace Training",
-    https://www.usenix.org/system/files/usenixsecurity24-li-jiacheng.pdf.
+    https://arxiv.org/abs/2311.00919. Documentation: docs/defenses/mist.md.
     """
     def __init__(self, defender_configs: DefenderConfigs):
+        """Check that the configs select MIST and keep its settings."""
         assert isinstance(defender_configs.defense, MistDefenseConfigs), f"MistDefender can only be used with MistDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'mist_defender'
         self.mist_configs = defender_configs.defense
 
     def train_model(self, train_configs, return_stats: bool = False):
+        """Train with MIST's sub-models and return the best model, with the stats if return_stats."""
         self.logger.print_it(f'Mist Defender: training defender model...')
         train_manager = MistTrainManager(train_configs=train_configs,
                                                 name=self.name,
@@ -47,25 +49,27 @@ class MistDefender(BaseDefender):
             return self.trained_model
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        """Return the trained model unchanged: MIST only changes training."""
         self.logger.print_it("Mist Defender: defend_model does not modify the model at inference time.")
         self.defended_model = self.trained_model
         return self.defended_model
 
 
 class MistTrainManager(TrainManager):
-    # Custom TrainManager for MIST defense training procedure.
+    """TrainManager whose epochs are MIST's: train sub-models on subsets, align them, then average them."""
     def __init__(self, train_configs, name: str, logger: callable, mist_configs: MistDefenseConfigs):
+        """Set up the training as TrainManager does, and keep MIST's settings."""
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.mist_configs = mist_configs
         self.train_labels = None
 
     def clone_model(self):
-        # Clone the model to create the submodels used in MIST.
+        """Copy the main model into each sub-model."""
         self.sub_models = {i: copy.deepcopy(self.model) for i in range(self.mist_configs.num_submodels)}
         self.logger.print_it(f"MIST TrainManager: cloned {self.mist_configs.num_submodels} sub-models for MIST training.")
 
     def clone_optimizer(self):
-        # Clone the optimizer for each submodel.
+        """Copy the main optimizer, with its state, for each sub-model."""
         self.sub_optimizers = {}
         for i in range(self.mist_configs.num_submodels):
             model = self.sub_models[i]
@@ -75,10 +79,10 @@ class MistTrainManager(TrainManager):
 
     @staticmethod
     def clone_optimizer_for_model(old_opt, old_model, new_model):
-        # Copy of the optimizer for new_model, a copy of old_model. The memo replaces every parameter of old_model with
-        # the one at the same position in new_model, wherever it appears: in the parameter groups, also when they do
-        # not follow the order of the model (e.g. the weights and biases groups of the adaptive SAM variants), and in
-        # the base optimizer of the SAM variants.
+        """Return a copy of old_opt that updates new_model, a copy of old_model, with no tensor shared with old_opt."""
+        # The memo replaces every parameter of old_model with the one at the same position in new_model, wherever it
+        # appears: in the parameter groups, also when they do not follow the order of the model (e.g. the weights and
+        # biases groups of the adaptive SAM variants), and in the base optimizer of the SAM variants.
         new_opt = copy.deepcopy(old_opt, memo={id(p): q for p, q in zip(old_model.parameters(), new_model.parameters())})
         # The copy leaves out the state of the optimizers for the other losses of the SAM variants (see for_objective),
         # so the whole state (e.g. the momentum buffers) is loaded again. It is loaded from a copy, since loading keeps
@@ -87,7 +91,7 @@ class MistTrainManager(TrainManager):
         return new_opt
 
     def clone_criterion(self):
-        # Clone the criterion for each submodel.
+        """Copy the training criterion for each sub-model."""
         self.sub_criteria = {}
         for i in range(self.mist_configs.num_submodels):
             criterion = copy.deepcopy(self.criterion)
@@ -95,15 +99,16 @@ class MistTrainManager(TrainManager):
         self.logger.print_it(f"MIST TrainManager: cloned criteria for {self.mist_configs.num_submodels} sub-models.")
 
     def clone_everything_for_submodels(self):
-        # Clone model, optimizer and criterion for each submodel. The submodels have no LR scheduler of their own: their
-        # optimizers take the learning rate of the main one, which the main scheduler sets once per (global) epoch, so
-        # every step of an epoch, in both phases, uses the configured learning rate of that epoch.
+        """Copy the model, the optimizer and the criterion for each sub-model."""
+        # The submodels have no LR scheduler of their own: their optimizers take the learning rate of the main one,
+        # which the main scheduler sets once per (global) epoch, so every step of an epoch, in both phases, uses the
+        # configured learning rate of that epoch.
         self.clone_model()
         self.clone_optimizer()
         self.clone_criterion()
 
     def split_data(self):
-        # Split the training data into subsets for each submodel.
+        """Partition the training data into one subset per sub-model, with the configured split method."""
         if self.mist_configs.split_method == 'random':
             self.split_data_random()
         elif self.mist_configs.split_method == 'stratified':
@@ -112,7 +117,7 @@ class MistTrainManager(TrainManager):
             raise ValueError(f"MIST TrainManager: unknown split method {self.mist_configs.split_method}!")
 
     def split_data_random(self):
-        # Split the training data into subsets for each submodel.
+        """Partition the training data at random into subsets of equal size, the last one taking the remainder."""
         try:
             all_indices = self.train_loader.dataset.get_indices(mode='current', to_torch=True)
         except AttributeError:
@@ -130,6 +135,7 @@ class MistTrainManager(TrainManager):
         self.logger.print_it(f"MIST TrainManager: split training data into {self.mist_configs.num_submodels} subsets for sub-models.")
 
     def split_data_stratified(self):
+        """Partition the training data so that each subset has the same share of every class."""
         # The labels are read once, since reading them loads every sample.
         if self.train_labels is None:
             try:
@@ -156,11 +162,11 @@ class MistTrainManager(TrainManager):
         self.logger.print_it(f"MIST TrainManager: stratified split of training data into {self.mist_configs.num_submodels} subsets for sub-models.")
 
     def get_submodel_dataset(self, submodel_index: int) -> torch.utils.data.Dataset:
-        # Get the dataset for a specific submodel.
+        """Return the subset of the training data of a sub-model."""
         return self.submodel_datasets[submodel_index]
 
     def average_submodels(self):
-        # Average the parameters of the submodels to update the main model.
+        """Set the main model to the average of the sub-models' parameters and buffers."""
         with torch.no_grad():
             sd_list = [m.state_dict() for _, m in self.sub_models.items()]
             keys = sd_list[0].keys()
@@ -171,15 +177,16 @@ class MistTrainManager(TrainManager):
         self.logger.print_it("MIST TrainManager: averaged sub-models to update the main model.")
 
     def average_submodel_optimizers(self):
-        # Average the optimizer states of the submodels into the main optimizer, as their parameters are averaged into
-        # the main model, so that the submodels of the next epoch start from it (e.g. with the momentum built so far)
-        # and checkpoints include it.
+        """Set the main optimizer's state to the average of the sub-models' optimizer states."""
+        # As the parameters are averaged into the main model, so that the submodels of the next epoch start from it
+        # (e.g. with the momentum built so far) and checkpoints include it.
         state_dicts = [optimizer.state_dict() for _, optimizer in self.sub_optimizers.items()]
         self.optimizer.load_state_dict(self.average_optimizer_states(state_dicts))
         self.logger.print_it("MIST TrainManager: averaged sub-model optimizer states into the main optimizer.")
 
     @staticmethod
     def average_optimizer_states(states: list):
+        """Return the average of optimizer state dicts of the same structure."""
         # Entry by entry: floating point tensors (e.g. momentum buffers) are averaged, the rest (e.g. step counters and
         # the parameter groups, the same for all the submodels) is taken from the first submodel.
         first = states[0]
@@ -193,6 +200,7 @@ class MistTrainManager(TrainManager):
 
     @torch.no_grad()
     def avg_probs_other_models(self, exclude: int, inputs: torch.Tensor) -> torch.Tensor:
+        """Return the probabilities of the inputs averaged over the phase-1 sub-models other than exclude."""
         tot, cnt = 0.0, 0
         for j, model_j in self.reference_models.items():
             if j == exclude:
@@ -204,6 +212,7 @@ class MistTrainManager(TrainManager):
         return tot / cnt
 
     def train_epoch(self):
+        """Run one global epoch of MIST (Algorithm 1) and return its training stats."""
         # reset epoch stats and per-epoch profiler
         self.reset_epoch_stats(phase='train')
         # MIST training procedure
@@ -221,7 +230,7 @@ class MistTrainManager(TrainManager):
         return train_summary
 
     def train_submodels(self):
-        # Train each submodel on its respective data subset.
+        """Phase 1: train each sub-model on its subset with the training loss."""
         for submodel_index in range(self.mist_configs.num_submodels):
             self.logger.print_it(f"MIST TrainManager: training sub-model {submodel_index+1}/{self.mist_configs.num_submodels}...")
             model = self.sub_models[submodel_index]
@@ -240,12 +249,14 @@ class MistTrainManager(TrainManager):
         self.logger.print_it("MIST TrainManager: finished training all sub-models.")
 
     def train_step_submodel(self, model, model_index, optimizer, criterion,inputs, targets, epoch, batch_idx, total_batches) -> Union[torch.nn.Module, torch.optim.Optimizer, callable]:
+        """Run one phase-1 step on a batch, with mixup in mist_mixup mode."""
         if self.mist_configs.mix_up:
             return self.train_step_submodel_with_mixup(model, model_index, optimizer, criterion, inputs, targets, epoch, batch_idx, total_batches)
         else:
             return self.train_step_submodel_standard(model, model_index, optimizer, criterion, inputs, targets, epoch, batch_idx, total_batches)
         
     def train_step_submodel_with_mixup(self, model, model_index, optimizer, criterion,inputs, targets, epoch, batch_idx, total_batches) -> Union[torch.nn.Module, torch.optim.Optimizer, callable]:
+        """Run one phase-1 step on a mixed-up batch, and record the stats on the clean batch."""
         self.epoch_stats_tracker.batch_start()
         # Map to available device
         mixed_inputs, targets_a, targets_b, lmbd = mixup_data(inputs, targets, alpha=self.mist_configs.alpha_mixup)
@@ -311,6 +322,7 @@ class MistTrainManager(TrainManager):
         return model, optimizer, criterion
 
     def train_step_submodel_standard(self, model, model_index, optimizer, criterion,inputs, targets, epoch, batch_idx, total_batches) -> Union[torch.nn.Module, torch.optim.Optimizer, callable]:
+        """Run one phase-1 step on a batch with the training loss."""
         # Map to available device
         inputs = inputs.to(self.device)
         targets = targets.to(self.device)
@@ -367,6 +379,7 @@ class MistTrainManager(TrainManager):
 
     
     def optimize_difference_of_submodels(self):
+        """Phase 2: move each sub-model to lower its cross-difference loss against the phase-1 sub-models."""
         # Each submodel keeps the optimizer of the training phase, so that the momentum is shared by the two losses
         # (the SAM variants keep their own state for this loss, see optimize_difference_step).
         # As in Algorithm 1 of the paper, every submodel is aligned to the other submodels as left by the training phase,
@@ -393,12 +406,16 @@ class MistTrainManager(TrainManager):
         self.reference_models = None
 
     def cross_difference_loss(self, criterion, outputs, targets, other_probs) -> torch.Tensor:
-        # Cross-difference loss of MIST (Eq. 3 of the paper), per sample: L1 distance between the sub-model's predicted
-        # probability of the true class and the average probability of the true class under the other sub-models.
+        """Return lambda times MIST's cross-difference loss (Eq. 3) of each sample.
+
+        It is the L1 distance between the sub-model's probability of the true class and other_probs, the average
+        probability of the true class under the other sub-models.
+        """
         probs = torch.nn.functional.softmax(outputs, dim=-1).gather(1, targets.unsqueeze(1)).squeeze(1)
         return self.mist_configs.lmbd * criterion(probs, other_probs)
 
     def optimize_difference_step(self, model, model_index, optimizer, criterion, inputs, targets, epoch, batch_idx, total_batches) -> Union[torch.nn.Module, torch.optim.Optimizer, callable]:
+        """Run one phase-2 step on a batch with the cross-difference loss."""
         # Map to available device
         inputs = inputs.to(self.device)
         targets = targets.to(self.device)

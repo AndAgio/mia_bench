@@ -64,3 +64,25 @@ PURIFIER_PAPER_REFORMER = {
     'texas': {'reformer_hidden_dim': 128, 'reformer_latent_dim': 20, 'reformer_epochs': 100, 'reformer_lr': 0.0001},
 }
 PURIFIER_FALLBACK_DATASET = 'cifar10'
+
+# MIST's number of sub-models C and weight lambda of the cross-difference loss per dataset, from Table 7 of the paper
+# (arXiv 2311.00919), with the ResNet-18 rows for CIFAR: the benchmark has no AlexNet or DenseNet, whose rows differ.
+# Unset --defender_mist_num_submodels/--defender_mist_lambda take the dataset's values, and datasets the paper does not
+# evaluate take CIFAR-10's.
+MIST_PAPER_PARAMETERS = {'cifar10': {'num_submodels': 2, 'lmbd': 3.5},
+                         'cifar100': {'num_submodels': 2, 'lmbd': 13.0},
+                         'purchase': {'num_submodels': 4, 'lmbd': 40.0},
+                         'texas': {'num_submodels': 4, 'lmbd': 25.0}}
+MIST_FALLBACK_DATASET = 'cifar10'
+
+# RelaxLoss's target loss alpha and bound on the ground-truth score during posterior flattening, per dataset, from the
+# official configs (github.com/DingfanChen/RelaxLoss, source/*/defense/configs): the paper gives no alpha, and bounds
+# the score on non-image data only (App. B.3). CIFAR takes the ResNet-20 values for every model; the configs also have
+# VGG11-bn ones. Unset --defender_relax_loss_alpha/--defender_relax_loss_upper take the dataset's values, other image
+# datasets CIFAR-10's, and other non-image datasets Purchase's.
+RELAXLOSS_CODE_PARAMETERS = {'cifar10': {'relax_alpha': 1.0, 'relax_upper': 1.0},
+                             'cifar100': {'relax_alpha': 3.0, 'relax_upper': 1.0},
+                             'purchase': {'relax_alpha': 0.8, 'relax_upper': 0.3},
+                             'texas': {'relax_alpha': 2.5, 'relax_upper': 0.1}}
+RELAXLOSS_IMAGE_FALLBACK_DATASET = 'cifar10'
+RELAXLOSS_NONIMAGE_FALLBACK_DATASET = 'purchase'

@@ -136,6 +136,33 @@ def purifier_parameters():
 write_generated('purifier_parameters.md', purifier_parameters())
 
 
+def mist_parameters():
+    from src.utils.variables import MIST_PAPER_PARAMETERS, MIST_FALLBACK_DATASET
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | {values["num_submodels"]} | {values["lmbd"]} |'
+            for dataset, values in MIST_PAPER_PARAMETERS.items()]
+    fallback = DATASET_NAMES.get(MIST_FALLBACK_DATASET, MIST_FALLBACK_DATASET)
+    return '\n'.join(['| Dataset | Sub-models C | λ |', '|---|---|---|', *rows, '',
+                      f'Other datasets use the {fallback} values.', ''])
+
+
+write_generated('mist_parameters.md', mist_parameters())
+
+
+def relax_loss_parameters():
+    from src.utils.variables import (RELAXLOSS_CODE_PARAMETERS, RELAXLOSS_IMAGE_FALLBACK_DATASET,
+                                     RELAXLOSS_NONIMAGE_FALLBACK_DATASET)
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | {values["relax_alpha"]} | {values["relax_upper"]} |'
+            for dataset, values in RELAXLOSS_CODE_PARAMETERS.items()]
+    image = DATASET_NAMES.get(RELAXLOSS_IMAGE_FALLBACK_DATASET, RELAXLOSS_IMAGE_FALLBACK_DATASET)
+    nonimage = DATASET_NAMES.get(RELAXLOSS_NONIMAGE_FALLBACK_DATASET, RELAXLOSS_NONIMAGE_FALLBACK_DATASET)
+    return '\n'.join(['| Dataset | α | Bound on the true-class score |', '|---|---|---|', *rows, '',
+                      f'Other image datasets use the {image} values, and other non-image datasets the {nonimage} '
+                      'values.', ''])
+
+
+write_generated('relax_loss_parameters.md', relax_loss_parameters())
+
+
 def format_default(value) -> str:
     # Defaults as they are typed on the command line.
     if value is None:
@@ -187,7 +214,9 @@ def option_table(prefixes: list) -> str:
 # The command-line options listed in the Parameters section of each method's page: the page's name and the prefixes
 # of the options' names.
 METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_'],
-                  'memguard': ['defender_mem_guard_']}
+                  'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha'],
+                  'selena': ['defender_selena_'],
+                  'relax_loss': ['defender_relax_loss_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))
