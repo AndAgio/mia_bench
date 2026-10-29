@@ -173,14 +173,14 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_selena_L', type=int, default=10,
                                 help='Number of exclusions L per sample for Selena defense')
         # MIST parameters for defender model
-        parser.add_argument('--defender_mist_num_submodels', type=int, default=2,
-                                help='Number of submodels to train for MIST defense (default: 2, as in the paper for every CIFAR-10 model)')
+        parser.add_argument('--defender_mist_num_submodels', type=int, default=None,
+                                help='Number of submodels to train for MIST defense, at least 2. Unset: the paper\'s value for the dataset (Table 7), see MIST_PAPER_PARAMETERS in src/utils/variables.py')
         parser.add_argument('--defender_mist_split_method', type=str, default='random',
                                 help='Data split method for MIST defense', choices=['random', 'stratified'])
         parser.add_argument('--defender_mist_submodel_epochs', type=int, default=1,
-                                help='Number of passes over its subset per epoch for each submodel, in each of the two phases of MIST defense (default: 1, as in the paper)')
-        parser.add_argument('--defender_mist_lambda', type=float, default=3.5,
-                                help='Weight of the cross-difference loss for MIST defense (default: 3.5, the paper value for CIFAR-10 with AlexNet and ResNet-18)')
+                                help='Number of passes over its subset per epoch for each submodel, in each of the two phases of MIST defense, as in the paper')
+        parser.add_argument('--defender_mist_lambda', type=float, default=None,
+                                help='Weight of the cross-difference loss for MIST defense. Unset: the paper\'s value for the dataset (Table 7), see MIST_PAPER_PARAMETERS in src/utils/variables.py')
         # Weighted Smoothing parameters for defender model
         parser.add_argument('--defender_weighted_smoothing_sigma_noise', type=float, default=0.1,
                                 help='Standard deviation of the gaussian noise to be added in Weighted Smoothing defense')

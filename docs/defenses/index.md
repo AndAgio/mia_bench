@@ -1,6 +1,6 @@
 # Defenses
 
-Choose a defense with `--defender_mode`. Only MemGuard, LDL, Purifier and HAMP have their own pages so far.
+Choose a defense with `--defender_mode`. Only MIST, MemGuard, LDL, Purifier and HAMP have their own pages so far.
 
 Every defense can be paired with every attack, including attacks outside the defense's threat model. LDL, MemGuard,
 Purifier and `hamp_test` act only at inference, so the trained model's internal features are not defended. `neural_feat`
@@ -16,7 +16,7 @@ them. The run log notes these pairings.
 | Adversarial regularization | `adv_reg` | [paper](https://dl.acm.org/doi/pdf/10.1145/3243734.3243855) |
 | RelaxLoss | `relax_loss` | [paper](https://arxiv.org/abs/2207.05801) |
 | SELENA | `selena` | [paper](https://www.usenix.org/system/files/sec22-tang.pdf) |
-| MIST | `mist`, `mist_mixup` | [paper](https://www.usenix.org/system/files/usenixsecurity24-li-jiacheng.pdf) |
+| [MIST](mist.md) | `mist`, `mist_mixup` | [paper](https://arxiv.org/abs/2311.00919) |
 | Weighted smoothing | `weighted_smoothing` | [paper](https://dl.acm.org/doi/pdf/10.1145/3627106.3627189) |
 | MMD | `mmd`, `mmd_mixup` | [paper](https://dl.acm.org/doi/pdf/10.1145/3422337.3447836) |
 | [MemGuard](memguard.md) | `mem_guard` | [paper](https://arxiv.org/abs/1909.10594) |
@@ -27,6 +27,7 @@ them. The run log notes these pairings.
 ```{toctree}
 :hidden:
 
+mist
 memguard
 ldl
 purifier

@@ -64,3 +64,13 @@ PURIFIER_PAPER_REFORMER = {
     'texas': {'reformer_hidden_dim': 128, 'reformer_latent_dim': 20, 'reformer_epochs': 100, 'reformer_lr': 0.0001},
 }
 PURIFIER_FALLBACK_DATASET = 'cifar10'
+
+# MIST's number of sub-models C and weight lambda of the cross-difference loss per dataset, from Table 7 of the paper
+# (arXiv 2311.00919), with the ResNet-18 rows for CIFAR: the benchmark has no AlexNet or DenseNet, whose rows differ.
+# Unset --defender_mist_num_submodels/--defender_mist_lambda take the dataset's values, and datasets the paper does not
+# evaluate take CIFAR-10's.
+MIST_PAPER_PARAMETERS = {'cifar10': {'num_submodels': 2, 'lmbd': 3.5},
+                         'cifar100': {'num_submodels': 2, 'lmbd': 13.0},
+                         'purchase': {'num_submodels': 4, 'lmbd': 40.0},
+                         'texas': {'num_submodels': 4, 'lmbd': 25.0}}
+MIST_FALLBACK_DATASET = 'cifar10'

@@ -30,3 +30,7 @@ Where our implementations depart from the original papers. Each method's page ha
 | MemGuard | the search on c3 stops at the authors' bound | as in the authors' code |
 | MemGuard | a failed search on c3 returns the last noise that succeeded | as in the authors' code; Algorithm 1 as printed returns no noise |
 | MemGuard | `neural_feat` attacks the undefended features | lets every attack run; the paper only attacks outputs |
+| [MIST](defenses/mist.md#differences-from-the-paper) | ResNet-18's C and λ for every CIFAR model | the benchmark has no AlexNet or DenseNet |
+| MIST | mixup in Phase 1 only | the paper does not say where |
+| MIST | optimizer state shared by the two phases and averaged over the copies | the paper does not say |
+| MIST | the best validation model, not the last epoch's | as for every defense in the benchmark |
