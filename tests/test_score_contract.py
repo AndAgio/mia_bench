@@ -21,6 +21,37 @@ from src.mia.attacks.label_only.yoqo import Yoqo
 
 
 class ScoreContractTests(unittest.TestCase):
+    def test_reference_attacks_measure_with_real_float32_thresholds(self):
+        dataset = TensorDataset(torch.zeros(4, 2), torch.zeros(4, dtype=torch.long),
+                                torch.arange(4), torch.zeros(4))
+        for cls, prefix in ((AttackPMIA, 'p'), (AttackRMIA, 'r')):
+            for mode in ('loss', 'entropy', 'confidence'):
+                with self.subTest(attack=prefix, mode=mode):
+                    attack = object.__new__(cls)
+                    attack.logger = Mock()
+                    attack.name = prefix
+                    attack.attack_configs = SimpleNamespace(
+                        **{f'{prefix}_score_type': mode, f'{prefix}_alpha': .2})
+                    attack.audit_manager = Mock()
+                    attack.audit_manager.get.return_value = dataset
+                    attack.shadow_manager = Mock()
+                    attack.shadow_manager.get_dataset.return_value = dataset
+                    attack.shadow_manager.get_all_models.return_value = {0: torch.nn.Identity()}
+                    attack.defender_model = torch.nn.Identity()
+                    population = [1.5, 2., 2.5, 3.]
+                    audit = [2.9, 2.4, .3, .1]
+                    if mode == 'confidence':
+                        population, audit = [.1, .2, .3, .4], [.05, .1, .8, .9]
+                    attack.compute_batch_scores = Mock(side_effect=[
+                        np.asarray(population, dtype=np.float32), np.asarray(audit, dtype=np.float32)])
+                    attack.compute_stats = Mock(return_value={'auc': 1.})
+                    attack.measure_effectiveness()
+                    scores = attack.compute_stats.call_args.args[0]
+                    self.assertTrue(np.isfinite(scores).all())
+                    self.assertEqual(roc_auc_score([0, 0, 1, 1], scores), 1.)
+                    np.testing.assert_array_equal(
+                        attack.compute_stats.call_args.kwargs['decisions'], [False, False, True, True])
+
     def test_reference_attacks_keep_ranking_and_calibrated_decisions(self):
         dataset = TensorDataset(torch.zeros(4, 2), torch.zeros(4, dtype=torch.long),
                                 torch.arange(4), torch.zeros(4))

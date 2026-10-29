@@ -140,7 +140,9 @@ class ResNet(nn.Module):
         output = self.conv4_x(output)
         output = self.conv5_x(output)
         output = self.avg_pool(output)
-        output = output.view(output.size(0), -1)
+        # Poisson sampling in DP-SGD can produce an empty batch. Flatten the
+        # known feature dimensions without inferring an ambiguous [0, -1].
+        output = output.flatten(1)
         output = self.fc(output)
 
         return output
@@ -153,7 +155,7 @@ class ResNet(nn.Module):
             output = self.conv4_x(output)
             output = self.conv5_x(output)
             output = self.avg_pool(output)
-            output = output.view(output.size(0), -1)
+            output = output.flatten(1)
         return output
 
 

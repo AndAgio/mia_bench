@@ -22,6 +22,7 @@ exes/
 *.png
 *.pdf
 *.txt
+!/requirements.txt
 !venv_files/requirements.txt
 !apptainers/*/requirements.txt
 apptainers/*/*.log
@@ -176,6 +177,7 @@ celerybeat.pid
 .env
 .envrc
 .venv
+.venv-mia/
 env/
 venv/
 ENV/

@@ -2,7 +2,7 @@ from typing import Union
 import numpy as np
 import torch
 import time
-from scipy.stats import norm
+from src.mia.helpers.reference_thresholds import batched_smoothed_thresholds
 from src.mia.attacks.base_mia import BaseMIA
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
@@ -142,34 +142,5 @@ class AttackRMIA(BaseMIA):
 
     @staticmethod
     def batched_smoothed_thresholds(ref_matrix: np.ndarray, alpha: float):
-        """
-        Given a reference loss matrix (m, n),
-        compute alpha-percentile threshold per sample in vectorized form.
-        """
-        # sort per column
-        sorted_ref = np.sort(ref_matrix, axis=0)  # shape (m, n)
-        m = sorted_ref.shape[0]
-
-        # linear interpolation thresholds
-        u = alpha * (m - 1)
-        i = np.floor(u).astype(int)
-        j = np.minimum(i + 1, m - 1)
-        w = u - i
-
-        # indexed linear interpolation per column
-        p_linear = sorted_ref[i] * (1 - w) + sorted_ref[j] * w
-
-        # logit smoothing: clip, transform, fit Gaussian per column
-        eps = 1e-8
-        clipped = np.clip(sorted_ref, eps, 1 - eps)
-        logit_vals = np.log(clipped / (1 - clipped))
-
-        mu = np.mean(logit_vals, axis=0)
-        sigma = np.std(logit_vals, axis=0, ddof=1)
-        sigma = np.where(sigma < 1e-6, 1e-6, sigma)
-
-        z = norm.ppf(1 - alpha, loc=mu, scale=sigma)
-        p_logit = np.exp(z) / (1 + np.exp(z))
-
-        return np.minimum(p_linear, p_logit)
-    
+        """Compute the shared, numerically stable reference-score thresholds."""
+        return batched_smoothed_thresholds(ref_matrix, alpha)

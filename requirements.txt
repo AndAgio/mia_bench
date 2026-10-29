@@ -1,0 +1,15 @@
+# Runtime dependencies for run.py, train_defender.py and tests/smoke_test_all.py.
+# In a PyTorch container, reuse its installed torch/torchvision packages.
+torch
+torchvision
+numpy
+scipy
+scikit-learn
+pandas
+matplotlib
+pillow
+requests
+PyYAML
+python-telegram-bot
+pydantic>=2,<3
+opacus==1.5.4

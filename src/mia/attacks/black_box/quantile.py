@@ -1,7 +1,7 @@
-import math
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from scipy.special import logsumexp, ndtri
 from src.data.helpers import IndexedDataset
 from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA
@@ -19,6 +19,8 @@ class QuantileMIA(BaseMIA):
 
     Paper: "Scalable membership inference attacks via quantile regression",
     https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html.
+    Gaussian-head scores use signed log1p margins to keep extreme predicted scales
+    finite while preserving ranking and the original zero-threshold decision.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
@@ -126,19 +128,26 @@ class QuantileMIA(BaseMIA):
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         scores = np.zeros((len(audit_dataset), ))
         self.logger.print_it(f"Computing scores for all {tot_samples} samples. This may take a while...", file_only=True)
+        if self.attack_configs.use_gaussian:
+            self.logger.print_it("Gaussian quantile scores use signed-log margins to avoid scale overflow.")
         for sample_index, (sample, label, _, _) in enumerate(audit_loader):
             self.logger.print_it_same_line(f'Quantile MIA attacker: computing score for sample {sample_index+1}/{tot_samples}...', console_only=True)
             with torch.no_grad():
                 target_score, _ = self.defender_scoring_fn(sample, label, device=device)
                 predicted_scores = quantile_model(sample.to(device))
                 
-                if self.attack_configs.use_gaussian:
-                    mu = predicted_scores[:, 0]
-                    log_std = predicted_scores[:, 1]
-                    predicted_scores = mu.reshape([-1, 1]) + torch.exp(log_std).reshape([-1, 1]) * torch.erfinv(2 * self.quantile.to(predicted_scores.device) - 1).reshape([1, -1]) * math.sqrt(2)
                 quantile_value = 1 - self.attack_configs.quantile_alpha
                 quantile_index = torch.argmin(torch.abs(self.quantile - quantile_value))
-                score = target_score.detach().cpu().item() - predicted_scores[0, quantile_index].detach().cpu().item()
+                if self.attack_configs.use_gaussian:
+                    # A finite log_std can overflow exp(log_std), even in a
+                    # poorly calibrated but otherwise finite trained model.
+                    score = gaussian_margin_scores(
+                        target_score.detach().cpu().numpy(),
+                        predicted_scores.detach().cpu().numpy(),
+                        float(self.quantile.reshape(-1)[quantile_index].item()),
+                    )[0]
+                else:
+                    score = target_score.detach().cpu().item() - predicted_scores[0, quantile_index].detach().cpu().item()
                 scores[sample_index] = score
         self.logger.set_logger_newline(console_only=True)
         stop = time.time()
@@ -149,6 +158,39 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it('Quantile MIA attacker: Obtained AUC score is: {}'.format(metrics['auc']))
         return metrics
     
+
+def gaussian_margin_scores(target_scores, predictions, quantile):
+    """Compute signed-log Gaussian quantile margins without exponentiating log_std.
+
+    For margin s = target - (mu + exp(log_std) * Phi^-1(quantile)), return
+    sign(s) * log1p(abs(s)). This strictly increasing transform keeps ROC ranking,
+    membership orientation and the zero-threshold decision. In particular, it
+    does not clip large margins together or change the predicted variance.
+    """
+    targets = np.asarray(target_scores, dtype=np.float64).reshape(-1)
+    predictions = np.asarray(predictions, dtype=np.float64)
+    if predictions.shape != (len(targets), 2):
+        raise ValueError("Gaussian predictions must contain one (mu, log_std) pair per target")
+    if not np.isfinite(targets).all() or not np.isfinite(predictions).all():
+        raise ValueError("Gaussian targets and predictions must be finite")
+    if not np.isfinite(quantile) or not 0 < quantile < 1:
+        raise ValueError("Gaussian quantiles must lie strictly between 0 and 1")
+
+    residual = targets - predictions[:, 0]
+    z = ndtri(quantile)
+    with np.errstate(divide="ignore"):
+        log_residual = np.log(np.abs(residual))
+        log_scaled_z = predictions[:, 1] + np.log(np.abs(z))
+    log_magnitude, sign = logsumexp(
+        np.stack((log_residual, log_scaled_z)), axis=0,
+        b=np.stack((np.sign(residual), np.full_like(residual, -np.sign(z)))),
+        return_sign=True,
+    )
+    scores = sign * np.logaddexp(0., log_magnitude)
+    if not np.isfinite(scores).all():
+        raise ValueError("Gaussian margin computation produced non-finite scores")
+    return scores
+
 
 # Custom loss functions
 class PinballLoss(torch.nn.Module):
