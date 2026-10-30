@@ -15,6 +15,8 @@ class LiRA(BaseMIA):
 
     Paper: "Membership inference attacks from first principles",
     https://ieeexplore.ieee.org/abstract/document/9833649.
+    Scores are log likelihood ratios; larger values indicate membership, and
+    zero corresponds to equal in/out likelihoods.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
@@ -61,26 +63,17 @@ class LiRA(BaseMIA):
         phis_in = self.compute_phis(audit_dataset=audit_dataset,
                                         models_for_sample=trained_in_shadow_models_for_sample,
                                         device=device)
-        shadow_in_means = np.mean(phis_in, axis=1)
-        shadow_in_stds = np.std(phis_in, axis=1)
 
         self.logger.print_it(f"Computing phis with out models...")
         phis_out = self.compute_phis(audit_dataset=audit_dataset,
                                         models_for_sample=trained_out_shadow_models_for_sample,
                                         device=device)
-        shadow_out_means = np.mean(phis_out, axis=1)
-        shadow_out_stds = np.std(phis_out, axis=1)
 
         self.logger.print_it(f"Computing phis with defender model...")
         phis_defender = self.compute_phis(audit_dataset=audit_dataset,
                                         models_for_sample=[[self.defender_model] for _ in range(len(audit_dataset))],
                                         device=device)
-        phis_defender = phis_defender.squeeze()
-
-        p_in = norm.pdf(phis_defender, loc=shadow_in_means, scale=shadow_in_stds)
-        p_out = norm.pdf(phis_defender, loc=shadow_out_means, scale=shadow_out_stds)
-
-        scores = p_in/(p_out+1e-15)
+        scores = lira_log_likelihood_ratio(phis_in, phis_out, phis_defender)
         # self.logger.print_it(f"LiRA attacker: scores = {scores}")
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
@@ -110,7 +103,7 @@ class LiRA(BaseMIA):
                                         data=sample,
                                         target=label,
                                         device=device)
-                phis[sample_index, model_index] = phi
+                phis[sample_index, model_index] = phi.item()
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"Computed phis in {time.time() - s} seconds.")
         return phis
@@ -124,37 +117,36 @@ class LiRA(BaseMIA):
         with torch.no_grad():
             output = model(data.to(device))
 
-        num_classes = output.size(1)
-        batch_size = output.size(0)
-        
-        # Compute CrossEntropyLoss for the entire batch
-        loss = torch.nn.CrossEntropyLoss(reduction='none')(output, target.to(device))
-        loss = torch.clamp(loss, min=1e-15, max=10.0)
-        
-        # Create anti-targets for each sample in the batch
-        anti_targets = []
-        for i in range(batch_size):
-            sample_anti_targets = [j for j in range(num_classes) if j != target[i].item()]
-            anti_targets.append(torch.tensor(sample_anti_targets).to(device))
-        
-        # Compute exp terms
-        exp_term = torch.exp(-loss)
-        
-        # Compute anti_exp_term for each sample
-        anti_exp_term = []
-        for i in range(batch_size):
-            sample_anti_exp = torch.exp(-torch.nn.CrossEntropyLoss(reduction='none')(
-                output[i].unsqueeze(0).repeat(num_classes-1, 1),
-                anti_targets[i]
-            ))
-            anti_exp_term.append(sample_anti_exp)
-        
-        anti_exp_term = torch.stack(anti_exp_term)
-        
-        # Compute phi for each sample
-        positive_term = torch.log(exp_term).detach().cpu()
-        negative_term = torch.log(torch.sum(anti_exp_term, dim=1)).detach().cpu()
-        phi = positive_term - negative_term
-        
-        return phi
-    
+        # log(p_true / (1 - p_true)) = true_logit - logsumexp(other_logits).
+        # Work directly in logit space so confident models do not underflow all
+        # non-target probabilities to zero. CPU float64 also supports MPS models.
+        logits = output.detach().cpu().to(torch.float64)
+        if logits.ndim != 2 or logits.shape[1] < 2 or not torch.isfinite(logits).all():
+            raise ValueError("LiRA requires finite logits with at least two classes")
+        labels = target.detach().cpu().long().reshape(-1, 1)
+        true_logits = logits.gather(1, labels).reshape(-1)
+        other_logits = logits.scatter(1, labels, float('-inf'))
+        return true_logits - torch.logsumexp(other_logits, dim=1)
+
+
+def lira_log_likelihood_ratio(phis_in, phis_out, phis_target):
+    """Fit regularized in/out Gaussians and return finite log likelihood ratios."""
+    targets = np.asarray(phis_target, dtype=np.float64).reshape(-1)
+    references = [np.asarray(values, dtype=np.float64) for values in (phis_in, phis_out)]
+    if not len(targets) or not np.isfinite(targets).all():
+        raise ValueError("LiRA target scores must be nonempty and finite")
+    for values in references:
+        if (values.ndim != 2 or values.shape[0] != len(targets) or values.shape[1] == 0
+                or not np.isfinite(values).all()):
+            raise ValueError("LiRA needs finite, nonempty in/out references for every target")
+
+    # The reference implementation also adds 1e-30 to standard deviations:
+    # https://github.com/tensorflow/privacy/blob/master/research/mi_lira_2021/plot.py
+    # A single in/out reference (two shadows overall) has exactly zero variance.
+    log_densities = [norm.logpdf(targets, loc=values.mean(axis=1),
+                                scale=values.std(axis=1) + 1e-30)
+                     for values in references]
+    scores = log_densities[0] - log_densities[1]
+    if not np.isfinite(scores).all():
+        raise ValueError("LiRA log likelihood ratios are non-finite; check reference scores and scales")
+    return scores
