@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.data.helpers import IndexedDataset, MultiDatasets
-from src.mia.defenses.training.weigthed_smoothing import WeightedSmoothingTrainManager
+from src.mia.defenses.training.weighted_smoothing import WeightedSmoothingTrainManager
 from src.utils.configs import OptimizerConfigs, SchedulerConfigs, TrainConfigs, WeightedSmoothingDefenseConfigs
 from src.utils.log import get_logger
 

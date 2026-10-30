@@ -183,9 +183,9 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Weight of the cross-difference loss for MIST defense. Unset: the paper\'s value for the dataset (Table 7), see MIST_PAPER_PARAMETERS in src/utils/variables.py')
         # Weighted Smoothing parameters for defender model
         parser.add_argument('--defender_weighted_smoothing_sigma_noise', type=float, default=0.1,
-                                help='Standard deviation of the gaussian noise to be added in Weighted Smoothing defense')
-        parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=10,
-                                help='Number of warmup epochs to train the model without weighted smoothing in Weighted Smoothing defense')
+                                help='Standard deviation of the Gaussian noise added to the predictions in Weighted Smoothing defense, before scaling by the weight of each sample')
+        parser.add_argument('--defender_weighted_smoothing_warmup_epochs', type=int, default=None,
+                                help='Number of epochs of normal training before the smoothing starts in Weighted Smoothing defense. Unset: the paper\'s value for image or non-image datasets (Sec. 5.4), see WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS in src/utils/variables.py')
         # Purifier parameters for defender model
         parser.add_argument('--defender_purifier_reformer_latent_dim', type=int, default=None,
                                 help='Latent dimension for the reformer model in Purifier defense. Unset: the paper\'s value for the dataset (appendix), see PURIFIER_PAPER_REFORMER in src/utils/variables.py')

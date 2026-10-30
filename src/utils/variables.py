@@ -86,3 +86,8 @@ RELAXLOSS_CODE_PARAMETERS = {'cifar10': {'relax_alpha': 1.0, 'relax_upper': 1.0}
                              'texas': {'relax_alpha': 2.5, 'relax_upper': 0.1}}
 RELAXLOSS_IMAGE_FALLBACK_DATASET = 'cifar10'
 RELAXLOSS_NONIMAGE_FALLBACK_DATASET = 'purchase'
+
+# Weighted smoothing's epochs of normal training before the smoothing starts, from Sec. 5.4 of the paper
+# (doi.org/10.1145/3627106.3627189): 2 on image datasets, 1 on tabular ones. Unset
+# --defender_weighted_smoothing_warmup_epochs takes the value for the dataset's kind; News counts as non-image.
+WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS = {'image': 2, 'non_image': 1}

@@ -163,6 +163,16 @@ def relax_loss_parameters():
 write_generated('relax_loss_parameters.md', relax_loss_parameters())
 
 
+def weighted_smoothing_parameters():
+    from src.utils.variables import WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS
+    kinds = {'image': 'Image', 'non_image': 'Non-image'}
+    rows = [f'| {kinds[kind]} | {epochs} |' for kind, epochs in WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS.items()]
+    return '\n'.join(['| Datasets | Warmup epochs |', '|---|---|', *rows, ''])
+
+
+write_generated('weighted_smoothing_parameters.md', weighted_smoothing_parameters())
+
+
 def format_default(value) -> str:
     # Defaults as they are typed on the command line.
     if value is None:
@@ -216,7 +226,7 @@ def option_table(prefixes: list) -> str:
 METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_'],
                   'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha'],
                   'selena': ['defender_selena_'],
-                  'relax_loss': ['defender_relax_loss_']}
+                  'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))
@@ -241,7 +251,7 @@ API_SECTIONS = {
         'src.mia.defenses.training.relax_loss.RelaxLossDefender',
         'src.mia.defenses.training.selena.SelenaDefender',
         'src.mia.defenses.training.mist.MistDefender',
-        'src.mia.defenses.training.weigthed_smoothing.WeightedSmoothingDefender',
+        'src.mia.defenses.training.weighted_smoothing.WeightedSmoothingDefender',
         'src.mia.defenses.training.mmd.MmdDefender',
         'src.mia.defenses.post_hoc.mem_guard.MemGuardDefender',
         'src.mia.defenses.post_hoc.ldl.LdlDefender',

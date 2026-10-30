@@ -41,3 +41,6 @@ Where our implementations depart from the original papers. Each method's page ha
 | RelaxLoss | epochs count from 1 | as in Algorithm 1; the official code starts at 0 |
 | RelaxLoss | soft labels are constants | as in the paper; the official code backpropagates through them |
 | RelaxLoss | the best validation model, not the last epoch's | as for every defense in the benchmark |
+| [Weighted smoothing](defenses/weighted_smoothing.md#differences-from-the-paper) | σ = 0.1 | the paper gives none |
+| Weighted smoothing | noisy predictions go to the cross-entropy as scores, a second softmax | the paper names no loss; −log of the noisy score stops training |
+| Weighted smoothing | σ = 0 already defends: attack 81.1% → 76.5% on CIFAR-10 | a consequence of the loss; σ = 0 serves as a control |

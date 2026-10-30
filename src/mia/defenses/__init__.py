@@ -5,7 +5,7 @@ from src.mia.defenses.training.adversarial_regularization import AdvRegDefender
 from src.mia.defenses.training.mixup import MixupDefender
 from src.mia.defenses.training.selena import SelenaDefender
 from src.mia.defenses.training.mist import MistDefender
-from src.mia.defenses.training.weigthed_smoothing import WeightedSmoothingDefender
+from src.mia.defenses.training.weighted_smoothing import WeightedSmoothingDefender
 from src.mia.defenses.training.mmd import MmdDefender
 from src.mia.defenses.post_hoc.mem_guard import MemGuardDefender
 from src.mia.defenses.post_hoc.purifier import PurifierDefender

@@ -12,18 +12,20 @@ from src.mia.defenses.base import BaseDefender
 
 
 class WeightedSmoothingDefender(BaseDefender):
-    """Weighted smoothing defense.
+    """Weighted smoothing: adds Gaussian noise to the training predictions, more to the samples most exposed to MIAs.
 
     Paper: "Mitigating Membership Inference Attacks via Weighted Smoothing",
-    https://dl.acm.org/doi/pdf/10.1145/3627106.3627189.
+    https://doi.org/10.1145/3627106.3627189. Documentation: docs/defenses/weighted_smoothing.md.
     """
     def __init__(self, defender_configs: DefenderConfigs):
+        """Check that the configs select weighted smoothing and keep its settings."""
         assert isinstance(defender_configs.defense, WeightedSmoothingDefenseConfigs), f"WeightedSmoothingDefender can only be used with WeightedSmoothingDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'weighted_smoothing_defender'
         self.weighted_smoothing_configs = defender_configs.defense
 
     def train_model(self, train_configs, return_stats: bool = False):
+        """Train with weighted smoothing and return the last model, with the stats if return_stats."""
         self.logger.print_it(f'Weighted Smoothing Defender: training defender model...')
         train_manager = WeightedSmoothingTrainManager(train_configs=train_configs,
                                                 name=self.name,
@@ -46,17 +48,21 @@ class WeightedSmoothingDefender(BaseDefender):
             return self.trained_model
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        """Return the trained model unchanged: weighted smoothing only changes training."""
         self.logger.info("Weighted Smoothing Defender: defend_model does not modify the model at inference time.")
         self.defended_model = self.trained_model
         return self.defended_model
 
 
 class WeightedSmoothingTrainManager(TrainManager):
+    """TrainManager whose epochs after the warmup follow Algorithm 1 of weighted smoothing."""
     def __init__(self, train_configs, name: str, logger=None, weighted_smoothing_configs: WeightedSmoothingDefenseConfigs = None):
+        """Set up the training as TrainManager does, and keep weighted smoothing's settings."""
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.weighted_smoothing_configs = weighted_smoothing_configs
 
     def train(self, extra_configs=None, return_best_model=False, return_last_model=True, return_stats=False):
+        """Check that at least one epoch follows the warmup, then train as TrainManager does."""
         # Algorithm 1 returns the final model, including the smoothing phase.
         warmup = self.weighted_smoothing_configs.warmup_epochs
         epochs = self.train_configs.scheduler_config.epochs
@@ -66,6 +72,7 @@ class WeightedSmoothingTrainManager(TrainManager):
                              return_last_model=return_last_model, return_stats=return_stats)
 
     def sample_prediction_noise(self, predictions):
+        """Return Gaussian noise of standard deviation sigma_noise with the shape and device of the predictions."""
         # Use a private CPU generator for CPU/CUDA/MPS compatibility. Rank-specific
         # streams stay independent of the shared model/dropout RNG. Restart each
         # epoch deterministically, so epoch-boundary checkpoint resumes reproduce
@@ -79,6 +86,7 @@ class WeightedSmoothingTrainManager(TrainManager):
                            generator=self._noise_generator).to(predictions.device) * self.weighted_smoothing_configs.sigma_noise
 
     def train_epoch(self):
+        """Run one epoch: plain steps during the warmup, weighted smoothing steps with fresh weights after it."""
         # reset epoch stats and per-epoch profiler
         self.reset_epoch_stats(phase='train')
         self.model.train()
@@ -110,6 +118,7 @@ class WeightedSmoothingTrainManager(TrainManager):
         return train_summary
 
     def compute_weights(self):
+        """Store the Mentr score and the label of every training sample, with the current model in eval mode."""
         start = time.time()
         assert isinstance(self.train_loader.dataset, IndexTrackingMixin), "Train loader dataset must track sample indices!"
         data_loader = DataLoader(self.train_loader.dataset, batch_size=self.train_loader.batch_size, shuffle=False)
@@ -135,6 +144,7 @@ class WeightedSmoothingTrainManager(TrainManager):
         self.logger.print_it(f"Computed weights for all training samples in {time.time() - start:.2f} seconds.")
     
     def normalize_weights(self):
+        """Turn the Mentr scores into weights ``1 - (Mentr - mean) / std``, with the mean and std of each class."""
         start = time.time()
         assert isinstance(self.train_loader.dataset, IndexTrackingMixin), "Train loader dataset must track sample indices!"
         all_targets = self.all_targets
@@ -155,12 +165,9 @@ class WeightedSmoothingTrainManager(TrainManager):
             from_logits: bool = True,
             eps: float = 1e-12,
         ) -> torch.Tensor:
-        """
-        Computes Mentr(x, l) per sample:
-        M = -(1 - f_l) * log(f_l) - sum_{i != l} f_i * log(1 - f_i)
+        """Return the Mentr score ``-(1 - f_l) log(f_l) - sum_{i != l} f_i log(1 - f_i)`` of each sample, shape (N,).
 
-        preds: if from_logits=True, supply logits (will softmax internally).
-        Returns: tensor of shape (N,) if reduction='none' else scalar.
+        preds holds logits if from_logits, otherwise probabilities.
         """
         if from_logits:
             probs = torch.softmax(preds, dim=1)
@@ -190,7 +197,8 @@ class WeightedSmoothingTrainManager(TrainManager):
         return m_entr
 
     def train_step_with_weighted_smoothing(self, inputs, targets, inputs_indices, batch_idx=0, total_batches=0):
-        inputs = inputs.to(self.device)
+        """Run one weighted smoothing step on a batch, with any optimizer, and record its stats."""
+        inputs =inputs.to(self.device)
         targets = targets.to(self.device)
         batch_size = inputs.shape[0]
         batch_weights = self.weights[inputs_indices].to(self.device)

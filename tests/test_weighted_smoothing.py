@@ -12,10 +12,12 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 
 from src.data.helpers import IndexTrackingMixin, MultiDatasets
-from src.mia.defenses.training.weigthed_smoothing import WeightedSmoothingTrainManager, WeightedSmoothingDefender
+from src.mia.defenses.training.weighted_smoothing import WeightedSmoothingTrainManager, WeightedSmoothingDefender
 from src.trainer.train_manager import TrainManager
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM
-from src.utils.configs import TrainConfigs, OptimizerConfigs, SchedulerConfigs, WeightedSmoothingDefenseConfigs
+from src.utils.configs import (TrainConfigs, OptimizerConfigs, SchedulerConfigs, WeightedSmoothingDefenseConfigs,
+                               generate_configs_from_settings)
+from src.utils.settings import build_parser
 
 
 class CountingDataset(Dataset, IndexTrackingMixin):
@@ -63,7 +65,7 @@ class WeightedSmoothingTests(unittest.TestCase):
         defender.dataset = MagicMock()
         defender.untrained_model = nn.Linear(2, 3)
         final_model = nn.Linear(2, 3)
-        with patch('src.mia.defenses.training.weigthed_smoothing.WeightedSmoothingTrainManager') as trainer:
+        with patch('src.mia.defenses.training.weighted_smoothing.WeightedSmoothingTrainManager') as trainer:
             for return_stats in (False, True):
                 trainer.return_value.train.return_value = (final_model, 'stats') if return_stats else final_model
                 result = defender.train_model(SimpleNamespace(), return_stats=return_stats)
@@ -291,6 +293,24 @@ class WeightedSmoothingTests(unittest.TestCase):
     def test_saturated_probabilities_have_finite_mentr(self):
         logits = torch.tensor([[1000.0, -1000.0], [-1000.0, 1000.0]])
         self.assertTrue(torch.isfinite(WeightedSmoothingTrainManager.mentr(logits, torch.tensor([0, 0]))).all())
+
+
+def warmup_epochs(*argv):
+    # The warmup that the command line selects.
+    settings = build_parser().parse_args([*argv, '--defender_mode', 'weighted_smoothing'])
+    configs = generate_configs_from_settings(settings)
+    return configs.defender.defense.warmup_epochs
+
+
+class WeightedSmoothingConfigsTests(unittest.TestCase):
+    def test_unset_warmup_follows_the_paper_for_the_kind_of_dataset(self):
+        tabular = ['--defender_model', 'tabular_mlp', '--attacker_model', 'tabular_mlp']
+        for argv, expected in [(['--dataset', 'cifar10'], 2), (['--dataset', 'svhn'], 2),
+                               (['--dataset', 'purchase', *tabular], 1), (['--dataset', 'news', *tabular], 1)]:
+            self.assertEqual(warmup_epochs(*argv), expected, argv)
+
+    def test_set_warmup_wins(self):
+        self.assertEqual(warmup_epochs('--dataset', 'cifar10', '--defender_weighted_smoothing_warmup_epochs', '7'), 7)
 
 
 if __name__ == '__main__':
