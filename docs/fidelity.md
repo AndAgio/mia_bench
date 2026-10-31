@@ -51,3 +51,5 @@ Where our implementations depart from the original papers. Each method's page ha
 | AdvReg | CIFAR-100's λ = 6 on CIFAR-10 and other image datasets | the paper only evaluates CIFAR-100 |
 | AdvReg | reference set is half the validation split | keeps it apart from the audited non-members |
 | AdvReg | log loss on probabilities for the attack model, no warmup | as in the paper; the authors' code differs |
+| [Mixup](defenses/mixup.md#differences-from-the-paper) | no random crops and flips | augmentation is its own defense |
+| Mixup | the best validation model, not the best test accuracy | the test split holds the audited non-members |

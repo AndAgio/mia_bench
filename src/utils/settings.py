@@ -165,7 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Penalty on the attack model\'s membership probability h of members in the classifier loss of Adversarial Regularization defense: lambda times h, as in the authors\' code, or lambda times log h, as in the paper. Unset: see ADV_REG_CODE_PENALTY in src/utils/variables.py')
         # Mixup paremeters for defender model
         parser.add_argument('--defender_mixup_alpha', type=float, default=1.0,
-                                help='Alpha parameter for Mixup defense')
+                                help='Alpha of the Beta(alpha, alpha) distribution of the mixing weight in Mixup defense, and in the mixup of mist_mixup and mmd_mixup')
         # HAMP parameters for defender model
         parser.add_argument('--defender_hamp_gamma', type=float, default=None,
                                 help='Entropy threshold gamma of HAMP, in [0, 1]. Unset: the paper\'s value for the dataset (Table III), see HAMP_PAPER_PARAMETERS in src/utils/variables.py')

@@ -9,14 +9,20 @@ from src.mia.defenses.base import BaseDefender
 
 
 class MixupDefender(BaseDefender):
-    """Trains with mixup: convex combinations of pairs of inputs and of their labels."""
+    """Trains with mixup: convex combinations of pairs of inputs and of their labels.
+
+    Paper: "mixup: Beyond Empirical Risk Minimization",
+    https://arxiv.org/abs/1710.09412. Documentation: docs/defenses/mixup.md.
+    """
     def __init__(self, defender_configs: DefenderConfigs):
+        """Check that the configs select mixup and keep its settings."""
         assert isinstance(defender_configs.defense, MixupDefenseConfigs), f"MixupDefender can only be used with MixupDefenseConfigs, got {type(defender_configs.defense)}"
         super().__init__(defender_configs=defender_configs)
         self.name = 'mixup_defender'
         self.mixup_configs = defender_configs.defense
 
     def train_model(self, train_configs, return_stats: bool = False):
+        """Train with mixup and return the best model, with the stats if return_stats."""
         self.logger.print_it(f'Mixup Defender: training defender model with alpha {self.mixup_configs.alpha}...')
         train_manager = MixupTrainManager(train_configs=train_configs,
                                                 name=self.name,
@@ -39,17 +45,21 @@ class MixupDefender(BaseDefender):
             return self.trained_model
 
     def defend_model(self, device: Union[str, torch.device]) -> torch.nn.Module:
+        """Return the trained model unchanged: mixup only changes training."""
         self.logger.print_it("Mixup Defender: defend_model does not modify the model at inference time.")
         self.defended_model = self.trained_model
         return self.defended_model
 
 
 class MixupTrainManager(TrainManager):
+    """TrainManager whose steps train on a mixup of each batch."""
     def __init__(self, train_configs, name: str, logger=None, mixup_configs: MixupDefenseConfigs = None):
+        """Set up the training as TrainManager does, and keep mixup's settings."""
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.mixup_configs = mixup_configs
 
     def train_step(self, inputs, targets, batch_idx=0, total_batches=0):
+        """Run one step on the mixup of a batch, with any optimizer, and record stats on the clean batch."""
         mixed_inputs, targets_a, targets_b, lmbd = mixup_data(inputs, targets, alpha=self.mixup_configs.alpha)
         mixed_inputs = mixed_inputs.to(self.device)
         targets_a = targets_a.to(self.device)
@@ -103,7 +113,10 @@ class MixupTrainManager(TrainManager):
 
 
 def mixup_data(x: torch.Tensor, y: torch.Tensor, alpha: float=1.0):
-    '''Compute the mixup data. Return mixed inputs, pairs of targets, and lambda'''
+    """Mix a batch with a shuffled copy of itself, with one weight λ ~ Beta(alpha, alpha) for the whole batch.
+
+    λ is 1 if alpha is not positive. Return the mixed inputs, the targets of both copies and λ, as in the authors' code.
+    """
     if alpha > 0.:
         lam = np.random.beta(alpha, alpha)
     else:

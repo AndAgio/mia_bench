@@ -241,7 +241,7 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha'],
                   'selena': ['defender_selena_'],
                   'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_'],
-                  'adv_reg': ['defender_adv_reg_']}
+                  'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

@@ -1,6 +1,6 @@
 # Defenses
 
-Choose a defense with `--defender_mode`. Only AdvReg, weighted smoothing, RelaxLoss, SELENA, MIST, MemGuard, LDL, Purifier and HAMP have their own pages so far.
+Choose a defense with `--defender_mode`. Only mixup, AdvReg, weighted smoothing, RelaxLoss, SELENA, MIST, MemGuard, LDL, Purifier and HAMP have their own pages so far.
 
 Every defense can be paired with every attack, including attacks outside the defense's threat model. LDL, MemGuard,
 Purifier and `hamp_test` act only at inference, so the trained model's internal features are not defended. `neural_feat`
@@ -11,7 +11,7 @@ them. The run log notes these pairings.
 |---|---|---|
 | No defense | `none` | |
 | Differential privacy | `dp` | |
-| Mixup | `mixup` | |
+| [Mixup](mixup.md) | `mixup` | [paper](https://arxiv.org/abs/1710.09412) |
 | Data augmentation | `data_augmentation` | |
 | [Adversarial regularization](adv_reg.md) | `adv_reg` | [paper](https://arxiv.org/abs/1807.05852) |
 | [RelaxLoss](relax_loss.md) | `relax_loss` | [paper](https://arxiv.org/abs/2207.05801) |
@@ -27,6 +27,7 @@ them. The run log notes these pairings.
 ```{toctree}
 :hidden:
 
+mixup
 adv_reg
 relax_loss
 selena
