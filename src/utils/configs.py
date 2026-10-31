@@ -9,7 +9,8 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  RELAXLOSS_CODE_PARAMETERS, RELAXLOSS_IMAGE_FALLBACK_DATASET,
                                  RELAXLOSS_NONIMAGE_FALLBACK_DATASET, WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS,
                                  ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
-                                 ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY)
+                                 ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
+                                 DATA_AUGMENTATION_FEATURE_MASK_PROB)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -540,8 +541,14 @@ class LdlDefenseConfigs:
 class DataAugmentationDefenseConfigs:
     strategy: Literal["data_augmentation"] = "data_augmentation"
     horizontal_flip: float = 0.5
-    rotation: int = 10
+    rotation: float = 10
     erase_prob: float = 0.5
+    # Pixels of padding before cropping back to the image size at a random position. None: no crops.
+    crop_padding: Optional[int] = None
+    # Tabular datasets, where the image transforms above do not apply. None: no flips, no noise.
+    feature_mask_prob: float = DATA_AUGMENTATION_FEATURE_MASK_PROB
+    feature_flip_prob: Optional[float] = None  # binary features (purchase, texas)
+    feature_noise_std: Optional[float] = None
 
 
 # One-of: only the selected strategy's fields are validated/available
@@ -794,9 +801,24 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     noise_scale=settings.defender_ldl_noise_scale,
                                                     flip_prob=ldl_flip_prob)
     elif settings.defender_mode in ['data_augmentation', 'augmentation', 'data-augmentation', 'aug', 'dataaug', 'data_aug', 'augment']:
+        # The feature options apply to tabular datasets, and bit flips to binary features only.
+        tabular = get_im_size_from_name(settings.dataset) is None
+        binary_features = settings.dataset in ["purchase", "texas"]
+        for option, allowed in [('defender_augment_feature_mask_prob', tabular),
+                                ('defender_augment_feature_flip_prob', binary_features),
+                                ('defender_augment_feature_noise_std', tabular)]:
+            if getattr(settings, option) is not None and not allowed:
+                raise ValueError(f"--{option} does not apply to the {settings.dataset} dataset")
+        feature_mask_prob = settings.defender_augment_feature_mask_prob
+        if feature_mask_prob is None:
+            feature_mask_prob = DATA_AUGMENTATION_FEATURE_MASK_PROB
         defender_defense_configs = DataAugmentationDefenseConfigs(horizontal_flip=settings.defender_augment_horizontal_flip_prob,
                                                                 rotation=settings.defender_augment_rotation,
-                                                                erase_prob=settings.defender_augment_erase_prob,)
+                                                                erase_prob=settings.defender_augment_erase_prob,
+                                                                crop_padding=settings.defender_augment_crop_padding,
+                                                                feature_mask_prob=feature_mask_prob,
+                                                                feature_flip_prob=settings.defender_augment_feature_flip_prob,
+                                                                feature_noise_std=settings.defender_augment_feature_noise_std)
     else:
         raise ValueError('Defense mode "{}" not recognized!'.format(settings.defender_mode))
     defender_configs = DefenderConfigs(hash=defender_hash,

@@ -187,6 +187,14 @@ def adv_reg_parameters():
 write_generated('adv_reg_parameters.md', adv_reg_parameters())
 
 
+def data_augmentation_parameters():
+    from src.utils.variables import DATA_AUGMENTATION_FEATURE_MASK_PROB
+    return f'When left unset, the probability of masking each feature is {DATA_AUGMENTATION_FEATURE_MASK_PROB:g}.\n'
+
+
+write_generated('data_augmentation_parameters.md', data_augmentation_parameters())
+
+
 def format_default(value) -> str:
     # Defaults as they are typed on the command line.
     if value is None:
@@ -241,7 +249,8 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha'],
                   'selena': ['defender_selena_'],
                   'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_'],
-                  'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha']}
+                  'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha'],
+                  'data_augmentation': ['defender_augment_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

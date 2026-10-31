@@ -221,11 +221,19 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Probability of flipping each binary feature in the LDL defense layer, used for purchase and texas. Unset: the paper\'s value for the dataset (Table 1), see LDL_PAPER_FLIP_PROBS in src/utils/variables.py')
         # Data Augmentation parameters for defender model
         parser.add_argument('--defender_augment_horizontal_flip_prob', type=float, default=0.5,
-                                help='probability of applying horizontal flip augmentation in the Data Augmentation defense')
+                                help='Probability of flipping each training image horizontally in Data Augmentation defense')
         parser.add_argument('--defender_augment_rotation', type=float, default=10,
-                                help='degree of random rotation augmentation for the Data Augmentation defense')
+                                help='Largest angle, in degrees, of the random rotation of each training image in Data Augmentation defense, 0 for none')
         parser.add_argument('--defender_augment_erase_prob', type=float, default=0.5,
-                                help='probability of applying random erasing augmentation in the Data Augmentation defense')
+                                help='Probability of erasing a random rectangle of each training image in Data Augmentation defense')
+        parser.add_argument('--defender_augment_crop_padding', type=int, default=None,
+                                help='Pixels of padding around each training image before cropping it back to its size at a random position, in Data Augmentation defense. Unset: no crops')
+        parser.add_argument('--defender_augment_feature_mask_prob', type=float, default=None,
+                                help='Probability of zeroing each feature of a training sample of a tabular dataset (Purchase, Texas, News) in Data Augmentation defense. Unset: see DATA_AUGMENTATION_FEATURE_MASK_PROB in src/utils/variables.py')
+        parser.add_argument('--defender_augment_feature_flip_prob', type=float, default=None,
+                                help='Probability of flipping each binary feature of a training sample, on Purchase and Texas, in Data Augmentation defense. Unset: no flips')
+        parser.add_argument('--defender_augment_feature_noise_std', type=float, default=None,
+                                help='Standard deviation of the Gaussian noise added to each feature of a training sample of a tabular dataset, meant for the continuous features of News, in Data Augmentation defense. Unset: no noise')
 
 
         # Hardware related settings

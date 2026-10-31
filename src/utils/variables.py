@@ -107,3 +107,8 @@ ADV_REG_CODE_ATTACKER_LR = 0.0001
 # authors' Purchase and Texas code, lambda·mean(h), and 'log' the paper's lambda·log h (Algorithm 1), which has no lower
 # bound and collapses the classifier (docs/defenses/adv_reg.md). Unset --defender_adv_reg_penalty takes it.
 ADV_REG_CODE_PENALTY = 'linear'
+
+# Data augmentation's probability of zeroing each feature of the training samples of tabular datasets, where the image
+# transforms do not apply: our choice, from a check on Purchase (docs/defenses/data_augmentation.md). Unset
+# --defender_augment_feature_mask_prob takes it.
+DATA_AUGMENTATION_FEATURE_MASK_PROB = 0.2
