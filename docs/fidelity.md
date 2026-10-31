@@ -44,3 +44,10 @@ Where our implementations depart from the original papers. Each method's page ha
 | [Weighted smoothing](defenses/weighted_smoothing.md#differences-from-the-paper) | σ = 0.1 | the paper gives none |
 | Weighted smoothing | noisy predictions go to the cross-entropy as scores, a second softmax | the paper names no loss; −log of the noisy score stops training |
 | Weighted smoothing | σ = 0 already defends: attack 81.1% → 76.5% on CIFAR-10 | a consequence of the loss; σ = 0 serves as a control |
+| [AdvReg](defenses/adv_reg.md#differences-from-the-paper) | penalty λ·h, not λ·log h | as in the authors' code; λ·log h has no lower bound and collapsed the classifier |
+| AdvReg | attack model learning rate 0.0001, not 0.001 | as in the authors' Purchase code; at 0.001 the attack model stopped learning |
+| AdvReg | the best validation model | as for every defense in the benchmark; on CIFAR-10 accuracy peaks around epoch 10 |
+| AdvReg | k = 1 attack model step per classifier step | the paper gives none; as in the authors' CIFAR script |
+| AdvReg | CIFAR-100's λ = 6 on CIFAR-10 and other image datasets | the paper only evaluates CIFAR-100 |
+| AdvReg | reference set is half the validation split | keeps it apart from the audited non-members |
+| AdvReg | log loss on probabilities for the attack model, no warmup | as in the paper; the authors' code differs |

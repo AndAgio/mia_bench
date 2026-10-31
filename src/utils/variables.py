@@ -91,3 +91,19 @@ RELAXLOSS_NONIMAGE_FALLBACK_DATASET = 'purchase'
 # (doi.org/10.1145/3627106.3627189): 2 on image datasets, 1 on tabular ones. Unset
 # --defender_weighted_smoothing_warmup_epochs takes the value for the dataset's kind; News counts as non-image.
 WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS = {'image': 2, 'non_image': 1}
+
+# AdvReg's adversarial regularization factor lambda per dataset, from Table 3 of the paper (arXiv 1807.05852). The
+# authors' code (github.com/SPIN-UMass/ML-Privacy-Regulization) agrees on Purchase only, and uses other penalties. Unset
+# --defender_adv_reg_lambda takes the dataset's value, other image datasets CIFAR-100's, and other non-image datasets
+# Purchase's.
+ADV_REG_PAPER_LAMBDAS = {'purchase': 3.0, 'texas': 2.0, 'cifar100': 6.0}
+ADV_REG_IMAGE_FALLBACK_DATASET = 'cifar100'
+ADV_REG_NONIMAGE_FALLBACK_DATASET = 'purchase'
+# AdvReg's learning rate of the attack model's Adam optimizer, from the authors' Purchase code. The paper's 0.001
+# (Sec. 5.3) lets the attack model die, and the code's CIFAR value 0.00001 is too slow (docs/defenses/adv_reg.md).
+# Unset --defender_adv_reg_attacker_lr takes it on every dataset.
+ADV_REG_CODE_ATTACKER_LR = 0.0001
+# AdvReg's penalty on the attack model's membership probability h of members in the classifier loss: 'linear' is the
+# authors' Purchase and Texas code, lambda·mean(h), and 'log' the paper's lambda·log h (Algorithm 1), which has no lower
+# bound and collapses the classifier (docs/defenses/adv_reg.md). Unset --defender_adv_reg_penalty takes it.
+ADV_REG_CODE_PENALTY = 'linear'

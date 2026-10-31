@@ -7,7 +7,9 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  LDL_CODE_N_QUERIES, LDL_PAPER_FLIP_PROBS, PURIFIER_PAPER_REFORMER,
                                  PURIFIER_FALLBACK_DATASET, MIST_PAPER_PARAMETERS, MIST_FALLBACK_DATASET,
                                  RELAXLOSS_CODE_PARAMETERS, RELAXLOSS_IMAGE_FALLBACK_DATASET,
-                                 RELAXLOSS_NONIMAGE_FALLBACK_DATASET, WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS)
+                                 RELAXLOSS_NONIMAGE_FALLBACK_DATASET, WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS,
+                                 ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
+                                 ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -438,9 +440,13 @@ class RelaxLossDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class AdvRegDefenseConfigs:
     strategy: Literal["adv_reg"] = "adv_reg"
-    shadow_attacker_model_layers: list[int] = field(default_factory=lambda: [64, 32])
-    adv_lambda: float = 1.0
+    # Hidden sizes of a plain MLP attacker. None selects the paper's attack model (Fig. 3).
+    shadow_attacker_model_layers: Optional[list[int]] = None
+    # The paper's CIFAR-100 value. generate_configs_from_settings sets the dataset's (ADV_REG_PAPER_LAMBDAS).
+    adv_lambda: float = 6.0
     shadow_attacker_k: int = 1
+    attacker_lr: float = ADV_REG_CODE_ATTACKER_LR
+    penalty: Literal['linear', 'log'] = ADV_REG_CODE_PENALTY
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class MixupDefenseConfigs:
@@ -690,9 +696,24 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                             relax_upper=relax_upper,
                                                             flatten_incorrect_only=relax_flatten == 'incorrect')
     elif settings.defender_mode in ['adv_reg', 'advreg', 'adv-reg']:
+        # Unset lambda takes the paper's value for the dataset (Table 3), and unset attacker lr the authors' code's.
+        adv_lambda = settings.defender_adv_reg_lambda
+        if adv_lambda is None:
+            is_image_dataset = settings.dataset not in ["purchase", "news", "texas"]
+            fallback = ADV_REG_IMAGE_FALLBACK_DATASET if is_image_dataset else ADV_REG_NONIMAGE_FALLBACK_DATASET
+            adv_lambda = ADV_REG_PAPER_LAMBDAS.get(settings.dataset, ADV_REG_PAPER_LAMBDAS[fallback])
+        attacker_lr = settings.defender_adv_reg_attacker_lr
+        if attacker_lr is None:
+            attacker_lr = ADV_REG_CODE_ATTACKER_LR
+        # Unset penalty is the authors' code's (ADV_REG_CODE_PENALTY).
+        penalty = settings.defender_adv_reg_penalty
+        if penalty is None:
+            penalty = ADV_REG_CODE_PENALTY
         defender_defense_configs = AdvRegDefenseConfigs(shadow_attacker_model_layers=settings.defender_adv_reg_shadow_attacker_model_layers,
-                                                        adv_lambda=settings.defender_adv_reg_lambda,
-                                                        shadow_attacker_k=settings.defender_adv_reg_shadow_attacker_k)
+                                                        adv_lambda=adv_lambda,
+                                                        shadow_attacker_k=settings.defender_adv_reg_shadow_attacker_k,
+                                                        attacker_lr=attacker_lr,
+                                                        penalty=penalty)
     elif settings.defender_mode in ['mixup']:
         defender_defense_configs = MixupDefenseConfigs(alpha=settings.defender_mixup_alpha)
     elif settings.defender_mode in ['hamp_train', 'hamp_test', 'hamp_full', 'hamp']:

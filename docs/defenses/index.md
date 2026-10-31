@@ -1,6 +1,6 @@
 # Defenses
 
-Choose a defense with `--defender_mode`. Only weighted smoothing, RelaxLoss, SELENA, MIST, MemGuard, LDL, Purifier and HAMP have their own pages so far.
+Choose a defense with `--defender_mode`. Only AdvReg, weighted smoothing, RelaxLoss, SELENA, MIST, MemGuard, LDL, Purifier and HAMP have their own pages so far.
 
 Every defense can be paired with every attack, including attacks outside the defense's threat model. LDL, MemGuard,
 Purifier and `hamp_test` act only at inference, so the trained model's internal features are not defended. `neural_feat`
@@ -13,7 +13,7 @@ them. The run log notes these pairings.
 | Differential privacy | `dp` | |
 | Mixup | `mixup` | |
 | Data augmentation | `data_augmentation` | |
-| Adversarial regularization | `adv_reg` | [paper](https://dl.acm.org/doi/pdf/10.1145/3243734.3243855) |
+| [Adversarial regularization](adv_reg.md) | `adv_reg` | [paper](https://arxiv.org/abs/1807.05852) |
 | [RelaxLoss](relax_loss.md) | `relax_loss` | [paper](https://arxiv.org/abs/2207.05801) |
 | [SELENA](selena.md) | `selena` | [paper](https://arxiv.org/abs/2110.08324) |
 | [MIST](mist.md) | `mist`, `mist_mixup` | [paper](https://arxiv.org/abs/2311.00919) |
@@ -27,6 +27,7 @@ them. The run log notes these pairings.
 ```{toctree}
 :hidden:
 
+adv_reg
 relax_loss
 selena
 mist

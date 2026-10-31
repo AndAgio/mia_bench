@@ -247,6 +247,7 @@ checkpoint.write_text('target')
                                           if k != "out_folder"}, sort_keys=True, default=str) for c in subset]
                 self.assertEqual(len(set(signatures)), 5)
                 self.assertTrue(all(c.description and "--strict-checks" in c.command for c in subset))
+        official = runpy.run_path(str(smoke.REPO_ROOT / "src/utils/variables.py"))["RELAXLOSS_CODE_PARAMETERS"]
         for case in cases:
             settings = self.settings(case)
             self.assertEqual(settings.defender_epochs, 5)
@@ -255,7 +256,10 @@ checkpoint.write_text('target')
             self.assertGreater(members, 0)
             self.assertLess(members, settings.n_auditing_samples)
             if case.kind == "defense" and case.component == "relax_loss":
-                self.assertGreater(settings.defender_relax_loss_alpha, 0)
+                # Unset alpha takes one of the official values, as generate_configs_from_settings does.
+                alpha = settings.defender_relax_loss_alpha
+                for value in [alpha] if alpha is not None else [values["relax_alpha"] for values in official.values()]:
+                    self.assertGreater(value, 0)
 
     def test_edge_targets_shared_across_profiles_and_consumers_contiguous(self):
         _, cases = self.cases(["--preset", "edge"])

@@ -153,12 +153,16 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_relax_loss_flatten', type=str, default=None, choices=['incorrect', 'all'],
                                 help='Samples to apply posterior flattening to in Relax Loss defense. Unset: incorrect for image datasets, all for purchase, news and texas, as in the paper')
         # Adversarial Regularization parameters for defender model
-        parser.add_argument('--defender_adv_reg_lambda', type=float, default=1.0,
-                                help='Lambda parameter for Adversarial Regularization defense')
-        parser.add_argument('--defender_adv_reg_shadow_attacker_model_layers', type=int, nargs="+", default=[64, 32],
-                                help='List of hidden layer sizes for the shadow attacker model in Adversarial Regularization defense')
+        parser.add_argument('--defender_adv_reg_lambda', type=float, default=None,
+                                help='Weight of the penalty on the attack model\'s membership probability of members in the classifier loss of Adversarial Regularization defense. Unset: the paper\'s value for the dataset (Table 3), see ADV_REG_PAPER_LAMBDAS in src/utils/variables.py')
+        parser.add_argument('--defender_adv_reg_shadow_attacker_model_layers', type=int, nargs="+", default=None,
+                                help='Hidden layer sizes of a plain MLP attack model in Adversarial Regularization defense. Unset: the paper\'s attack model (Fig. 3)')
         parser.add_argument('--defender_adv_reg_shadow_attacker_k', type=int, default=1,
-                                help='Number of shadow attacker steps per defender step in Adversarial Regularization defense')
+                                help='Number of attack model steps per classifier step in Adversarial Regularization defense')
+        parser.add_argument('--defender_adv_reg_attacker_lr', type=float, default=None,
+                                help='Learning rate of the Adam optimizer of the attack model in Adversarial Regularization defense. Unset: the authors\' code\'s value, see ADV_REG_CODE_ATTACKER_LR in src/utils/variables.py')
+        parser.add_argument('--defender_adv_reg_penalty', type=str, default=None, choices=['linear', 'log'],
+                                help='Penalty on the attack model\'s membership probability h of members in the classifier loss of Adversarial Regularization defense: lambda times h, as in the authors\' code, or lambda times log h, as in the paper. Unset: see ADV_REG_CODE_PENALTY in src/utils/variables.py')
         # Mixup paremeters for defender model
         parser.add_argument('--defender_mixup_alpha', type=float, default=1.0,
                                 help='Alpha parameter for Mixup defense')

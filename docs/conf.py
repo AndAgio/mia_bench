@@ -173,6 +173,20 @@ def weighted_smoothing_parameters():
 write_generated('weighted_smoothing_parameters.md', weighted_smoothing_parameters())
 
 
+def adv_reg_parameters():
+    from src.utils.variables import (ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
+                                     ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR)
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | {lmbd:g} |' for dataset, lmbd in ADV_REG_PAPER_LAMBDAS.items()]
+    image = DATASET_NAMES.get(ADV_REG_IMAGE_FALLBACK_DATASET, ADV_REG_IMAGE_FALLBACK_DATASET)
+    nonimage = DATASET_NAMES.get(ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_NONIMAGE_FALLBACK_DATASET)
+    return '\n'.join(['| Dataset | λ |', '|---|---|', *rows, '',
+                      f'Other image datasets use the {image} value, and other non-image datasets the {nonimage} value. '
+                      f'The attack model\'s learning rate is {ADV_REG_CODE_ATTACKER_LR:g} on every dataset.', ''])
+
+
+write_generated('adv_reg_parameters.md', adv_reg_parameters())
+
+
 def format_default(value) -> str:
     # Defaults as they are typed on the command line.
     if value is None:
@@ -226,7 +240,8 @@ def option_table(prefixes: list) -> str:
 METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifier': ['defender_purifier_'],
                   'memguard': ['defender_mem_guard_'], 'mist': ['defender_mist_', 'defender_mixup_alpha'],
                   'selena': ['defender_selena_'],
-                  'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_']}
+                  'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_'],
+                  'adv_reg': ['defender_adv_reg_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))
