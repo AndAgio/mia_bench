@@ -34,25 +34,42 @@ an erasing, and `--defender_augment_rotation` the largest angle of the rotations
 On tabular datasets, `--defender_augment_feature_mask_prob` is the probability of masking each feature,
 `--defender_augment_feature_flip_prob` that of flipping each binary feature (Purchase and Texas only), and
 `--defender_augment_feature_noise_std` the standard deviation of the Gaussian noise added to each feature, meant for
-the continuous features of News. Setting any of them on an image dataset is an error.
+the continuous features of News. News rows have unit norm over 134,410 dimensions, so useful values are small: a
+standard deviation of 0.01 already gives noise of norm 3.7. Setting any of these options on an image dataset is an
+error.
 
 ```{include} ../_generated/data_augmentation_parameters.md
 ```
 
-We chose the masking probability with a check on Purchase: the tabular MLP, trained with Adam for 50 epochs on
-10,000 samples, with the model of the best validation accuracy, and a Mentr threshold attack against 10,000 other
-samples. Each row is a single run, so differences of 2 to 3 points may come from the choice of the best epoch. Bit
-flips gave no consistent gain, so they are off by default.
+We chose the masking probability with a check on each tabular dataset: the tabular MLP, trained with Adam for 50
+epochs on 10,000 samples (5,000 on News, which has fewer), with the model of the best validation accuracy, and a
+Mentr threshold attack against as many other samples. Each row is a single run, so differences of 2 to 3 points may
+come from the choice of the best epoch. Masking with a probability of 0.2 lowers the attack on all three datasets,
+and on Texas, where the model overfits most, it also raises the test accuracy. Bit flips do even better on Texas but
+not consistently on Purchase, and Gaussian noise does no better than masking on News, so both are off by default.
 
-| Augmentation | Train accuracy | Test accuracy | Attack accuracy |
-|---|---|---|---|
-| None | 97.9% | 72.0% | 68.0% |
-| Masking, p = 0.1 | 95.2% | 70.0% | 66.2% |
-| Masking, p = 0.2 | 93.4% | 69.4% | 64.8% |
-| Masking, p = 0.3 | 84.1% | 62.9% | 61.4% |
-| Bit flips, p = 0.01 | 95.6% | 71.5% | 65.8% |
-| Bit flips, p = 0.02 | 99.2% | 72.3% | 71.3% |
-| Bit flips, p = 0.05 | 95.8% | 70.1% | 66.9% |
+| Dataset | Augmentation | Train accuracy | Test accuracy | Attack accuracy |
+|---|---|---|---|---|
+| Purchase | None | 97.9% | 72.0% | 68.0% |
+| Purchase | Masking, p = 0.1 | 95.2% | 70.0% | 66.2% |
+| Purchase | Masking, p = 0.2 | 93.4% | 69.4% | 64.8% |
+| Purchase | Masking, p = 0.3 | 84.1% | 62.9% | 61.4% |
+| Purchase | Bit flips, p = 0.01 | 95.6% | 71.5% | 65.8% |
+| Purchase | Bit flips, p = 0.02 | 99.2% | 72.3% | 71.3% |
+| Purchase | Bit flips, p = 0.05 | 95.8% | 70.1% | 66.9% |
+| Texas | None | 99.9% | 51.5% | 80.8% |
+| Texas | Masking, p = 0.1 | 92.5% | 54.1% | 70.6% |
+| Texas | Masking, p = 0.2 | 88.5% | 54.7% | 68.6% |
+| Texas | Masking, p = 0.3 | 83.2% | 54.5% | 65.3% |
+| Texas | Bit flips, p = 0.01 | 85.5% | 55.0% | 66.2% |
+| Texas | Bit flips, p = 0.02 | 68.8% | 52.9% | 58.9% |
+| News | None | 100% | 84.7% | 79.2% |
+| News | Masking, p = 0.1 | 100% | 84.6% | 78.4% |
+| News | Masking, p = 0.2 | 100% | 83.3% | 75.8% |
+| News | Masking, p = 0.3 | 100% | 83.4% | 77.8% |
+| News | Gaussian noise, std = 0.0005 | 100% | 82.6% | 77.9% |
+| News | Gaussian noise, std = 0.001 | 100% | 82.5% | 78.3% |
+| News | Gaussian noise, std = 0.002 | 100% | 82.4% | 75.6% |
 
 ```{include} ../_generated/options_data_augmentation.md
 ```
@@ -64,5 +81,3 @@ flips gave no consistent gain, so they are off by default.
   more than these attacks assume.
 - Augmentation cannot be combined with another defense yet
   ([issue #47](https://github.com/AndAgio/mia_bench/issues/47)).
-- News was not part of the check: its masking probability comes from Purchase, and its Gaussian noise has no tested
-  value.
