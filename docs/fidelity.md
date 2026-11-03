@@ -53,3 +53,8 @@ Where our implementations depart from the original papers. Each method's page ha
 | AdvReg | log loss on probabilities for the attack model, no warmup | as in the paper; the authors' code differs |
 | [Mixup](defenses/mixup.md#differences-from-the-paper) | no random crops and flips | augmentation is its own defense |
 | Mixup | the best validation model, not the best test accuracy | the test split holds the audited non-members |
+| [DP](defenses/dp.md#differences-from-the-paper) | σ = 1 and C = 1 by default, on models trained from scratch | the paper's values suit its small, partly pre-trained networks |
+| DP | Opacus' PRV accountant | tighter ε than the paper's moments accountant |
+| DP | BatchNorm replaced by GroupNorm | Opacus cannot compute per-sample gradients through BatchNorm |
+| DP | the best validation model, with the ε of the whole run | as for every defense in the benchmark |
+| DP | DP-SAT's ρ = 0.03 for every dataset and model | the paper's value without tuning; it tunes ρ per run |

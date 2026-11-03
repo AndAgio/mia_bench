@@ -195,6 +195,15 @@ def data_augmentation_parameters():
 write_generated('data_augmentation_parameters.md', data_augmentation_parameters())
 
 
+def dp_parameters():
+    from src.utils.variables import DP_PAPER_DELTA, DP_SAT_PAPER_RHO
+    return (f'When left unset, δ is {DP_PAPER_DELTA:g}, and DP-SAT\'s ρ is {DP_SAT_PAPER_RHO:g}, the paper\'s value '
+            f'without tuning.\n')
+
+
+write_generated('dp_parameters.md', dp_parameters())
+
+
 def format_default(value) -> str:
     # Defaults as they are typed on the command line.
     if value is None:
@@ -250,7 +259,7 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'selena': ['defender_selena_'],
                   'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_'],
                   'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha'],
-                  'data_augmentation': ['defender_augment_']}
+                  'data_augmentation': ['defender_augment_'], 'dp': ['defender_dp_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

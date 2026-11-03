@@ -520,6 +520,7 @@ Their settings are command line options, listed here without their `--defender_`
 | --- | --- | --- | --- |
 | `sam_rho` | the non-adaptive variants | 0.05 | SAM, CIFAR-10 (0.1 for CIFAR-100) |
 | `sam_rho` | `adaptive_*` | 0.5 | ASAM, CIFAR-10 (1.0 for CIFAR-100) |
+| `sam_rho` | `sam` with the `dp` defense (DP-SAT) | 0.03 | DP-SAT, without tuning (0.01 to 0.1 tuned) |
 | `asam_eta` | `adaptive_*` | 0.01 | ASAM |
 | `esam_beta` | `esam` | 0.6 | ESAM, ResNet-18 (0.5 for WideResNet-28-10); 1 turns stochastic weight perturbation off |
 | `esam_gamma` | `esam` | 0.5 | ESAM, ResNet-18 and WideResNet-28-10; 1 turns data selection off |
