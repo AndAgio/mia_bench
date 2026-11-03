@@ -335,6 +335,12 @@ class TrainManager(Loggable):
             self.logger.print_it(f'No test split found in the dataset. Will only set up train {"and validation " if self.run_val else ""}dataloader{"s" if self.run_val else ""}.')
         
         if self.distributed:
+            # batch_size is the global batch, and each process takes an equal share of it, so the number of GPUs
+            # does not change the training (nor DP-SGD's sampling rate and epsilon).
+            if batch_size % self.world_size != 0:
+                raise ValueError(f'The batch size {batch_size} must be divisible by the number of GPUs '
+                                 f'({self.world_size}), which each take an equal share of it.')
+            batch_size //= self.world_size
             self.train_loader = DataLoader(train_dataset, batch_size=batch_size,
                                             pin_memory=True, shuffle=False,
                                             sampler=DistributedSampler(train_dataset,

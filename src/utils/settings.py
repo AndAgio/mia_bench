@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_epochs', type=int, default=100,
                                 help='Max number of epochs to train')
         parser.add_argument('--defender_batch_size', type=int, required=False, default=256,
-                                help='input batch size for training')
+                                help='Batch size for training. With --distributed, the global batch: each GPU takes an equal share, so it must be divisible by the number of GPUs')
         parser.add_argument('--defender_loss', type=str, required=False, default='crossentropy',
                                 help='loss to be used for training', choices=['crossentropy'])
         parser.add_argument('--perf_metrics', type=str, nargs="+", required=False, default=['accuracy'],
@@ -245,7 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument("--device", default='0',
                                 help="Set to 0 or 1 to enable CUDA training, cpu otherwise")
         parser.add_argument("--distributed", action="store_true", default=False,
-                                help="use distributed training options",)
+                                help="Train on several GPUs with DDP, launched with torchrun. The batch sizes stay the global ones",)
         
         # Folders parameters
         parser.add_argument('--datasets_folder', type=pathlib.Path, default=DEFAULT_DATASETS_FOLDER)
@@ -374,7 +374,7 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_epochs', type=int, default=100,
                                 help='Max number of epochs to train')
         parser.add_argument('--attacker_batch_size', type=int, required=False, default=256,
-                                help='input batch size for training')
+                                help='Batch size for training. With --distributed, the global batch: each GPU takes an equal share, so it must be divisible by the number of GPUs')
         parser.add_argument('--attacker_loss', type=str, required=False, default='crossentropy',
                                 help='loss to be used for training', choices=['crossentropy'])
         parser.add_argument('--attacker_lr', type=float, required=False, default=0.01,
