@@ -1,5 +1,5 @@
 import hashlib
-from typing import List, Union
+from typing import List, Optional, Union
 
 import torch
 from src.data import get_defender_datas
@@ -79,7 +79,11 @@ class BaseDefender(Loggable):
         """Return the model before training."""
         assert hasattr(self, 'untrained_model'), "Model has not been initialized yet!"
         return self.untrained_model
-    
+
+    def get_privacy_budget(self) -> Optional[dict]:
+        """Return the formal privacy guarantee of the training as {'epsilon': ..., 'delta': ...}, or None if none."""
+        return None
+
     @staticmethod
     def get_device(dev_str: str = 'cpu'):
         """Map a device string to a torch device: a CUDA index, MPS when CUDA is missing, or CPU."""

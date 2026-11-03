@@ -10,7 +10,7 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  RELAXLOSS_NONIMAGE_FALLBACK_DATASET, WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS,
                                  ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
                                  ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
-                                 DATA_AUGMENTATION_FEATURE_MASK_PROB)
+                                 DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -419,7 +419,10 @@ class DPDefenseConfigs:
     noise_multiplier: float = 1.0
     max_grad_norm: float = 1.0
     clip_per_layer: bool = False
-    grad_sample_mode: str = 'hook'
+    grad_sample_mode: Literal['ghost', 'hooks', 'functorch'] = 'ghost'
+    delta: float = DP_PAPER_DELTA
+    # When set, Opacus picks the noise multiplier that reaches this epsilon at delta after all epochs.
+    target_epsilon: Optional[float] = None
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class MemGuardDefenseConfigs:
@@ -674,11 +677,16 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
 
     if settings.defender_mode in ['no', 'none', 'vanilla']:
         defender_defense_configs = NoDefenseConfigs()
-    elif settings.defender_mode == 'dp':
+    elif settings.defender_mode in ['dp', 'differential_privacy', 'differential-privacy']:
+        delta = settings.defender_dp_delta
+        if delta is None:
+            delta = DP_PAPER_DELTA
         defender_defense_configs = DPDefenseConfigs(noise_multiplier=settings.defender_dp_noise_multiplier,
                                                     max_grad_norm=settings.defender_dp_max_grad_norm,
                                                     clip_per_layer=settings.defender_dp_clip_per_layer,
-                                                    grad_sample_mode=settings.defender_dp_grad_sample_mode)
+                                                    grad_sample_mode=settings.defender_dp_grad_sample_mode,
+                                                    delta=delta,
+                                                    target_epsilon=settings.defender_dp_epsilon)
     elif settings.defender_mode in ['mem_guard', 'memguard', 'mem-guard']:
         defender_defense_configs = MemGuardDefenseConfigs(shadow_attacker_model_layers=settings.defender_mem_guard_shadow_model_layers,
                                                         shadow_attacker_model_epochs=settings.defender_mem_guard_shadow_model_epochs,

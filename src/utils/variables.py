@@ -112,3 +112,12 @@ ADV_REG_CODE_PENALTY = 'linear'
 # transforms do not apply: our choice, from a check on Purchase (docs/defenses/data_augmentation.md). Unset
 # --defender_augment_feature_mask_prob takes it.
 DATA_AUGMENTATION_FEATURE_MASK_PROB = 0.2
+
+# DP-SGD's delta, at which the privacy budget epsilon is reported and targeted: the value of every experiment of Abadi
+# et al. (arXiv 1607.00133, Sec. 5). Unset --defender_dp_delta takes it.
+DP_PAPER_DELTA = 1e-5
+
+# DP-SAT's radius of the weight perturbation, which the dp defense uses with --defender_optimizer sam: the value of
+# Park et al. without tuning, for all their models but one (arXiv 2306.05651, Appendix G.2, Table 10). Their tuned
+# values range from 0.01 to 0.1 (Table 5). Unset --defender_sam_rho takes it.
+DP_SAT_PAPER_RHO = 0.03

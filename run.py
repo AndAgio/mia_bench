@@ -219,12 +219,16 @@ def main():
     device = resolve_device(experiment_configs.attacker.train.device)
     cuda_peak_memory_mb = (float(torch.cuda.max_memory_allocated(device) / (1024 ** 2))
                            if device.type == 'cuda' else None)
+    # (epsilon, delta) of defenses with a formal guarantee (DP-SGD), None for the others.
+    privacy_budget = defender.get_privacy_budget() or {}
     attacker.add_run_metrics(
         attacker_mode=settings.attacker_mode,
         defender_mode=settings.defender_mode,
         defender_model_name=experiment_configs.defender.model.model_name,
         attacker_configuration=asdict(experiment_configs.attacker.attack),
         defense_configuration=asdict(experiment_configs.defender.defense),
+        privacy_epsilon=privacy_budget.get('epsilon'),
+        privacy_delta=privacy_budget.get('delta'),
         defender_training_configuration=aggregation_train_configuration(
             experiment_configs.defender.train),
         attacker_training_configuration=aggregation_train_configuration(

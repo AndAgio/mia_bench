@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
         # new option does not change the hashes of existing runs. The defaults are starting points, mostly from the
         # papers' CIFAR experiments, to tune per dataset, model and defense: see the Optimizers section of the README.
         parser.add_argument('--defender_sam_rho', type=float, default=None,
-                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05, or 0.5 for the adaptive versions)')
+                                help='SAM, ESAM, WSAM, LookSAM, F-SAM and their adaptive versions: radius of the weight perturbation (default: 0.05, or 0.5 for the adaptive versions, or DP_SAT_PAPER_RHO in src/utils/variables.py for SAM with the dp defense)')
         parser.add_argument('--defender_asam_eta', type=float, default=None,
                                 help='Adaptive versions (ASAM): eta in the normalization abs(w) + eta of the weights, for stability (default: 0.01)')
         parser.add_argument('--defender_esam_beta', type=float, default=None,
@@ -128,12 +128,17 @@ def build_parser() -> argparse.ArgumentParser:
         # parser.add_argument("--defender_use_dp", action="store_true", default=False,
         #                         help="enable Differential Privacy for defender model training",)
         parser.add_argument('--defender_dp_noise_multiplier', type=float, default=1.0,
-                                help='Noise multiplier for DP-SGD')
+                                help='Ratio of the standard deviation of the Gaussian noise to the clipping bound in DP-SGD. Ignored when --defender_dp_epsilon is set')
         parser.add_argument('--defender_dp_max_grad_norm', type=float, default=1.0,
-                                help='Max grad norm for DP-SGD')
+                                help='Clipping bound on the norm of each per-sample gradient in DP-SGD')
         parser.add_argument("--defender_dp_clip_per_layer", action="store_true", default=False,
-                                help="whether to use per layer clipping in DP-SGD",)
-        parser.add_argument("--defender_dp_grad_sample_mode", type=str, default="ghost", choices=["ghost", "hooks"],)
+                                help="Clip the per-sample gradient of each layer separately in DP-SGD, with bounds whose combined norm is the clipping bound",)
+        parser.add_argument("--defender_dp_grad_sample_mode", type=str, default="ghost", choices=["ghost", "hooks", "functorch"],
+                                help="How Opacus computes per-sample gradients in DP-SGD: ghost clipping, hooks or functorch")
+        parser.add_argument('--defender_dp_delta', type=float, default=None,
+                                help='Delta at which DP-SGD reports its epsilon, and reaches --defender_dp_epsilon. Unset: see DP_PAPER_DELTA in src/utils/variables.py')
+        parser.add_argument('--defender_dp_epsilon', type=float, default=None,
+                                help='Epsilon that DP-SGD reaches after all epochs: Opacus picks the noise multiplier, instead of --defender_dp_noise_multiplier. Unset: use the noise multiplier')
         # MemGuard parameters for defender model
         parser.add_argument('--defender_mem_guard_budget', type=float, default=0.1,
                                 help='Budget parameter for MemGuard defense')
