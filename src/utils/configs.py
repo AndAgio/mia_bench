@@ -600,8 +600,10 @@ SAM_SETTINGS = ['sam_rho', 'asam_eta', 'esam_beta', 'esam_gamma', 'wsam_gamma', 
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
     assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
-        # The seed sets the attacker's data split, auditing samples and shadow datasets.
-        attacker_settings = ['dataset', 'val_split', 'n_auditing_samples', 'audit_in_perc', 'n_shadows', 'seed']
+        # The seed sets the attacker's data split, auditing samples and shadow datasets. The defender's share sets
+        # which samples are left for the attacker's pool, and the defender's sets the auditing samples come from.
+        attacker_settings = ['dataset', 'val_split', 'defender_data_split_perc', 'n_auditing_samples', 'audit_in_perc',
+                             'n_shadows', 'seed']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('attacker_') or k in attacker_settings}
     elif mode == 'defender':
         # The seed sets the defender/attacker data split (and Selena's model split), so defenders trained with

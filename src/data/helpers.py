@@ -388,18 +388,22 @@ class MultiDatasets():
 
 class DatasetSplitter:
     @staticmethod
-    def _proportions_to_counts(total_len: int, proportions: Sequence[float]) -> List[int]:
-        """Converts proportions (e.g., [0.2, 0.8]) to absolute counts."""
-        proportions = np.array(proportions) / np.sum(proportions)
+    def _proportions_to_counts(total_len: int, proportions: Sequence[float], normalize: bool = True) -> List[int]:
+        """Converts proportions (e.g., [0.2, 0.8]) to absolute counts. With normalize=False, the proportions are
+        fractions of total_len as given, not rescaled to add up to 1, and the last chunk takes the remainder."""
+        proportions = np.array(proportions)
+        if normalize:
+            proportions = proportions / np.sum(proportions)
         counts = np.floor(proportions * total_len).astype(int)
         counts[-1] = total_len - counts[:-1].sum() # Add remainder to last chunk
         return counts.tolist()
 
     @staticmethod
-    def split_stratified(dataset, proportions: Sequence[float], seed: int = 42):
+    def split_stratified(dataset, proportions: Sequence[float], seed: int = 42, normalize: bool = True):
         """
         Splits into chunks while maintaining class balance.
         Automatically extracts labels from the dataset's (x, y, orig_idx, curr_idx) tuples.
+        With normalize=False, each proportion is a fraction of each class as given (see _proportions_to_counts).
         """
         np.random.seed(seed)
         
@@ -420,7 +424,7 @@ class DatasetSplitter:
         # 2. Distribute indices of each class across the chunks
         for label, indices in label_to_indices.items():
             np.random.shuffle(indices)
-            counts = DatasetSplitter._proportions_to_counts(len(indices), proportions)
+            counts = DatasetSplitter._proportions_to_counts(len(indices), proportions, normalize=normalize)
             
             start = 0
             for i, count in enumerate(counts):

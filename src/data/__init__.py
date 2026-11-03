@@ -1,4 +1,6 @@
+import math
 import os
+import warnings
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 
@@ -119,6 +121,9 @@ def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS
         train_dataset = ImageNet1K(root=root, split='train', download=True, transform=transform)
         test_dataset = ImageNet1K(root=root, split='val', download=True, transform=transform)
     elif dataset == 'tinyimagenet':
+        # TODO: Fix loading Tiny ImageNet: TinyImageNet takes no download argument, so this branch raises a TypeError.
+        # Check whether the class should download the dataset itself, as the other datasets here do.
+        # assignees: AndAgio
         root = os.path.join(datasets_folder, 'tinyimagenet')
         train_dataset = TinyImageNet(root=root, train=True, transform=transform, download=True)
         test_dataset = TinyImageNet(root=root, train=False, transform=transform, download=True)
@@ -146,6 +151,47 @@ def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS
     logger.print_it(f"Loaded dataset '{dataset}' with {len(train_dataset)} training samples and {len(test_dataset)} testing samples. Merged dataset has {len(merged_dataset)} samples in total.")
     return merged_dataset
 
+def split_defender_attacker(merged_dataset, def_split: float, att_split: float, seed: int, logger: callable = None):
+    """Split a dataset between defender and attacker, then the defender's share into training, validation and test.
+
+    Each class is shuffled with the seed and cut in order: the defender's training, validation and test sets (the
+    PERCENTAGE_OF_DATA_TO_USE_FOR_*_SPLIT shares of def_split), the attacker's pool, then any unused rest. The
+    defender's sets therefore depend only on def_split and the seed, never on att_split. Shares adding up to less
+    than 1 leave the rest unused, with a warning; more than 1 is an error. Returns the four sets in that order.
+    """
+    for name, share in (('defender', def_split), ('attacker', att_split)):
+        if not 0 < share <= 1:
+            raise ValueError(f'The {name} share of the dataset must be in (0, 1], got {share}.')
+    total = def_split + att_split
+    if total > 1 and not math.isclose(total, 1):
+        raise ValueError(f'The defender ({def_split:g}) and attacker ({att_split:g}) shares add up to {total:g}, '
+                         f'more than the whole dataset.')
+    proportions = [def_split * PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT,
+                   def_split * PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT,
+                   def_split * PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT,
+                   att_split]
+    if not math.isclose(total, 1):
+        warnings.warn(f'The defender ({def_split:g}) and attacker ({att_split:g}) shares add up to {total:g}: the '
+                      f'rest of the dataset is left unused.')
+        # The last chunk takes each class's rounding remainder: the unused rest, not the attacker's pool.
+        proportions.append(1 - total)
+    # Not normalized: each share is a fraction of each class as given, so the attacker's share moves no defender sample.
+    chunks = DatasetSplitter.split_stratified(merged_dataset, proportions=proportions, seed=seed, normalize=False)
+
+    printer_func = print if logger is None else logger.print_it
+    describe = lambda name, chunk: (f"  - {name}: {len(chunk)} samples where first 10 indices are "
+                                    f"{chunk.get_indices(mode='original')[:10]}")
+    printer_func("Defender dataset split:")
+    printer_func(describe('Defender training set', chunks[0]))
+    printer_func(describe('Defender validation set', chunks[1]))
+    printer_func(describe('Defender testing set', chunks[2]))
+    printer_func("Attacker dataset split:")
+    printer_func(describe('Attacker dataset', chunks[3]))
+    if len(chunks) > 4:
+        printer_func(f"  - Unused: {len(chunks[4])} samples")
+    return chunks[:4]
+
+
 def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOLDER, def_split: float = 0.5, att_split: float = 0.5, seed: int= 12345, logger: callable = None):
     """Return dataset splits packed into a `MultiDatasets` object.
 
@@ -163,24 +209,7 @@ def get_defender_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOL
     """
     merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, logger=logger)
     # The merged dataset allows us to keep track of original indices across train/test splits, which is crucial for mapping back to precomputed per-sample statistics (e.g., memorization scores) that are typically computed on the original training set.
-    # Now split the merged dataset between defender and attacker
-    percentage_for_defender = def_split
-    percentage_for_attacker = att_split
-    
-    chunks = DatasetSplitter.split_stratified(merged_dataset,
-                                            proportions=[percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT, 
-                                                        percentage_for_attacker*PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT, 
-                                                        percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT,
-                                                        percentage_for_attacker], 
-                                            seed=seed)
-
-    printer_func = print if logger is None else logger.print_it
-    printer_func(f"Defender dataset split:")
-    printer_func(f"  - Defender training set: {len(chunks[0])} samples where first 10 indices are {chunks[0].get_indices(mode='original')[:10]}")
-    printer_func(f"  - Defender validation set: {len(chunks[1])} samples where first 10 indices are {chunks[1].get_indices(mode='original')[:10]}")
-    printer_func(f"  - Defender testing set: {len(chunks[2])} samples where first 10 indices are {chunks[2].get_indices(mode='original')[:10]}")
-    printer_func(f"Attacker dataset split:")
-    printer_func(f"  - Attacker dataset: {len(chunks[3])} samples where first 10 indices are {chunks[3].get_indices(mode='original')[:10]}")
+    chunks = split_defender_attacker(merged_dataset, def_split=def_split, att_split=att_split, seed=seed, logger=logger)
 
     defender_train = chunks[0]
     defender_val = chunks[1]
@@ -211,24 +240,7 @@ def get_attacker_datas(dataset: str, datasets_folder: str = DEFAULT_DATASETS_FOL
     """
     merged_dataset = import_dataset_by_name(dataset=dataset, datasets_folder=datasets_folder, logger=logger)
     # The merged dataset allows us to keep track of original indices across train/test splits, which is crucial for mapping back to precomputed per-sample statistics (e.g., memorization scores) that are typically computed on the original training set.
-    # Now split the merged dataset between defender and attacker
-    percentage_for_defender = def_split
-    percentage_for_attacker = att_split
-
-    chunks = DatasetSplitter.split_stratified(merged_dataset,
-                                            proportions=[percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT, 
-                                                        percentage_for_attacker*PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT, 
-                                                        percentage_for_defender*PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT,
-                                                        percentage_for_attacker], 
-                                            seed=seed)
-
-    printer_func = print if logger is None else logger.print_it
-    printer_func(f"Defender dataset split:")
-    printer_func(f"  - Defender training set: {len(chunks[0])} samples where first 10 indices are {chunks[0].get_indices(mode='original')[:10]}")
-    printer_func(f"  - Defender validation set: {len(chunks[1])} samples where first 10 indices are {chunks[1].get_indices(mode='original')[:10]}")
-    printer_func(f"  - Defender testing set: {len(chunks[2])} samples where first 10 indices are {chunks[2].get_indices(mode='original')[:10]}")
-    printer_func(f"Attacker dataset split:")
-    printer_func(f"  - Attacker dataset: {len(chunks[3])} samples where first 10 indices are {chunks[3].get_indices(mode='original')[:10]}")
+    chunks = split_defender_attacker(merged_dataset, def_split=def_split, att_split=att_split, seed=seed, logger=logger)
 
     attacker_data = chunks[3]
     data = MultiDatasets()

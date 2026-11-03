@@ -21,9 +21,9 @@ def build_parser() -> argparse.ArgumentParser:
         # parser.add_argument("--val_split", type=float, default=0.2,
         #                         help="percentage of training data to use for validation during defender model training",)
         parser.add_argument("--defender_data_split_perc", type=float, default=0.5,
-                                help="percentage of the whole dataset to be assigned to the defender for model training. It will be split into training, validation, and testing sets.",)
+                                help="Share of the whole dataset given to the defender, which splits it into its training, validation and test sets (see PERCENTAGE_OF_DATA_TO_USE_FOR_*_SPLIT in src/utils/variables.py). With --attacker_data_split_perc, at most 1 in total: any rest is left unused, with a warning",)
         parser.add_argument("--attacker_data_split_perc", type=float, default=0.5,
-                                help="percentage of the whole dataset to be assigned to the attacker for building the shadow datasets via sampling.",)
+                                help="Share of the whole dataset given to the attacker, for its shadow datasets. With --defender_data_split_perc, at most 1 in total: any rest is left unused, with a warning",)
         parser.add_argument('--n_auditing_samples', type=int, default=1000,
                                 help='Number of samples to use for auditing on the attacker side')
         parser.add_argument('--audit_in_perc', type=float, default=0.5,
