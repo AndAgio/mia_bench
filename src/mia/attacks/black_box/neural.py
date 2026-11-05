@@ -64,8 +64,10 @@ class NeuralMIA(BaseMIA):
         sample_label_map = {}
         self.logger.print_it('Neural MIA attacker: building sample label map...')
         start_map = time.time()
-        for enumerate_index, (_, _, _, sample_id) in enumerate(all_shadow_data):
+        # Items are (input, label, original index, local position): shadow membership is by original index.
+        for enumerate_index, (_, _, sample_id, _) in enumerate(all_shadow_data):
             # self.logger.print_it_same_line(f"Processing sample {enumerate_index}/{len(all_indexed_shadow_data)} for attacking model dataset construction...")
+            sample_id = int(sample_id)
             in_models_indices = self.shadow_manager.find_all_in_dataset_indices_for_sample_id(id=sample_id)
             out_models_indices = [idx for idx in all_shadow_models_indices if idx not in in_models_indices]
             for in_ids in in_models_indices:
@@ -97,7 +99,7 @@ class NeuralMIA(BaseMIA):
         for model_index in all_shadow_models_indices:
             shadow_model = self.shadow_manager.get_model(index=model_index)
             dataloader = DataLoader(all_shadow_data, batch_size=PROCESSING_BATCH_SIZE, shuffle=False)
-            for enumerate_index, (batch_data, _, _, batch_sample_ids) in enumerate(dataloader):
+            for enumerate_index, (batch_data, _, batch_sample_ids, _) in enumerate(dataloader):
                 self.logger.print_it_same_line(f"Processing batch {enumerate_index+1}/{len(dataloader)} of shadow model {model_index+1}/{len(all_shadow_models_indices)} for attacking model dataset construction...", console_only=True)
                 batch_size = batch_data.size(0)
                 batch_features = NeuralMIA.get_model_out(model=shadow_model,
