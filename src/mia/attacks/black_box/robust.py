@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
@@ -15,17 +15,24 @@ class RobustMIA(BaseMIA):
     Paper: "Low-Cost High-Power Membership Inference Attacks",
     https://arxiv.org/pdf/2312.03262.
     """
+    # The paper reports ROC curves only, so the attack decision rule calibrates the threshold.
+    has_own_decisions = False
+
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         assert self.shadow_configs.mode == self.attack_configs.mode, f"Whenever working with RobustMIA the mode for shadow datasets and attack should be the same!"
         self.mode = self.attack_configs.mode
+        # The population z and its ratios p(z|theta)/p(z), drawn once so that every alpha and every scored dataset
+        # (auditing and calibration samples) is compared with the same population.
+        self.population_ratios = None
         self.logger.print_it(f"Working with RobustMIA in {self.mode.upper()} mode!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('RobustMIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('RobustMIA attacker: definition of shadow models...')
@@ -43,10 +50,11 @@ class RobustMIA(BaseMIA):
         self.logger.print_it('RobustMIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
 
-    def measure_effectiveness(self, random_pop_size: int = None, alpha: Union[float, list[float]] = None, gamma: float = None, device: Union[torch.device, str] = 'cpu'):
-        random_pop_size = self.attack_configs.random_pop_size if random_pop_size is None else random_pop_size
-        alpha = self.attack_configs.alpha if alpha is None else alpha
-        gamma = self.attack_configs.gamma if gamma is None else gamma
+    def score(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample with the share of population samples it dominates, once for each alpha to test."""
+        random_pop_size = self.attack_configs.random_pop_size
+        alpha = self.attack_configs.alpha
+        gamma = self.attack_configs.gamma
         if self.mode == 'online':
             self.logger.print_it('Found RobustMIA in ONLINE mode, setting alpha to 0 for ease')
             alphas = [0]
@@ -59,16 +67,15 @@ class RobustMIA(BaseMIA):
         elif isinstance(alpha, float):
             assert 0 < alpha <= 1, f"The given alpha should be between 0 and 1! Found alpha={alpha} instead!"
             alphas = [alpha]
-        scores = {alpha: self.compute_with_alpha(random_pop_size=random_pop_size,
-                                                alpha=alpha,
-                                                gamma=gamma,
-                                                device=device) for alpha in alphas}
-        metrics = {alpha: self.compute_stats(scores[alpha], params={'alpha': float(alpha)}) for alpha in alphas}
-        # self.logger.print_it('RobustMIA attacker: Obtained scores are: {}'.format(metrics))
-        return metrics
+        return [MembershipScores(self.compute_with_alpha(dataset=dataset,
+                                                         random_pop_size=random_pop_size,
+                                                         alpha=alpha,
+                                                         gamma=gamma,
+                                                         device=device),
+                                 params={'alpha': float(alpha)}) for alpha in alphas]
 
 
-    def compute_with_alpha(self, random_pop_size: int, alpha: float, gamma: float = 1, device: Union[torch.device, str] = 'cpu'):
+    def compute_with_alpha(self, dataset: Dataset, random_pop_size: int, alpha: float, gamma: float = 1, device: Union[torch.device, str] = 'cpu'):
         # assert self.mode == 'offline', f"compute_with_given_alpha should be called only for OFFLINE mode!"
         # Compute P(x|theta) for all samples in the auditing dataset
         if self.mode == 'offline':
@@ -78,18 +85,19 @@ class RobustMIA(BaseMIA):
             self.logger.print_it('Computing RobustMIA scores in ONLINE mode')
             assert alpha == 0
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
-        audit_dataset_indices = self.audit_manager.get_all_ids()
+        audit_dataset = dataset
+        audit_dataset_indices = dataset.get_indices(mode='original')
         self.reset_logger()
 
         left_lr = self.compute_p_x_theta_over_p_x(dataset=audit_dataset, dataset_indices=audit_dataset_indices, alpha=alpha, device=device)
 
-        random_data_indices = self.shadow_manager.sample_random_population_indices(num_data=random_pop_size)
-        random_data = self.shadow_manager.get_random_population(indices=random_data_indices,
-                                                                labels='original')
-        self.reset_logger()
-
-        right_lr = self.compute_p_z_theta_over_p_z(dataset=random_data, device=device)
+        if self.population_ratios is None:
+            random_data_indices = self.shadow_manager.sample_random_population_indices(num_data=random_pop_size)
+            random_data = self.shadow_manager.get_random_population(indices=random_data_indices,
+                                                                    labels='original')
+            self.reset_logger()
+            self.population_ratios = self.compute_p_z_theta_over_p_z(dataset=random_data, device=device)
+        right_lr = self.population_ratios
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('RobustMIA attacker: LR computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))

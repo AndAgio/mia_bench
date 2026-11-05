@@ -84,6 +84,10 @@ class AuditingDatasetManager(Loggable):
     def get_all_ids(self):
         assert self.all_ids is not None
         return self.all_ids
+
+    def get_membership_labels(self):
+        """Return 1 for the members and 0 for the non-members, in the order get() yields them."""
+        return np.asarray([1] * len(self.in_ids) + [0] * len(self.out_ids), dtype=np.int64)
     
     def get(self, labels: str = 'mia'):
         self.logger.print_it(f"Getting auditing dataset with {labels} labels...")

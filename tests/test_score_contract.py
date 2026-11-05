@@ -32,8 +32,6 @@ class ScoreContractTests(unittest.TestCase):
                     attack.name = prefix
                     attack.attack_configs = SimpleNamespace(
                         **{f'{prefix}_score_type': mode, f'{prefix}_alpha': .2})
-                    attack.audit_manager = Mock()
-                    attack.audit_manager.get.return_value = dataset
                     attack.shadow_manager = Mock()
                     attack.shadow_manager.get_dataset.return_value = dataset
                     attack.shadow_manager.get_all_models.return_value = {0: torch.nn.Identity()}
@@ -44,13 +42,10 @@ class ScoreContractTests(unittest.TestCase):
                         population, audit = [.1, .2, .3, .4], [.05, .1, .8, .9]
                     attack.compute_batch_scores = Mock(side_effect=[
                         np.asarray(population, dtype=np.float32), np.asarray(audit, dtype=np.float32)])
-                    attack.compute_stats = Mock(return_value={'auc': 1.})
-                    attack.measure_effectiveness()
-                    scores = attack.compute_stats.call_args.args[0]
+                    [(scores, decisions, _)] = attack.score(dataset)
                     self.assertTrue(np.isfinite(scores).all())
                     self.assertEqual(roc_auc_score([0, 0, 1, 1], scores), 1.)
-                    np.testing.assert_array_equal(
-                        attack.compute_stats.call_args.kwargs['decisions'], [False, False, True, True])
+                    np.testing.assert_array_equal(decisions, [False, False, True, True])
 
     def test_reference_attacks_keep_ranking_and_calibrated_decisions(self):
         dataset = TensorDataset(torch.zeros(4, 2), torch.zeros(4, dtype=torch.long),
@@ -63,8 +58,6 @@ class ScoreContractTests(unittest.TestCase):
                     attack.name = prefix
                     attack.attack_configs = SimpleNamespace(
                         **{f'{prefix}_score_type': mode, f'{prefix}_alpha': 0.1})
-                    attack.audit_manager = Mock()
-                    attack.audit_manager.get.return_value = dataset
                     attack.shadow_manager = Mock()
                     attack.shadow_manager.get_dataset.return_value = dataset
                     attack.shadow_manager.get_all_models.return_value = {0: torch.nn.Identity()}
@@ -76,11 +69,8 @@ class ScoreContractTests(unittest.TestCase):
                         raw = 1 - raw
                     threshold = 0.5
                     attack.compute_batch_scores = Mock(return_value=raw)
-                    attack.compute_stats = Mock(return_value={'auc': 1.0})
                     with patch.object(cls, 'batched_smoothed_thresholds', return_value=threshold):
-                        attack.measure_effectiveness()
-                    scores = attack.compute_stats.call_args.args[0]
-                    decisions = attack.compute_stats.call_args.kwargs['decisions']
+                        [(scores, decisions, _)] = attack.score(dataset)
                     self.assertEqual(roc_auc_score([1, 1, 0, 0], scores), 1.0)
                     self.assertEqual(len(np.unique(scores)), 4)
                     np.testing.assert_array_equal(decisions, [1, 1, 1, 1])
@@ -88,15 +78,13 @@ class ScoreContractTests(unittest.TestCase):
     def test_yoqo_scores_use_only_label_agreement(self):
         attack = object.__new__(Yoqo)
         attack.defender_model = torch.nn.Identity()
-        attack.audit_manager = Mock()
-        attack.audit_manager.get.return_value = TensorDataset(
-            torch.zeros(2, 2), torch.zeros(2, dtype=torch.long),
-            torch.arange(2), torch.zeros(2))
+        dataset = TensorDataset(torch.zeros(2, 2), torch.zeros(2, dtype=torch.long),
+                                torch.arange(2), torch.zeros(2))
         # The incorrect prediction has a larger true-class logit. A per-sample
         # common logit shift must have no effect on label-only evidence.
         logits = torch.tensor([[1., 0.], [100., 101.]])
         for inputs in (logits, logits + torch.tensor([[500.], [-500.]])):
-            scores, decisions = attack.compute_scores_from_adversaries(inputs)
+            scores, decisions = attack.compute_scores_from_adversaries(inputs, dataset)
             np.testing.assert_array_equal(scores, [1, 0])
             np.testing.assert_array_equal(decisions, scores)
             self.assertEqual(roc_auc_score([1, 0], scores), 1.0)

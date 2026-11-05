@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
 from src.data.helpers import MergedDataset
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
@@ -35,6 +35,7 @@ class SupervisedBoundaryMIA(BaseMIA):
         self.logger.print_it('Supervised Boundary MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('Supervised Boundary MIA attacker: definition of boundary model...')
@@ -110,21 +111,19 @@ class SupervisedBoundaryMIA(BaseMIA):
         self.attack_threshold = optimal_threshold
 
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample with the target's distance to its decision boundary, and threshold it."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.logger.print_it('Supervised Boundary MIA attacker: measuring attack effectiveness...')
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
         scores, decisions = self.infer_dataset(model=self.defender_model.to(device),
-                                                dataset=audit_dataset,
+                                                dataset=dataset,
                                                 device=device)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Supervised Boundary MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        
-        metrics = self.compute_stats(scores, decisions=decisions)
-        return metrics
+        return [MembershipScores(scores, decisions=decisions)]
 
     @torch.no_grad()
     def _features(self, model: torch.nn.Module, inputs: torch.Tensor, targets: torch.Tensor) -> np.ndarray:

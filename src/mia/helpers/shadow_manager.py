@@ -4,6 +4,7 @@ from src.mia.helpers.shadow_data_manager import ShadowDatasetsManager
 from src.mia.helpers.shadow_models_manager import ShadowModelsManager
 from src.data.helpers import MultiDatasets
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
+from src.mia.helpers.calibration_data_manager import CalibrationDatasetManager
 from src.utils.configs import ShadowDataConfigs, TrainConfigs, ModelConfigs
 from src.utils.log import Loggable, MyLogger, get_logger
 
@@ -16,13 +17,14 @@ class ShadowManager(Loggable):
         self.shadow_data = shadow_data
         self.shadow_models = shadow_models
 
-    def sample_shadow_datasets(self, attacker_data_distribution: MultiDatasets, auditing_dataset: AuditingDatasetManager, shadow_configs: ShadowDataConfigs, attacker_hash: str):
+    def sample_shadow_datasets(self, attacker_data_distribution: MultiDatasets, auditing_dataset: AuditingDatasetManager, shadow_configs: ShadowDataConfigs, attacker_hash: str, calibration_dataset: CalibrationDatasetManager = None):
         if self.shadow_models is not None:
             assert shadow_configs.n_shadow_datasets == self.shadow_models.get_num_models(), f"Number of shadow datasets you're trying to sample does not match the number of shadow models already built!"
         self.shadow_data = ShadowDatasetsManager(attacker_data_distribution=attacker_data_distribution,
                                                 auditing_dataset=auditing_dataset,
                                                 shadow_configs=shadow_configs,
                                                 attacker_hash=attacker_hash,
+                                                calibration_dataset=calibration_dataset,
                                                 logger=self.logger)
 
     def build_shadow_models(self, n_models: int, model_configs: ModelConfigs, same_model_arch: bool=True):

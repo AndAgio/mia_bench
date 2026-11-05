@@ -365,6 +365,9 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         "--defender_lr_sched", "cosine", "--attacker_lr_sched", "cosine",
         "--seed", str(profile.seed),
         "--n_auditing_samples", str(profile.audit_samples), "--audit_in_perc", "0.5",
+        # Every rule, so that each attack also scores its calibration samples.
+        "--n_calibration_samples", str(profile.audit_samples),
+        "--decision_rule", "attack", "calibrated", "oracle",
         "--attacker_robust_rand_pop_size", str(profile.audit_samples),
         "--attacker_robust_alphas", robust_alpha,
         "--attacker_quantile_n", quantiles,
@@ -815,10 +818,10 @@ def install_strict_attack_checks():
     original_stats = BaseMIA.compute_stats
     calls = []
 
-    def checked_stats(attack, scores, decisions=None, params=None):
+    def checked_stats(attack, scores, decisions=None, params=None, **kwargs):
         n_samples = len(attack.audit_manager.get_all_ids())
         validate_attack_outputs(scores, decisions, n_samples)
-        metrics = original_stats(attack, scores, decisions=decisions, params=params)
+        metrics = original_stats(attack, scores, decisions=decisions, params=params, **kwargs)
         if not np.isfinite(metrics["auc"]) or not 0 <= metrics["auc"] <= 1:
             raise ValueError("Attack evaluation must produce a finite AUC in [0, 1]")
         counts = (metrics[k] for k in ("true_positives", "true_negatives", "false_positives", "false_negatives"))

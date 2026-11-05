@@ -3,7 +3,7 @@ import time
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
@@ -29,6 +29,7 @@ class Yoqo(BaseMIA):
         self.logger.print_it('YOQO attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('YOQO attacker: definition of shadow models...')
@@ -46,13 +47,14 @@ class Yoqo(BaseMIA):
         self.logger.print_it('YOQO attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample 1 when the target keeps its label on the sample's adversarial example, 0 otherwise."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.logger.print_it('Computing LiRA scores. This may take a while...')
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
-        audit_dataset_indices = self.audit_manager.get_all_ids()
+        audit_dataset = dataset
+        audit_dataset_indices = dataset.get_indices(mode='original')
         trained_in_shadow_models_for_sample, trained_out_shadow_models_for_sample = self.get_in_out_model_indices_for_audit_samples(audit_dataset_indices=audit_dataset_indices)
         adversarial_examples = self.find_adversarial_examples(dataset=audit_dataset,
                                                                 in_models_samples_map=trained_in_shadow_models_for_sample,
@@ -60,23 +62,18 @@ class Yoqo(BaseMIA):
                                                                 device=device)
         scores, decisions = self.compute_scores_from_adversaries(
             adversarial_examples=adversarial_examples,
+            dataset=audit_dataset,
             device=device,
         )
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('DHAttack attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        
-        metrics = self.compute_stats(scores, decisions=decisions)
-        mia_audit_dataset = self.audit_manager.get(labels='mia')
-        correct_decisions = (decisions == np.array([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)]))
-        attack_accuracy = np.mean(correct_decisions)
-        self.logger.print_it(f"DHAttack attacker: attack accuracy at optimal threshold is {attack_accuracy:.4f}.")
-        return metrics
+        return [MembershipScores(scores, decisions=decisions)]
 
-    def compute_scores_from_adversaries(self, adversarial_examples: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+    def compute_scores_from_adversaries(self, adversarial_examples: torch.Tensor, dataset, device: Union[torch.device, str] = 'cpu'):
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
-        audit_dataset = self.audit_manager.get(labels='original')
+        audit_dataset = dataset
         adversarial_examples_dataset = TensorDataset(adversarial_examples, torch.tensor([label for _, (_, label, _, _) in enumerate(audit_dataset)]))
         dataloader = DataLoader(adversarial_examples_dataset, batch_size=1, shuffle=False)
         scores = []

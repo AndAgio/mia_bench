@@ -68,20 +68,19 @@ class LiRANumericsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "finite logits"):
             LiRA.compute_phi(torch.nn.Identity(), torch.tensor([[float("inf"), 0.]]), torch.tensor([0]), "cpu")
 
-    def test_minimal_attack_evaluation_passes_finite_scores_to_metrics(self):
+    def test_minimal_attack_scoring_gives_finite_scores_and_no_decisions(self):
         attack = object.__new__(LiRA)
         attack.logger = Mock()
         dataset = TensorDataset(torch.zeros(2, 1), torch.zeros(2, dtype=torch.long),
                                 torch.arange(2), torch.arange(2))
-        attack.audit_manager = SimpleNamespace(get=lambda **_: dataset, get_all_ids=lambda: [0, 1])
+        dataset.get_indices = lambda mode: [0, 1]
         attack.shadow_manager = SimpleNamespace(get_all_model_indeces=lambda: [0, 1],
                                                find_all_in_dataset_indices_for_sample_id=lambda **_: [0])
         attack.defender_model = torch.nn.Identity()
         attack.compute_phis = Mock(side_effect=[np.array([[1.], [1.]]), np.array([[0.], [0.]]),
                                                 np.array([[.9], [.1]])])
-        attack.compute_stats = Mock(return_value={"auc": 1.})
-        attack.measure_effectiveness(device="cpu")
-        scores = attack.compute_stats.call_args.args[0]
+        [(scores, decisions, _)] = attack.score(dataset, device="cpu")
+        self.assertIsNone(decisions)
         self.assertTrue(np.isfinite(scores).all())
         self.assertGreater(scores[0], scores[1])
 

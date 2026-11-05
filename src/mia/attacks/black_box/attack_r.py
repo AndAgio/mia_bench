@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import time
 from src.mia.helpers.reference_thresholds import batched_smoothed_thresholds
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
 from src.utils.configs import AttackerConfigs, TrainConfigs
@@ -30,6 +30,7 @@ class AttackRMIA(BaseMIA):
         self.logger.print_it(f"{self.name}: sampling of shadow datasets...")
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it(f"{self.name}: definition of shadow models...")
@@ -46,11 +47,12 @@ class AttackRMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: done optimizing. It took {h}:{m:02d}:{s:02d}...")
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample by its margin to the smoothed threshold of its reference models' scores."""
         start = time.time()
         if isinstance(device, str):
             device = AttackRMIA.get_device(dev_str=device)
-        audit_dataset = self.audit_manager.get(labels='original')
+        audit_dataset = dataset
         audit_loader = torch.utils.data.DataLoader(audit_dataset, batch_size=BATCH_SIZE, shuffle=False)
         self.logger.print_it(f"{self.name}: computing scores. This may take a while...")
         # Build reference loss matrix
@@ -102,9 +104,7 @@ class AttackRMIA(BaseMIA):
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
-        metrics = self.compute_stats(scores, decisions=decisions)
-        self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
-        return metrics
+        return [MembershipScores(scores, decisions=decisions)]
 
     def compute_batch_scores(self, model: torch.nn.Module, data: torch.Tensor, label: torch.Tensor):
         model.eval()

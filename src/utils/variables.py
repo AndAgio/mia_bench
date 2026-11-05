@@ -23,6 +23,9 @@ PERCENTAGE_OF_DATA_TO_USE_FOR_TRAINING_SPLIT = 0.6
 PERCENTAGE_OF_DATA_TO_USE_FOR_VALIDATION_SPLIT = 0.15
 PERCENTAGE_OF_DATA_TO_USE_FOR_TEST_SPLIT = 0.25
 
+# How membership decisions are made from an attack's scores (see src/mia/helpers/decision_rules.py).
+DECISION_RULES = ('attack', 'calibrated', 'oracle')
+
 # Fraction of the defender val split that AdvReg uses as its reference set D' (the rest selects the best checkpoint).
 ADV_REG_REFERENCE_FRACTION_OF_VAL_SPLIT = 0.5
 

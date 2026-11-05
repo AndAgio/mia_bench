@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import time
 from src.mia.helpers.reference_thresholds import batched_smoothed_thresholds
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
 from src.utils.configs import AttackerConfigs, TrainConfigs
@@ -17,6 +17,9 @@ class AttackPMIA(BaseMIA):
     Paper: "Enhanced Membership Inference Attacks against Machine Learning Models",
     https://arxiv.org/pdf/2111.09679.
     """
+    # The smoothed threshold of the target's scores on the population data, computed once for every scored dataset.
+    population_threshold = None
+
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
@@ -30,17 +33,55 @@ class AttackPMIA(BaseMIA):
         self.logger.print_it(f"{self.name}: sampling of shadow datasets...")
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
 
     def optimize(self, train_config: TrainConfigs):
         pass
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample by its margin to the smoothed threshold of the target's scores on population data."""
         start = time.time()
         if isinstance(device, str):
             device = AttackPMIA.get_device(dev_str=device)
         self.logger.print_it(f"{self.name}: computing scores. This may take a while...")
+        if self.population_threshold is None:
+            self.population_threshold = self.compute_population_threshold(device=device)
+        thresholds = self.population_threshold
+        # compute target model batch losses
+        self.logger.print_it(f"{self.name}: forwarding through auditing and thresholding. This may take a while...")
+        start_thresh = time.time()
+        audit_scores = []
+        audit_loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
+        for batch_index, (data, label, _, _) in enumerate(audit_loader):
+            self.logger.print_it_same_line(f"{self.name}: forwarding through auditing and thresholding for batch {batch_index+1}/{len(audit_loader)}...", console_only=True)
+            data = data.to(device)
+            label = label.to(device)
+            audit_scores.append(
+                self.compute_batch_scores(model=self.defender_model,
+                                        data=data,
+                                        label=label)
+            )
+        self.logger.set_logger_newline(console_only=True)
+        audit_scores = np.concatenate(audit_scores, axis=0)
+        # Keep the continuous margin for ROC/AUC, with membership above zero.
+        if self.attack_configs.p_score_type == "confidence":
+            scores = audit_scores - thresholds
+        elif self.attack_configs.p_score_type in ["entropy", "loss"]:
+            scores = thresholds - audit_scores
+        else:
+            raise ValueError(f"Unsupported scoring type '{self.attack_configs.p_score_type}'.")
+        decisions = scores >= 0
+
+        self.logger.print_it(f"{self.name}: auditing forward and thresholding completed in {time.time() - start_thresh:.2f}s.")
+        stop = time.time()
+        h, m, s = convert_to_hms(stop-start)
+        self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
+        return [MembershipScores(scores, decisions=decisions)]
+
+    def compute_population_threshold(self, device: torch.device):
+        """Return the smoothed threshold of the target's scores on the population data, the shadow dataset."""
         shadow_dataset = self.shadow_manager.get_dataset(index=0,
                                                         labels='original')
         shadow_loader = torch.utils.data.DataLoader(shadow_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -66,39 +107,7 @@ class AttackPMIA(BaseMIA):
         start_smooth = time.time()
         thresholds = AttackPMIA.batched_smoothed_thresholds(pop_scores, self.attack_configs.p_alpha)
         self.logger.print_it(f"{self.name}: computed smoothed thresholds in {time.time() - start_smooth:.2f}s.")
-        # compute target model batch losses
-        self.logger.print_it(f"{self.name}: forwarding through auditing and thresholding. This may take a while...")
-        start_thresh = time.time()
-        audit_scores = []
-        audit_dataset = self.audit_manager.get(labels='original')
-        audit_loader = torch.utils.data.DataLoader(audit_dataset, batch_size=BATCH_SIZE, shuffle=False)
-        for batch_index, (data, label, _, _) in enumerate(audit_loader):
-            self.logger.print_it_same_line(f"{self.name}: forwarding through auditing and thresholding for batch {batch_index+1}/{len(audit_loader)}...", console_only=True)
-            data = data.to(device)
-            label = label.to(device)
-            audit_scores.append(
-                self.compute_batch_scores(model=self.defender_model,
-                                        data=data,
-                                        label=label)
-            )
-        self.logger.set_logger_newline(console_only=True)
-        audit_scores = np.concatenate(audit_scores, axis=0)
-        # Keep the continuous margin for ROC/AUC, with membership above zero.
-        if self.attack_configs.p_score_type == "confidence":
-            scores = audit_scores - thresholds
-        elif self.attack_configs.p_score_type in ["entropy", "loss"]:
-            scores = thresholds - audit_scores
-        else:
-            raise ValueError(f"Unsupported scoring type '{self.attack_configs.p_score_type}'.")
-        decisions = scores >= 0
-
-        self.logger.print_it(f"{self.name}: auditing forward and thresholding completed in {time.time() - start_thresh:.2f}s.")
-        stop = time.time()
-        h, m, s = convert_to_hms(stop-start)
-        self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
-        metrics = self.compute_stats(scores, decisions=decisions)
-        self.logger.print_it(f"{self.name}: Obtained AUC score is: {metrics['auc']}")
-        return metrics
+        return thresholds
 
     def compute_batch_scores(self, model: torch.nn.Module, data: torch.Tensor, label: torch.Tensor):
         model.eval()

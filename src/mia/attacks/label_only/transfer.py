@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
 from src.data.helpers import MultiDatasets, MergedDataset, TargetOverrideDataset
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
@@ -35,6 +35,7 @@ class TransferMIA(BaseMIA):
         self.logger.print_it('Transfer MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('Transfer MIA attacker: definition of transfer model...')
@@ -131,33 +132,28 @@ class TransferMIA(BaseMIA):
         self.logger.print_it(f"Optimal threshold found on shadow dataset: {optimal_threshold} with accuracy {accuracy_scores[optimal_idx]}")
         return optimal_threshold, accuracy_scores[optimal_idx]
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample with the transfer model's score on it, and threshold it."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
-        self.logger.print_it('Transfer MIA attacker: finding optimal threshold on shadow dataset...')
-        start = time.time()
-        self.find_optimal_threshold(device=device)
-        stop = time.time()
-        h, m, s = convert_to_hms(stop-start)
-        self.logger.print_it('Transfer MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
+        if self.attack_threshold is None:
+            self.logger.print_it('Transfer MIA attacker: finding optimal threshold on shadow dataset...')
+            start = time.time()
+            self.find_optimal_threshold(device=device)
+            stop = time.time()
+            h, m, s = convert_to_hms(stop-start)
+            self.logger.print_it('Transfer MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
         self.logger.print_it('Transfer MIA attacker: measuring attack effectiveness...')
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
         shadow_model = self.shadow_manager.shadow_models.get(index=0).to(device)
         scores, decisions = self.infer_dataset(model=shadow_model,
-                                                dataset=audit_dataset,
+                                                dataset=dataset,
                                                 device=device)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Transfer MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        
-        metrics = self.compute_stats(scores, decisions=decisions)
-        mia_audit_dataset = self.audit_manager.get(labels='mia')
-        correct_decisions = (decisions == np.array([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)]))
-        attack_accuracy = np.mean(correct_decisions)
-        self.logger.print_it(f"Transfer MIA attacker: attack accuracy at optimal threshold is {attack_accuracy:.4f}.")
-        return metrics
+        return [MembershipScores(scores, decisions=decisions)]
 
     @torch.no_grad()
     def _features(self, model: torch.nn.Module, inputs: torch.Tensor, true_labels: torch.Tensor) -> torch.Tensor:

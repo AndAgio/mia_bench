@@ -22,11 +22,11 @@ ID_FIELDS = {
 
 AGGREGATE_METRICS = (
     'auc', 'tpr_at_fpr_0.001', 'tpr_at_fpr_0.01', 'tpr_at_fpr_0.1',
-    'attack_accuracy', 'model_accuracy', 'recovered_member_count',
+    'attack_accuracy', 'membership_advantage', 'model_accuracy', 'recovered_member_count',
     'model_train_accuracy', 'model_test_accuracy', 'accuracy_generalization_gap',
     'model_train_loss', 'model_test_loss', 'loss_generalization_gap',
     'attack_optimization_seconds', 'attack_evaluation_seconds',
-    'target_model_queries_total', 'target_model_queries_mean_per_audit_sample',
+    'target_model_queries_total', 'target_model_queries_calibration', 'target_model_queries_mean_per_audit_sample',
     'audit_samples_per_evaluation_second',
     'recovered_members_per_1000_target_queries',
 )
@@ -80,7 +80,7 @@ def aggregate_rows(rows: list[dict]) -> list[dict]:
     identity_fields = (
         'attacker_mode', 'defender_mode', 'defender_model_name', 'dataset_name',
         'defender_split', 'attacker_split', 'audit_in_percentage',
-        'configured_audit_samples', 'configured_shadow_datasets',
+        'configured_audit_samples', 'configured_shadow_datasets', 'configured_calibration_samples', 'calibration_fpr',
     )
     groups = {}
     for row in rows:
@@ -104,7 +104,7 @@ def aggregate_rows(rows: list[dict]) -> list[dict]:
                       if row.get(metric) is not None and isinstance(row.get(metric), (int, float))]
             if values:
                 bounded_ratios = {'auc', 'tpr_at_fpr_0.001', 'tpr_at_fpr_0.01',
-                                  'tpr_at_fpr_0.1', 'attack_accuracy', 'model_accuracy',
+                                  'tpr_at_fpr_0.1', 'attack_accuracy', 'membership_advantage', 'model_accuracy',
                                   'model_train_accuracy', 'model_test_accuracy'}
                 if metric in bounded_ratios:
                     bounds = (0.0, 1.0)

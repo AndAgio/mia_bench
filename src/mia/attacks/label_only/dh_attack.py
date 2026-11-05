@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 from scipy.stats import norm
 from src.data.helpers import MultiDatasets, TargetOverrideDataset, get_dataset_transform
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
@@ -31,6 +31,7 @@ class DHAttack(BaseMIA):
         self.logger.print_it('DHAttack: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('DHAttack: definition of shadow models...')
@@ -84,29 +85,23 @@ class DHAttack(BaseMIA):
         # Relabeling the shadow dataset with the obtained relabels
         return TargetOverrideDataset(shadow_dataset, all_relabels)
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample with the target's relative fixed-input distance, and threshold it."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.logger.print_it('DHAttack attacker: measuring attack effectiveness...')
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
-        scores, decisions = self.infer_dataset(dataset=audit_dataset,
+        scores, decisions = self.infer_dataset(dataset=dataset,
                                                 device=device)
         print(f"scores: {scores}")
         print(f"decisions: {decisions}")
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('DHAttack attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        metrics = self.compute_stats(scores, decisions=decisions)
-        mia_audit_dataset = self.audit_manager.get(labels='mia')
-        mia_labels = torch.asarray([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)])
-        assert scores.shape == mia_labels.shape, f"Unexpected shape for scores: {scores.shape}, expected {mia_labels.shape}"
-        assert decisions.shape == mia_labels.shape, f"Unexpected shape for decisions: {decisions.shape}, expected {mia_labels.shape}"
-        correct_decisions = (decisions == mia_labels)
-        print(correct_decisions)
-        attack_accuracy = np.mean(correct_decisions.numpy())
-        self.logger.print_it(f"DHAttack attacker: attack accuracy at threshold {self.attack_threshold:.4f} is {attack_accuracy:.4f}.")
-        return metrics
+        assert scores.shape == (len(dataset),), f"Unexpected shape for scores: {scores.shape}"
+        assert decisions.shape == scores.shape, f"Unexpected shape for decisions: {decisions.shape}"
+        self.logger.print_it(f"DHAttack attacker: decisions at threshold {self.attack_threshold:.4f}.")
+        return [MembershipScores(scores, decisions=decisions)]
 
     @torch.no_grad()
     def fixedbd_over_model(self, model: torch.nn.Module, inputs: torch.Tensor, true_labels: torch.Tensor) -> np.ndarray:

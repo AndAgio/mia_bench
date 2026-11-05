@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
 from src.data.helpers import MergedDataset
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
@@ -28,10 +28,13 @@ class NoiseRobustnessMIA(BaseMIA):
         if self.shadow_configs.n_shadow_datasets != 1:
             self.logger.print_it(f"Noise Robustness MIA attacker [WARNING]: when using noise robustness MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
             self.shadow_configs.n_shadow_datasets = 1
+        # Found on the shadow model before the first samples are scored.
+        self.attack_threshold, self.best_sigma = None, None
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Noise Robustness MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('Noise Robustness MIA attacker: definition of noise robustness model...')
@@ -112,34 +115,29 @@ class NoiseRobustnessMIA(BaseMIA):
         self.attack_threshold = optimal_threshold
         return optimal_threshold, accuracy_scores[optimal_idx]
 
-    def measure_effectiveness(self, sigmas: Union[float, list[float]] = None, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample by how often the target keeps its label under noise, and threshold it."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
-        self.logger.print_it('Noise Robustness MIA attacker: finding optimal threshold on shadow dataset...')
-        start = time.time()
-        self.find_optimal_sigma_and_threshold(sigmas=sigmas, device=device)
-        stop = time.time()
-        h, m, s = convert_to_hms(stop-start)
-        self.logger.print_it('Noise Robustness MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
+        if self.attack_threshold is None:
+            self.logger.print_it('Noise Robustness MIA attacker: finding optimal threshold on shadow dataset...')
+            start = time.time()
+            self.find_optimal_sigma_and_threshold(sigmas=None, device=device)
+            stop = time.time()
+            h, m, s = convert_to_hms(stop-start)
+            self.logger.print_it('Noise Robustness MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
         
         self.logger.print_it('Noise Robustness MIA attacker: measuring attack effectiveness...')
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
         scores, decisions = self.infer_dataset(model=self.defender_model.to(device),
-                                                dataset=audit_dataset,
+                                                dataset=dataset,
                                                 device=device)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Noise Robustness MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        
-        metrics = self.compute_stats(scores, decisions=decisions)
-
-        self.logger.print_it(f"Noise Robustness MIA attacker: attack effectiveness measured! AUC score is {metrics['auc']:.4f} at optimal threshold {self.attack_threshold:.4f} with best sigma {self.best_sigma}.")
-        mia_audit_dataset = self.audit_manager.get(labels='mia')
-        correct_decisions = (decisions == np.array([label for _, (_, label, _, _) in enumerate(mia_audit_dataset)]))
-        attack_accuracy = np.mean(correct_decisions)
-        self.logger.print_it(f"Noise Robustness MIA attacker: attack accuracy at optimal threshold is {attack_accuracy:.4f}.")
-        return metrics
+        self.logger.print_it(f"Noise Robustness MIA attacker: threshold {self.attack_threshold:.4f}, "
+                             f"best sigma {self.best_sigma}.")
+        return [MembershipScores(scores, decisions=decisions)]
 
     @torch.no_grad()
     def _features(self, model: torch.nn.Module, inputs: torch.Tensor, true_labels: torch.Tensor, sigma: float) -> np.ndarray:

@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 from scipy.stats import norm
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import TrainConfigs, AttackerConfigs
 from src.utils import convert_to_hms
@@ -18,6 +18,9 @@ class LiRA(BaseMIA):
     Scores are log likelihood ratios; larger values indicate membership, and
     zero corresponds to equal in/out likelihoods.
     """
+    # The paper reports ROC curves only, so the attack decision rule calibrates the threshold.
+    has_own_decisions = False
+
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
@@ -27,6 +30,7 @@ class LiRA(BaseMIA):
         self.logger.print_it('LiRA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('LiRA attacker: definition of shadow models...')
@@ -44,11 +48,12 @@ class LiRA(BaseMIA):
         self.logger.print_it('LiRA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample with the likelihood ratio of the target's output under its in and out shadow models."""
         self.logger.print_it('Computing LiRA scores. This may take a while...')
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
-        audit_dataset_indices = self.audit_manager.get_all_ids()
+        audit_dataset = dataset
+        audit_dataset_indices = dataset.get_indices(mode='original')
 
         all_models_indices = self.shadow_manager.get_all_model_indeces()
         trained_in_shadow_models_for_sample = []
@@ -78,9 +83,7 @@ class LiRA(BaseMIA):
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('LiRA attacker: score computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))
-
-        metrics = self.compute_stats(scores)
-        return metrics
+        return [MembershipScores(scores)]
 
         
     def compute_phis(self, audit_dataset: Dataset, models_for_sample: list[list[Union[int, torch.nn.Module]]], device: Union[torch.device, str] = 'cpu'):

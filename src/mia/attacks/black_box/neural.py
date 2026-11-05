@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import time
 from src.data.helpers import IndexedDataset
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
 from src.utils.configs import AttackerConfigs, TrainConfigs
@@ -34,6 +34,7 @@ class NeuralMIA(BaseMIA):
         self.logger.print_it('Neural MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('Neural MIA attacker: definition of shadow models...')
@@ -136,10 +137,10 @@ class NeuralMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it(f"Neural MIA attacker: optimization of the attack took {h}:{m:02d}:{s:02d}.")
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
-        # Compute scores on the auditing dataset
-        self.logger.print_it('Neural MIA attacker: computing scores on the auditing dataset...')
-        audit_dataset = self.audit_manager.get(labels='mia')
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample with the attack model's logit on the target's output."""
+        self.logger.print_it('Neural MIA attacker: computing scores...')
+        audit_dataset = dataset
         start = time.time()
         if isinstance(device, str):
             device = NeuralMIA.get_device(dev_str=device)
@@ -160,10 +161,8 @@ class NeuralMIA(BaseMIA):
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Neural MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))
-
-        metrics = self.compute_stats(scores)
-        self.logger.print_it('Neural MIA attacker: Obtained AUC score is: {}'.format(metrics['auc']))
-        return metrics
+        # The attack model's own rule: a member when it gives membership a probability of at least 0.5.
+        return [MembershipScores(scores, decisions=scores >= 0)]
 
     def train_attacker_model(self, model: nn.Module, train_loader: DataLoader, device: Union[torch.device, str] = 'cpu'):
         self.logger.print_it('Neural MIA attacker: training the attacking model. This may take a while...')

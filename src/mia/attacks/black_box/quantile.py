@@ -4,7 +4,7 @@ import numpy as np
 from scipy.special import logsumexp, ndtri
 from src.data.helpers import IndexedDataset
 from src.data.helpers import MultiDatasets
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils.log import get_logger
@@ -34,6 +34,7 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
                                                     auditing_dataset=self.audit_manager,
+                                                    calibration_dataset=self.calibration_manager,
                                                     shadow_configs=self.shadow_configs,
                                                     attacker_hash=self.attacker_hash)
         self.logger.print_it('Quantile MIA attacker: definition of quantile model...')
@@ -114,7 +115,8 @@ class QuantileMIA(BaseMIA):
             score -= torch.max(logits_masked, dim=1)[0]
         return score, logits
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample by how far the target's score exceeds the predicted quantile: members exceed it."""
         self.logger.print_it('Computing Quantile MIA scores. This may take a while...')
         start = time.time()
         if isinstance(device, str):
@@ -122,7 +124,7 @@ class QuantileMIA(BaseMIA):
         quantile_model = self.shadow_manager.get_model(index=0).to(device)
         quantile_model.eval()
         self.defender_model.eval()
-        audit_dataset = self.audit_manager.get(labels='original')
+        audit_dataset = dataset
         self.reset_logger()
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
@@ -153,10 +155,8 @@ class QuantileMIA(BaseMIA):
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Quantile MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))
-
-        metrics = self.compute_stats(scores)
-        self.logger.print_it('Quantile MIA attacker: Obtained AUC score is: {}'.format(metrics['auc']))
-        return metrics
+        # The paper's rule: a member when the target's score exceeds the predicted quantile.
+        return [MembershipScores(scores, decisions=scores > 0)]
     
 
 def gaussian_margin_scores(target_scores, predictions, quantile):

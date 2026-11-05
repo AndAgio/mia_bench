@@ -6,6 +6,7 @@ import copy
 import torch
 from src.data.helpers import MultiDatasets, MergedDataset, SubsampledDataset, ConstantLabelDataset
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
+from src.mia.helpers.calibration_data_manager import CalibrationDatasetManager
 from src.utils.configs import ShadowDataConfigs
 from src.utils.log import Loggable, MyLogger
 from src.utils.variables import DEFAULT_SHADOW_DATASETS_FOLDER, PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS
@@ -19,6 +20,7 @@ class ShadowDatasetsManager(Loggable):
                 auditing_dataset: AuditingDatasetManager,
                 shadow_configs: ShadowDataConfigs,
                 attacker_hash: str,
+                calibration_dataset: CalibrationDatasetManager = None,
                 logger: MyLogger = None):
         super().__init__(logger=logger)
         assert 'all' in attacker_data_distribution.get_ids(), f"Attacker data distribution should contain a split with id 'all' containing all the data available for the attacker to build shadow datasets from! Found splits with ids {attacker_data_distribution.get_ids()} instead!"
@@ -33,11 +35,17 @@ class ShadowDatasetsManager(Loggable):
         self.auditing_indices = auditing_dataset.get_all_ids()
         assert self.auditing_indices == auditing_dataset.get('original').get_indices(mode='original'), f"Auditing indices should match the original auditing dataset indices! Found {self.auditing_indices} and {auditing_dataset.get('original').get_indices(mode='original')} instead!"
         self.auditing_dataset = auditing_dataset
+        # The calibration samples are treated like the auditing ones: in no shadow dataset offline, in exactly half
+        # online. Unlike them, they come from the attacker's pool, so they are kept out of its other uses too.
+        self.calibration_indices = calibration_dataset.get_ids() if calibration_dataset is not None else []
+        self.inserted_indices = self.auditing_indices + self.calibration_indices
+        self.inserted_set = set(self.inserted_indices)
 
-        n_shadow_samples = math.ceil(len(attacker_data_distribution.get('all'))*PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS)
-        n_auditing_samples = len(self.auditing_indices)
+        n_pool_samples = len(attacker_data_distribution.get('all')) - len(self.calibration_indices)
+        n_shadow_samples = math.ceil(n_pool_samples*PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS)
+        n_inserted_samples = len(self.inserted_indices)
         if self.mode == 'online':
-            assert n_shadow_samples > n_auditing_samples, f"In ONLINE shadow dataset mode, the number of samples available for shadow dataset sampling should be larger than the number of auditing samples! Found {n_shadow_samples} shadow samples and {n_auditing_samples} auditing samples instead!"
+            assert n_shadow_samples > n_inserted_samples, f"In ONLINE shadow dataset mode, the number of samples available for shadow dataset sampling should be larger than the number of auditing and calibration samples! Found {n_shadow_samples} shadow samples and {n_inserted_samples} auditing and calibration samples instead!"
         self.n_samples_per_dataset = n_shadow_samples
 
         assert 0 < shadow_configs.n_shadow_datasets <= MAX_SHADOW_DATASETS, f"Number of shadow datasets should be between 1 and {MAX_SHADOW_DATASETS}! Found {shadow_configs.n_shadow_datasets} instead!" 
@@ -77,8 +85,8 @@ class ShadowDatasetsManager(Loggable):
         shadow_datasets_indices = self.sample_indices_for_offline_shadow_datasets()
         if self.mode == 'online':
             # Use a set for fast membership checks and avoid rebuilding 'ids' on every small change.
-            assert self.n_samples_per_dataset > len(self.auditing_indices), f"Number of samples per shadow dataset should be larger than number of auditing samples in online mode!"
-            in_indices_to_add = copy.deepcopy(self.auditing_indices)
+            assert self.n_samples_per_dataset > len(self.inserted_indices), f"Number of samples per shadow dataset should be larger than number of auditing and calibration samples in online mode!"
+            in_indices_to_add = copy.deepcopy(self.inserted_indices)
             in_indices_set = set(in_indices_to_add)
             train_len = len(self.attacker_data_distribution.get('all')) # Assuming 'all' contains the combined data of train and test
             s = time.time()
@@ -109,8 +117,7 @@ class ShadowDatasetsManager(Loggable):
 
     def sample_indices_for_offline_shadow_datasets(self):
         available_indices = self.attacker_data_distribution.get('all').get_indices(mode='original')
-        indices_to_avoid = copy.deepcopy(self.auditing_indices)
-        available_indices = [i for i in available_indices if i not in indices_to_avoid]
+        available_indices = [i for i in available_indices if i not in self.inserted_set]
         shadow_datasets_indices = {i: {} for i in range(self.n_shadow_datasets)}
         s = time.time()
         self.logger.print_it(f"Sampling all {self.n_shadow_datasets} shadow datasets...")
@@ -135,9 +142,9 @@ class ShadowDatasetsManager(Loggable):
             raise ValueError(f"Mode should be either online or offline! Found '{self.mode}' instead!")
         found_outcomes = []
         s = time.time()
-        self.logger.print_it(f"Checking correctness of shadow datasets in {self.mode} mode for all {len(self.auditing_indices)} samples. This may take a while...")
-        for k, index in enumerate(self.auditing_indices):
-            self.logger.print_it_same_line(f'Checking correctness for sample {k+1}/{len(self.auditing_indices)}...', console_only=True)
+        self.logger.print_it(f"Checking correctness of shadow datasets in {self.mode} mode for all {len(self.inserted_indices)} samples. This may take a while...")
+        for k, index in enumerate(self.inserted_indices):
+            self.logger.print_it_same_line(f'Checking correctness for sample {k+1}/{len(self.inserted_indices)}...', console_only=True)
             n_ins_found = 0
             n_outs_found = 0
             for shadow_index in range(self.n_shadow_datasets):
@@ -154,9 +161,8 @@ class ShadowDatasetsManager(Loggable):
         return all(found_outcomes)
 
     def sample_random_indices(self, num_data: int = 1000):
-        indices_to_avoid = copy.deepcopy(self.auditing_indices)
         available_indices = self.attacker_data_distribution.get('all').get_indices(mode='original')
-        available_indices = [i for i in available_indices if i not in indices_to_avoid]
+        available_indices = [i for i in available_indices if i not in self.inserted_set]
         self.logger.print_it(f"Sampling random sample dataset...")
         sampled_indices = self._rng.choice(available_indices,
                                         num_data,
@@ -307,9 +313,9 @@ class ShadowDatasetsManager(Loggable):
         assert labels in ['original', 'shadow'], f"Invalid labels mode {labels} found when trying to sample outside shadow dataset with id {index}!"
         inside_ids = self.shadow_datasets_map[index]
         all_available_data = self.attacker_data_distribution.get('all').get_indices(mode='original')
-        indices_to_avoid = copy.deepcopy(self.auditing_indices)
-        indices_train = [i for i in all_available_data if i not in indices_to_avoid]
-        available_indices = [i for i in indices_train if i not in inside_ids]
+        indices_train = [i for i in all_available_data if i not in self.inserted_set]
+        inside_set = set(inside_ids)
+        available_indices = [i for i in indices_train if i not in inside_set]
         assert len(available_indices) >= num_data, f"Not enough available data to sample outside shadow dataset! Requested {num_data} samples but only {len(available_indices)} are available."
         sampled_indices = self._rng.choice(available_indices, num_data, replace=False).tolist()
         if labels == 'original':

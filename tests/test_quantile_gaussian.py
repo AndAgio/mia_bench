@@ -58,7 +58,7 @@ class GaussianQuantileTests(unittest.TestCase):
             with self.subTest(predictions=predictions), self.assertRaises(ValueError):
                 gaussian_margin_scores([0.], predictions, .8)
 
-    def test_attack_evaluation_uses_stable_gaussian_scores(self):
+    def test_attack_scoring_uses_stable_gaussian_scores(self):
         class LargeScaleHead(torch.nn.Module):
             def forward(self, inputs):
                 return torch.stack((torch.zeros(len(inputs)), inputs[:, 0]), dim=1)
@@ -68,17 +68,16 @@ class GaussianQuantileTests(unittest.TestCase):
         attack = object.__new__(QuantileMIA)
         attack.logger = Mock()
         attack.reset_logger = Mock()
-        attack.audit_manager = SimpleNamespace(get=lambda **_: dataset)
         attack.shadow_manager = SimpleNamespace(get_model=lambda **_: LargeScaleHead())
         attack.defender_model = torch.nn.Identity()
         attack.defender_scoring_fn = lambda *args, **kwargs: (torch.tensor([0.]), None)
         attack.attack_configs = SimpleNamespace(use_gaussian=True, quantile_alpha=.2)
         attack.quantile = torch.tensor([[.1, .8, .9]])
-        attack.compute_stats = Mock(return_value={"auc": 1.})
-        attack.measure_effectiveness(device="cpu")
-        scores = attack.compute_stats.call_args.args[0]
+        [(scores, decisions, _)] = attack.score(dataset, device="cpu")
         self.assertTrue(np.isfinite(scores).all())
         self.assertGreater(scores[0], scores[1])
+        # The paper's rule: a member when the target's score exceeds the predicted quantile.
+        np.testing.assert_array_equal(decisions, scores > 0)
 
 
 if __name__ == "__main__":

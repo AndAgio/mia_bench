@@ -272,6 +272,15 @@ class ShadowDataConfigs:
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
+class EvaluationConfigs:
+    """The last stage: how the attack's scores become membership decisions, and the samples that calibrate them."""
+    decision_rules: List[str] = field(default_factory=lambda: ['attack'])
+    calibration_fpr: float = 0.1
+    n_calibration_samples: int = 1000
+    seed: int = 12345
+
+
+@dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class FullDataConfigs:
     base: DatasetConfigs
     auditing: AuditingDataConfigs
@@ -583,6 +592,7 @@ class AttackerConfigs:
     model: ModelConfigs
     train: TrainConfigs
     attack: AttackConfigs
+    evaluation: EvaluationConfigs = field(default_factory=EvaluationConfigs)
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -601,9 +611,10 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
     assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
         # The seed sets the attacker's data split, auditing samples and shadow datasets. The defender's share sets
-        # which samples are left for the attacker's pool, and the defender's sets the auditing samples come from.
+        # which samples are left for the attacker's pool, and the defender's sets the auditing samples come from. The
+        # calibration samples are held out of the shadow datasets; the decision rule only acts after the attack.
         attacker_settings = ['dataset', 'val_split', 'defender_data_split_perc', 'n_auditing_samples', 'audit_in_perc',
-                             'n_shadows', 'seed']
+                             'n_calibration_samples', 'n_shadows', 'seed']
         relevant_settings = {k: v for k, v in vars(settings).items() if k.startswith('attacker_') or k in attacker_settings}
     elif mode == 'defender':
         # The seed sets the defender/attacker data split (and Selena's model split), so defenders trained with
@@ -992,7 +1003,12 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         dataset=full_data_configs,
                                         model=attacker_model_configs,
                                         train=attacker_train_configs,
-                                        attack=attack_configs)
+                                        attack=attack_configs,
+                                        evaluation=EvaluationConfigs(
+                                            decision_rules=settings.decision_rule,
+                                            calibration_fpr=settings.calibration_fpr,
+                                            n_calibration_samples=settings.n_calibration_samples,
+                                            seed=settings.seed))
     
     experiment_configs = ExperimentConfigs(hash=exp_hash,
                                             defender=defender_configs,

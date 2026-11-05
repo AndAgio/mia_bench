@@ -173,7 +173,12 @@ def main():
     attacker.prepare_audit_analysis(device=experiment_configs.attacker.train.device)
     attack_evaluation_start = time.perf_counter()
     with TargetQueryCounter(defender_model) as query_counter:
-        attacker.measure_effectiveness(device=experiment_configs.attacker.train.device)
+        attacker.score_auditing(device=experiment_configs.attacker.train.device)
+    # Scored only when a decision rule calibrates a threshold; its queries are counted apart.
+    with TargetQueryCounter(defender_model) as calibration_query_counter:
+        attacker.score_calibration(device=experiment_configs.attacker.train.device)
+    # The last stage: the decision rules turn the scores into decisions, without querying the target.
+    attacker.evaluate()
     attack_evaluation_seconds = time.perf_counter() - attack_evaluation_start
     target_query_count = query_counter.count
 
@@ -239,6 +244,7 @@ def main():
         audit_in_percentage=float(experiment_configs.attacker.dataset.auditing.in_perc),
         configured_audit_samples=int(experiment_configs.attacker.dataset.auditing.n_auditing_samples),
         configured_shadow_datasets=int(experiment_configs.attacker.dataset.shadow.n_shadow_datasets),
+        configured_calibration_samples=int(experiment_configs.attacker.evaluation.n_calibration_samples),
         seed=int(experiment_configs.defender.dataset.base.seed),
         model_accuracy=float(test_performance['accuracy']),
         model_accuracy_split='test',
@@ -257,6 +263,7 @@ def main():
         attack_optimization_seconds=float(attack_optimization_seconds),
         attack_evaluation_seconds=float(attack_evaluation_seconds),
         target_model_queries_total=int(target_query_count),
+        target_model_queries_calibration=int(calibration_query_counter.count),
         target_model_queries_mean_per_audit_sample=float(target_query_count / n_audit_samples),
         audit_samples_per_evaluation_second=float(n_audit_samples / attack_evaluation_seconds),
         configured_max_queries_per_sample=(int(configured_queries)

@@ -3,7 +3,7 @@ import json
 import os
 import pathlib
 from src.utils.configs import generate_configs_from_settings, get_hash_from_settings, get_relevant_settings
-from .variables import DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
+from .variables import DECISION_RULES, DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
 
 
 def gather_settings():
@@ -28,6 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Number of samples to use for auditing on the attacker side')
         parser.add_argument('--audit_in_perc', type=float, default=0.5,
                                 help='Percentage of auditing samples that are coming from the training set')
+        parser.add_argument('--n_calibration_samples', type=int, default=1000,
+                                help="Number of samples held out of the attacker's share as known non-members of the target, to calibrate decision thresholds. Like the auditing samples, they are in no shadow dataset offline and in exactly half of them online. 0 holds none out, which leaves only the oracle rule and the attack rule of attacks with a rule of their own")
+        parser.add_argument('--decision_rule', type=str, nargs='+', default=['attack'], choices=DECISION_RULES,
+                                help="How the attack's scores become membership decisions, which set accuracy, precision, recall, F1 and the per-sample predictions (AUC and TPR at fixed FPR do not depend on it). attack: the attack's own rule, or calibrated for attacks without one (LiRA, RobustMIA). calibrated: the threshold that a share --calibration_fpr of the calibration samples exceed. oracle: the threshold maximizing TPR - FPR on the auditing labels, the strongest attacker a defender may face. Several rules give one result each, from the same scores")
+        parser.add_argument('--calibration_fpr', type=float, default=0.1,
+                                help='False-positive rate that the calibrated decision rule allows on the calibration samples')
         parser.add_argument('--seed', type=int, default=12345,
                                 help='random seed (default:12345)')
 

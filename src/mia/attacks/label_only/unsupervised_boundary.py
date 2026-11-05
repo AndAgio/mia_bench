@@ -4,7 +4,7 @@ import time
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
-from src.mia.attacks.base_mia import BaseMIA
+from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.data import get_dataset_mean_std
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
@@ -79,21 +79,19 @@ class UnsupervisedBoundaryMIA(BaseMIA):
         self.attack_threshold = float(np.quantile(all_feats, self.attack_configs.quantile))
         self.logger.print_it(f'Boundary threshold from random inputs: {self.attack_threshold:.4f}')
 
-    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
+        """Score each sample with the target's distance to its decision boundary, and threshold it."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.logger.print_it('Unsupervised Boundary MIA attacker: measuring attack effectiveness...')
         start = time.time()
-        audit_dataset = self.audit_manager.get(labels='original')
         scores, decisions = self.infer_dataset(model=self.defender_model.to(device),
-                                                dataset=audit_dataset,
+                                                dataset=dataset,
                                                 device=device)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Unsupervised Boundary MIA attacker: Done measuring attack effectiveness. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        
-        metrics = self.compute_stats(scores, decisions=decisions)
-        return metrics
+        return [MembershipScores(scores, decisions=decisions)]
 
     @torch.no_grad()
     def _features(self, model: torch.nn.Module, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:

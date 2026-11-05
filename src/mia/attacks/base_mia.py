@@ -1,4 +1,4 @@
-from typing import Union
+from typing import List, NamedTuple, Optional, Union
 import pathlib
 import torch
 import numpy as np
@@ -7,14 +7,26 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from src.data import get_defender_datas, get_attacker_datas
 from src.mia.helpers.auditing_data_manager import AuditingDatasetManager
+from src.mia.helpers.calibration_data_manager import CalibrationDatasetManager
+from src.mia.helpers.decision_rules import decide
 from src.mia.helpers.results_manager import ResultManager
 from src.utils.configs import AttackerConfigs
 from src.utils.log import Loggable, get_logger_from_configs
 
 
+class MembershipScores(NamedTuple):
+    """An attack's scores on a dataset, larger for likelier members, with its own decisions if it has a rule."""
+    scores: np.ndarray
+    decisions: Optional[np.ndarray] = None
+    # The attack setting the scores come from, e.g. RobustMIA's alpha; None for attacks with a single setting.
+    params: Optional[dict] = None
+
+
 class BaseMIA(Loggable):
     """Base class of the attacks: samples the auditing set, attacks the defended model and records the results."""
     requires_auxiliary_data = True
+    # Whether score() returns decisions of the attack's own; the attack decision rule calibrates the others.
+    has_own_decisions = True
 
     @staticmethod
     def reads_features(attacker_configs: AttackerConfigs) -> bool:
@@ -33,6 +45,7 @@ class BaseMIA(Loggable):
         self.shadow_configs = attacker_configs.dataset.shadow
         self.model_configs = attacker_configs.model
         self.attack_configs = attacker_configs.attack
+        self.evaluation_configs = attacker_configs.evaluation
         self.attacker_hash = attacker_configs.hash
         self.seed = self.base_dataset_configs.seed
 
@@ -43,7 +56,7 @@ class BaseMIA(Loggable):
                                 seed=self.seed,
                                 logger=self.logger)
         self.attacker_data_distribution = None
-        if self.requires_auxiliary_data:
+        if self.requires_auxiliary_data or self.needs_calibration():
             self.attacker_data_distribution = get_attacker_datas(dataset=self.base_dataset_configs.name,
                                                             datasets_folder=self.base_dataset_configs.data_folder,
                                                             def_split=self.base_dataset_configs.def_split,
@@ -53,6 +66,19 @@ class BaseMIA(Loggable):
         self.audit_manager = AuditingDatasetManager(defender_datasets=self.defender_datasets,
                                                     configs=self.audit_configs,
                                                     logger=logger)
+        # Held out whenever the attacker's data is loaded, so that the shadow datasets do not depend on the rule.
+        self.calibration_manager = None
+        if self.attacker_data_distribution is not None and self.evaluation_configs.n_calibration_samples > 0:
+            self.calibration_manager = CalibrationDatasetManager(
+                attacker_datasets=self.attacker_data_distribution,
+                n_samples=self.evaluation_configs.n_calibration_samples,
+                seed=self.evaluation_configs.seed,
+                logger=logger)
+        if self.needs_calibration() and self.calibration_manager is None:
+            raise ValueError(f'The decision rules {self.evaluation_configs.decision_rules} calibrate this attack\'s '
+                             f'threshold, which needs --n_calibration_samples above 0.')
+        self.audit_scores = None
+        self.calibration_scores = None
         self.results_manager = ResultManager()
 
         # self.defender_dataset = defender_dataset
@@ -68,18 +94,65 @@ class BaseMIA(Loggable):
         """Prepare the attack, e.g. train shadow models or calibrate a threshold. Implemented by each attack."""
         raise NotImplementedError('MIA should implement the method to optimize it!')
     
-    def measure_effectiveness(self):
-        """Attack the auditing samples and record the results with compute_stats. Implemented by each attack."""
-        raise NotImplementedError('MIA should implement the method to measure its effectiveness!')
-    
-    def compute_stats(self, scores: np.array, decisions: np.array = None, params: dict = None):
+    def score(self, dataset, device: Union[torch.device, str] = 'cpu') -> List[MembershipScores]:
+        """Score each sample of the dataset, in its order. Implemented by each attack, without membership labels.
+
+        The dataset is the auditing set or the calibration set. Attacks with several settings return one entry each.
+        """
+        raise NotImplementedError('MIA should implement the method to score samples!')
+
+    def needs_calibration(self) -> bool:
+        """Return whether a decision rule calibrates a threshold on the calibration samples."""
+        rules = self.evaluation_configs.decision_rules
+        return 'calibrated' in rules or ('attack' in rules and not self.has_own_decisions)
+
+    def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
+        """Score the auditing samples, then the calibration samples if a decision rule needs them, and evaluate."""
+        self.score_auditing(device=device)
+        self.score_calibration(device=device)
+        return self.evaluate()
+
+    def score_auditing(self, device: Union[torch.device, str] = 'cpu'):
+        """Score the auditing samples."""
+        self.audit_scores = self.score(self.audit_manager.get(labels='original'), device=device)
+
+    def score_calibration(self, device: Union[torch.device, str] = 'cpu'):
+        """Score the calibration samples when a decision rule needs them: they query the target model too."""
+        if self.needs_calibration():
+            self.logger.print_it(f'Scoring the {len(self.calibration_manager.get())} calibration samples...')
+            self.calibration_scores = self.score(self.calibration_manager.get(), device=device)
+
+    def evaluate(self):
+        """Make the decisions under each decision rule and record the results: the experiment's last stage."""
+        assert self.audit_scores is not None, 'Score the auditing samples before evaluating them.'
+        labels = self.audit_manager.get_membership_labels()
+        fpr = self.evaluation_configs.calibration_fpr
+        results = []
+        for rule in self.evaluation_configs.decision_rules:
+            for index, output in enumerate(self.audit_scores):
+                calibration = None
+                if self.calibration_scores is not None:
+                    assert self.calibration_scores[index].params == output.params
+                    calibration = self.calibration_scores[index].scores
+                decisions, source, threshold = decide(rule, output.scores, output.decisions, calibration, fpr, labels)
+                params = {**(output.params or {}), 'decision_rule': rule}
+                metrics = self.compute_stats(output.scores, decisions=decisions, params=params,
+                                             decision_source=source, decision_threshold=threshold)
+                if source == 'calibrated':
+                    self.results_manager.set_result(params, 'calibration_fpr', float(fpr))
+                results.append(metrics)
+        return results
+
+    def compute_stats(self, scores: np.array, decisions: np.array = None, params: dict = None,
+                      decision_source: str = 'attack', decision_threshold: float = None):
         """Compute aggregate and per-sample MIA results.
 
         ``scores`` must be ordered like the auditing dataset and larger scores must
-        indicate stronger membership evidence.  Attacks with their own calibrated
-        threshold should pass ``decisions``.  For score-only attacks, the decision
-        threshold is selected by maximizing Youden's J statistic on the ROC curve.
+        indicate stronger membership evidence. ``decisions`` come from the decision rule,
+        whose name and threshold (None for the attack's own decisions) are recorded.
         """
+        if decisions is None:
+            raise ValueError('compute_stats needs membership decisions: evaluate() makes them with the decision rule.')
         params = {} if params is None else params
         audit_data = self.audit_manager.get(labels='mia')
         self.reset_logger()
@@ -98,23 +171,11 @@ class BaseMIA(Loggable):
 
         fpr, tpr, thresholds = roc_curve(audit_labels, scores)
         auc_score = auc(fpr, tpr)
-        if decisions is None:
-            if scores.dtype == np.bool_ or np.all(np.isin(scores, [0, 1])):
-                decision_threshold = 0.5
-            else:
-                finite = np.isfinite(thresholds)
-                candidates = np.flatnonzero(finite)
-                best_index = candidates[np.argmax((tpr - fpr)[finite])]
-                decision_threshold = float(thresholds[best_index])
-            decisions = (scores >= decision_threshold).astype(np.int64)
-            decision_source = 'roc_youden'
-        else:
-            decisions = np.asarray(decisions).reshape(-1).astype(np.int64)
-            assert decisions.shape == audit_labels.shape, f"Unexpected shape for decisions: {decisions.shape}, expected {audit_labels.shape}"
-            if not np.all(np.isin(decisions, [0, 1])):
-                raise ValueError('Membership decisions must contain only 0 (non-member) and 1 (member).')
-            decision_threshold = None
-            decision_source = 'attack'
+        decisions = np.asarray(decisions).reshape(-1)
+        assert decisions.shape == audit_labels.shape, f"Unexpected shape for decisions: {decisions.shape}, expected {audit_labels.shape}"
+        if not np.all(np.isin(decisions, [0, 1])):
+            raise ValueError('Membership decisions must contain only 0 (non-member) and 1 (member).')
+        decisions = decisions.astype(np.int64)
 
         correct = decisions == audit_labels
         tp_mask = (decisions == 1) & (audit_labels == 1)
