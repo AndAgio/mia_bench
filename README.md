@@ -110,9 +110,24 @@ for successfully recovered training members only. Other choices are `non-members
 
 `model_accuracy` is evaluated on the test split after the selected defence has been
 applied. The best metric observed while training is retained separately under the
-`training_best_*` fields. For attacks without a native membership threshold, ID-level
-decisions use the ROC threshold that maximizes Youden's J and are marked with
-`decision_source: "roc_youden"`; calibrated attacks are marked `"attack"`.
+`training_best_*` fields.
+
+The attacks only score samples; `--decision_rule` turns the scores into the decisions
+behind accuracy, precision, recall, F1 and the per-sample predictions:
+
+- `attack` (default): the attack's own rule. LiRA and RobustMIA have none, so they are
+  calibrated instead.
+- `calibrated`: the threshold that a share `--calibration_fpr` of the calibration
+  samples exceed. These `--n_calibration_samples` samples are held out of the
+  attacker's share as known non-members of the target, and the shadow datasets treat
+  them like the auditing samples.
+- `oracle`: the threshold that maximizes TPR - FPR on the auditing labels, the
+  strongest attacker a defender may face.
+
+Several rules give one result each from the same scores, with `decision_rule` in their
+parameters and the rule actually applied in `decision_source`. AUC, TPR at fixed FPR
+and the membership advantage do not depend on the rule. Results from before the
+decision rules mark the oracle threshold as `decision_source: "roc_youden"`.
 
 #### Metrics and metadata retained
 
@@ -125,8 +140,9 @@ defence used through `run.py`.
   (`tpr`, `fpr`, and thresholds in `roc`).
 - **Counts:** audit sample, member, and non-member counts; true positives, true
   negatives, false positives, false negatives, and recovered-member count.
-- **Decision provenance:** whether decisions came from the attack's calibrated
-  threshold or a post-hoc Youden-J ROC threshold, plus that threshold when applicable.
+- **Decision provenance:** the decision rule applied (`decision_source`), its
+  threshold when it has one, and the calibration false-positive rate for calibrated
+  decisions.
 - **Dataset ID groups:** all correctly identified IDs, successfully recovered member
   IDs, correctly rejected non-member IDs, false-positive IDs, and missed-member IDs.
 - **Per audited sample:** original dataset ID, original class label, true membership,
