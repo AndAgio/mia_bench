@@ -300,9 +300,11 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_quantile_high', type=float, default=0.99,
                                 help='Highest quantile in the quantile MIA attack')
         parser.add_argument('--attacker_quantile_alpha', type=float, default=0.05,
-                                help='Alpha to be used in the Quantile MIA attack')
+                                help='False-positive rate the Quantile attack decides at; the pinball head adds the '
+                                     'level 1 - alpha to its grid')
         parser.add_argument("--attacker_quantile_use_logscale", action="store_true", default=False,
-                                help="use logscale for quantile MIA attack",)
+                                help="Space the pinball levels on a log scale, crowded near 1 as in the authors' "
+                                     "grid (needs --attacker_quantile_high below 1)",)
         parser.add_argument("--attacker_quantile_use_gaussian", action="store_true", default=False,
                                 help="use use_gaussian for quantile MIA attack",)
         parser.add_argument('--attacker_quantile_val_split', type=float, default=None,

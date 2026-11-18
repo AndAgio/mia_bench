@@ -30,24 +30,37 @@ class ValidationSplitTests(unittest.TestCase):
                 validation_split(10, share, seed=0)
 
 
+ORIGINAL_INDICES = list(range(100, 120))
+
+
+def optimize(alpha=.05):
+    """Run optimize on 20 samples (16 to train, 4 to validate) with the trainer mocked; return it and the attack."""
+    shadow_dataset = IndexedDataset(TensorDataset(torch.arange(20.).reshape(-1, 1), torch.zeros(20).long()),
+                                    original_indices=ORIGINAL_INDICES)
+    attack = object.__new__(QuantileMIA)
+    attack.logger = Mock()
+    attack.reset_logger = Mock()
+    attack.defender_model = torch.nn.Identity()
+    attack.defender_scoring_fn = lambda data, *args, **kwargs: (data[:, 0] * 10, None)
+    attack.attack_configs = SimpleNamespace(use_gaussian=False, val_split=None, quantile_alpha=alpha)
+    attack.quantile = torch.tensor([[.1, .5, .9, .95]])
+    attack.shadow_manager = Mock()
+    attack.shadow_manager.get_dataset.return_value = shadow_dataset
+    train_config = SimpleNamespace(device='cpu', seed=7)
+    with patch('src.mia.attacks.black_box.quantile.TrainManager') as manager, \
+            patch('src.mia.attacks.black_box.quantile.get_logger'):
+        attack.optimize(train_config)
+    return manager, attack
+
+
+def warnings_of(attack):
+    return [call.args[0] for call in attack.logger.print_it.call_args_list if '[WARNING]' in call.args[0]]
+
+
 class OptimizeTests(unittest.TestCase):
     def test_trains_on_one_part_and_keeps_the_best_validation_epoch(self):
-        original_indices = list(range(100, 120))
-        shadow_dataset = IndexedDataset(TensorDataset(torch.arange(20.).reshape(-1, 1), torch.zeros(20).long()),
-                                        original_indices=original_indices)
-        attack = object.__new__(QuantileMIA)
-        attack.logger = Mock()
-        attack.reset_logger = Mock()
-        attack.defender_model = torch.nn.Identity()
-        attack.defender_scoring_fn = lambda data, *args, **kwargs: (data[:, 0] * 10, None)
-        attack.attack_configs = SimpleNamespace(use_logscale=False, low_quantile=.1, high_quantile=.9, n_quantile=3,
-                                                use_gaussian=False, val_split=None)
-        attack.shadow_manager = Mock()
-        attack.shadow_manager.get_dataset.return_value = shadow_dataset
-        train_config = SimpleNamespace(device='cpu', seed=7)
-        with patch('src.mia.attacks.black_box.quantile.TrainManager') as manager, \
-                patch('src.mia.attacks.black_box.quantile.get_logger'):
-            attack.optimize(train_config)
+        original_indices = ORIGINAL_INDICES
+        manager, attack = optimize()
         dataset = manager.return_value.initialize_train.call_args.kwargs['dataset']
         fit, val = dataset.get('train'), dataset.get('val')
         self.assertEqual(len(val), 4)
@@ -61,6 +74,14 @@ class OptimizeTests(unittest.TestCase):
         self.assertFalse(train_kwargs['return_last_model'])
         best_model = manager.return_value.train.return_value
         attack.shadow_manager.update_model.assert_called_once_with(index=0, model=best_model)
+
+    def test_warns_when_too_few_training_samples_lie_above_the_decision_level(self):
+        # 16 training samples: about 0.8 above the 0.95 level, but 14.4 above the 0.1 level.
+        _, attack = optimize(alpha=.05)
+        self.assertEqual(len(warnings_of(attack)), 1)
+        self.assertIn('0.8 of the 16 training samples', warnings_of(attack)[0])
+        _, attack = optimize(alpha=.9)
+        self.assertEqual(warnings_of(attack), [])
 
 
 if __name__ == "__main__":
