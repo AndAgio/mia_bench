@@ -13,6 +13,9 @@ from src.utils.variables import DEFAULT_SHADOW_DATASETS_FOLDER, PERCENTAGE_OF_DA
 
 MAX_SHADOW_DATASETS = 100
 MAX_SAMPLES_PER_SHADOW_DATASET = 100000
+# Labels of the random streams for the draws made after the shadow datasets, each derived from the seed.
+POPULATION_STREAM = 1
+OUTSIDE_STREAM = 2
 
 class ShadowDatasetsManager(Loggable):
     def __init__(self,
@@ -53,6 +56,11 @@ class ShadowDatasetsManager(Loggable):
 
         self.seed = shadow_configs.seed
         self._rng = np.random.default_rng(seed=self.seed)
+        # The draws made after the shadow datasets (population samples, samples outside a shadow dataset) have their
+        # own generators, derived from the seed and a fixed label, so that they do not depend on whether the shadow
+        # datasets were sampled or loaded from the cache, nor on one another.
+        self._population_rng = np.random.default_rng([self.seed, POPULATION_STREAM])
+        self._outside_rng = np.random.default_rng([self.seed, OUTSIDE_STREAM])
 
         self.attacker_hash = attacker_hash
 
@@ -164,7 +172,7 @@ class ShadowDatasetsManager(Loggable):
         available_indices = self.attacker_data_distribution.get('all').get_indices(mode='original')
         available_indices = [i for i in available_indices if i not in self.inserted_set]
         self.logger.print_it(f"Sampling random sample dataset...")
-        sampled_indices = self._rng.choice(available_indices,
+        sampled_indices = self._population_rng.choice(available_indices,
                                         num_data,
                                         replace=False).tolist()
         return sampled_indices
@@ -317,7 +325,7 @@ class ShadowDatasetsManager(Loggable):
         inside_set = set(inside_ids)
         available_indices = [i for i in indices_train if i not in inside_set]
         assert len(available_indices) >= num_data, f"Not enough available data to sample outside shadow dataset! Requested {num_data} samples but only {len(available_indices)} are available."
-        sampled_indices = self._rng.choice(available_indices, num_data, replace=False).tolist()
+        sampled_indices = self._outside_rng.choice(available_indices, num_data, replace=False).tolist()
         if labels == 'original':
             # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
             # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
