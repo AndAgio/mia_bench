@@ -43,7 +43,7 @@ def main():
         '--defender_lr_sched', 'cosine', '--attacker_lr_sched', 'cosine',
         '--seed', '101', '--n_shadows', '2',
         '--n_auditing_samples', '8', '--audit_in_perc', '0.5',
-        '--attacker_robust_rand_pop_size', '8', '--attacker_robust_alphas', '0.5',
+        '--attacker_robust_rand_pop_size', '8', '--attacker_robust_a', '0.5',
         '--attacker_robust_gamma', str(args.attacker_robust_gamma),
     ]
     print(shlex.join(command), flush=True)

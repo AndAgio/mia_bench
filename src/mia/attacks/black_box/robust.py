@@ -24,7 +24,14 @@ class RobustMIA(BaseMIA):
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         assert self.shadow_configs.mode == self.attack_configs.mode, f"Whenever working with RobustMIA the mode for shadow datasets and attack should be the same!"
         self.mode = self.attack_configs.mode
-        # The population z and its ratios p(z|theta)/p(z), drawn once so that every alpha and every scored dataset
+        if self.mode == 'online' and self.shadow_configs.n_shadow_datasets < 2:
+            raise ValueError(f"Online RobustMIA needs at least 2 shadow models (--n_shadows), got "
+                             f"{self.shadow_configs.n_shadow_datasets}: it averages the models trained with each "
+                             f"sample (IN) and those without it (OUT), and with 1 model no model is IN.")
+        if self.mode == 'offline' and not all(0 <= a <= 1 for a in self.a_values()):
+            raise ValueError(f"RobustMIA's a (--attacker_robust_a) must lie between 0 and 1, got "
+                             f"{self.attack_configs.a}.")
+        # The population z and its ratios p(z|theta)/p(z), drawn once so that every value of a and every scored dataset
         # (auditing and calibration samples) is compared with the same population.
         self.population_ratios = None
         self.logger.print_it(f"Working with RobustMIA in {self.mode.upper()} mode!")
@@ -50,46 +57,42 @@ class RobustMIA(BaseMIA):
         self.logger.print_it('RobustMIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
 
+    def a_values(self) -> list[float]:
+        """The values of the paper's a to score with in offline mode, one result each."""
+        a = self.attack_configs.a
+        return [float(value) for value in (a if isinstance(a, list) else [a])]
+
     def score(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
-        """Score each sample with the share of population samples it dominates, once for each alpha to test."""
+        """Score each sample with the share of population samples it dominates, once for each value of a offline."""
         random_pop_size = self.attack_configs.random_pop_size
-        alpha = self.attack_configs.alpha
         gamma = self.attack_configs.gamma
         if self.mode == 'online':
-            self.logger.print_it('Found RobustMIA in ONLINE mode, setting alpha to 0 for ease')
-            alphas = [0]
-        elif alpha is None and self.mode == 'offline':
-            self.logger.print_it('Found alpha to be None for OFFLINE RobustMIA, which is not possible! Testing over all alphas...')
-            alphas = np.arange(0, 1.05, 0.1)
-        elif isinstance(alpha, list):
-            assert all([0 < al <= 1 for al in alpha]), f"All given alphas should be between 0 and 1!"
-            alphas = alpha
-        elif isinstance(alpha, float):
-            assert 0 < alpha <= 1, f"The given alpha should be between 0 and 1! Found alpha={alpha} instead!"
-            alphas = [alpha]
-        return [MembershipScores(self.compute_with_alpha(dataset=dataset,
-                                                         random_pop_size=random_pop_size,
-                                                         alpha=alpha,
-                                                         gamma=gamma,
-                                                         device=device),
-                                 params={'alpha': float(alpha)}) for alpha in alphas]
+            # The online test averages the IN and OUT models: it has no a, so its result carries no a either.
+            return [MembershipScores(self.compute_with_a(dataset=dataset, random_pop_size=random_pop_size, a=None,
+                                                         gamma=gamma, device=device))]
+        return [MembershipScores(self.compute_with_a(dataset=dataset,
+                                                     random_pop_size=random_pop_size,
+                                                     a=a,
+                                                     gamma=gamma,
+                                                     device=device),
+                                 params={'a': a}) for a in self.a_values()]
 
 
-    def compute_with_alpha(self, dataset: Dataset, random_pop_size: int, alpha: float, gamma: float = 1, device: Union[torch.device, str] = 'cpu'):
-        # assert self.mode == 'offline', f"compute_with_given_alpha should be called only for OFFLINE mode!"
+    def compute_with_a(self, dataset: Dataset, random_pop_size: int, a: float = None, gamma: float = 1,
+                       device: Union[torch.device, str] = 'cpu'):
+        """Score the dataset for one value of a (offline; None online): the share of population samples it dominates."""
         # Compute P(x|theta) for all samples in the auditing dataset
         if self.mode == 'offline':
-            assert 0 < alpha <= 1, f"The given alpha should be between 0 and 1! Found alpha={alpha} instead!"
-            self.logger.print_it('Computing RobustMIA scores in OFFLINE mode with alpha={:.3f}'.format(alpha))
+            self.logger.print_it('Computing RobustMIA scores in OFFLINE mode with a={:.3f}'.format(a))
         elif self.mode == 'online':
             self.logger.print_it('Computing RobustMIA scores in ONLINE mode')
-            assert alpha == 0
         start = time.time()
         audit_dataset = dataset
         audit_dataset_indices = dataset.get_indices(mode='original')
         self.reset_logger()
 
-        left_lr = self.compute_p_x_theta_over_p_x(dataset=audit_dataset, dataset_indices=audit_dataset_indices, alpha=alpha, device=device)
+        left_lr = self.compute_p_x_theta_over_p_x(dataset=audit_dataset, dataset_indices=audit_dataset_indices, a=a,
+                                                  device=device)
 
         if self.population_ratios is None:
             random_data_indices = self.shadow_manager.sample_random_population_indices(num_data=random_pop_size)
@@ -111,9 +114,10 @@ class RobustMIA(BaseMIA):
         return scores        
 
 
-    def compute_p_x_theta_over_p_x(self, dataset: Dataset, dataset_indices:list[int], alpha: float = 0.5, device: Union[torch.device, str] = 'cpu'):
+    def compute_p_x_theta_over_p_x(self, dataset: Dataset, dataset_indices: list[int], a: float = None,
+                                   device: Union[torch.device, str] = 'cpu'):
+        """Ratio Pr(x|theta) / Pr(x) for each sample, with Pr(x) from the shadow models (offline, through a)."""
         if self.mode == 'offline':
-            assert 0 <= alpha <= 1, f"RobustMIA for OFFLINE mode should have a valid alpha! alpha={alpha} was given!"
             # Load indices for all shadow models and set them as offline models
             all_models_indices = self.shadow_manager.get_all_model_indeces()
             trained_out_shadow_models_for_sample = [all_models_indices for _ in range(len(dataset))]
@@ -142,7 +146,8 @@ class RobustMIA(BaseMIA):
         # p_x_theta_out = np.mean(p_x_thetas_out, axis=1)
         p_x_out = np.mean(p_x_thetas_out, axis=1)
         if self.mode == 'offline':
-            p_x = 0.5*((1+alpha)*p_x_out + (1-alpha))
+            # The paper's equation 10: Pr(x)_IN approximated as a * Pr(x)_OUT + 1 - a.
+            p_x = 0.5*((1+a)*p_x_out + (1-a))
         elif self.mode == 'online':
             # p_x_theta_in = np.mean(p_x_thetas_in, axis=1)
             p_x_in = np.mean(p_x_thetas_in, axis=1)

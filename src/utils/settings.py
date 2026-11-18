@@ -288,8 +288,12 @@ def build_parser() -> argparse.ArgumentParser:
         # RobustMIA parameters
         parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
                                 help='Number of samples in Z to select randomly for LR computation')
-        parser.add_argument('--attacker_robust_alphas', nargs="+", type=float, default=0.5,
-                                help='Set of alphas to be used in the RobustMIA attack')
+        # The former name stays as an alias, and as the setting's name, so that run hashes do not change.
+        parser.add_argument('--attacker_robust_a', '--attacker_robust_alphas', dest='attacker_robust_alphas',
+                                nargs="+", type=float, default=0.5,
+                                help="Offline RobustMIA's a (the paper's App. B.2.2), between 0 and 1: a model trained "
+                                     "on a sample is approximated as Pr_IN(x) = a Pr_OUT(x) + 1 - a. Several values "
+                                     "score once each; online mode does not use it. Formerly --attacker_robust_alphas")
         parser.add_argument('--attacker_robust_gamma', type=float, default=1,
                                 help='Gamma value to be used in the RobustMIA attack')
         # Quantile MIA parameters
