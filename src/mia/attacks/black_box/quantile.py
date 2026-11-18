@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from scipy.special import logsumexp, ndtri
-from src.data.helpers import IndexedDataset
+from src.data.helpers import IndexedDataset, SubsampledDataset
 from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
@@ -13,14 +13,19 @@ from typing import Union
 import time
 from src.trainer.train_manager import TrainManager
 
+# Share of the attacker's data held out to choose the regression model's epoch when --attacker_quantile_val_split is
+# unset.
+DEFAULT_VAL_SPLIT = 0.2
+
 
 class QuantileMIA(BaseMIA):
     """Quantile regression attack: a model trained on non-members predicts a threshold for each sample.
 
     Paper: "Scalable membership inference attacks via quantile regression",
     https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html.
-    Gaussian-head scores use signed log1p margins to keep extreme predicted scales
-    finite while preserving ranking and the original zero-threshold decision.
+    The regression model keeps the epoch with the lowest loss on a held-out share of the attacker's data. The Gaussian
+    head ranks samples by (s - mu) / sigma, the paper's ROC; the pinball head by the distance to the head nearest
+    1 - alpha.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
@@ -63,37 +68,46 @@ class QuantileMIA(BaseMIA):
         self.defender_model.eval()
         features = []
         target_scores = []
+        original_indices = []
         shadow_dataset = self.shadow_manager.get_dataset(index=0,
                                                         labels='original')
         shadow_loader = DataLoader(shadow_dataset, batch_size=1, shuffle=False)
         start_data = time.time()
         with torch.no_grad():
-            for data, target, _, _ in shadow_loader:
+            for data, target, original_index, _ in shadow_loader:
                 self.logger.print_it_same_line(f'Quantile MIA attacker: processing sample {len(features)+1}/{len(shadow_dataset)}...', console_only=True)
                 features.append(data)
+                original_indices.append(int(original_index))
                 target_score, _ = self.defender_scoring_fn(data, target, device=train_config.device)
                 target_scores.append(target_score)
             self.logger.set_logger_newline(console_only=True)
         features = torch.cat(features)
         target_scores = torch.cat(target_scores)
-        quantile_dataset = IndexedDataset(TensorDataset(features, target_scores))
-        quantile_dataset = MultiDatasets([quantile_dataset], ids=['train'])
-        self.logger.print_it(f"Quantile MIA attacker: constructed quantile dataset in {time.time() - start_data:.2f}s.")
+        quantile_dataset = IndexedDataset(TensorDataset(features, target_scores), original_indices=original_indices)
+        # The epoch is chosen on a held-out share of the attacker's own data, never on the samples it attacks.
+        val_split = DEFAULT_VAL_SPLIT if self.attack_configs.val_split is None else self.attack_configs.val_split
+        fit_positions, val_positions = validation_split(len(quantile_dataset), val_split, seed=train_config.seed)
+        quantile_dataset = MultiDatasets([SubsampledDataset.from_positions(quantile_dataset, fit_positions),
+                                          SubsampledDataset.from_positions(quantile_dataset, val_positions)],
+                                         ids=['train', 'val'])
+        self.logger.print_it(f"Quantile MIA attacker: constructed quantile dataset in {time.time() - start_data:.2f}s: "
+                             f"{len(fit_positions)} samples to train the regression model, {len(val_positions)} to "
+                             f"choose its epoch.")
 
         self.logger.print_it('Quantile MIA attacker: training quantile model. This will take a while. Sit back and chill...')
         start = time.time()
-        logger = get_logger(name='{} quantile shadow'.format(self.logger.name),
+        logger = get_logger(name='{} quantile regressor'.format(self.logger.name),
                             log_folder=self.logger.get_folder(),
                             mode=self.logger.get_mode())
         train_manager = TrainManager(train_configs=train_config,
-                                    name='quantile shadow',
+                                    name='quantile regressor',
                                     logger=logger)
         train_manager.initialize_train(dataset=quantile_dataset,
                                         model=self.shadow_manager.get_model(index=0),
                                         configs=train_config)
         quantile_model = train_manager.train(extra_configs={'quantiles': self.quantile},
-                                            return_last_model=True,
-                                            return_best_model=False,
+                                            return_best_model=True,
+                                            return_last_model=False,
                                             return_stats=False)
         self.shadow_manager.update_model(index=0,
                                         model=quantile_model)
@@ -116,7 +130,10 @@ class QuantileMIA(BaseMIA):
         return score, logits
 
     def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
-        """Score each sample by how far the target's score exceeds the predicted quantile: members exceed it."""
+        """Score each sample by how far the target's score exceeds its predicted threshold: members exceed it.
+
+        The Gaussian head scores (s - mu) / sigma, the pinball head the distance to the head nearest 1 - alpha.
+        """
         self.logger.print_it('Computing Quantile MIA scores. This may take a while...')
         start = time.time()
         if isinstance(device, str):
@@ -131,24 +148,20 @@ class QuantileMIA(BaseMIA):
         scores = np.zeros((len(audit_dataset), ))
         self.logger.print_it(f"Computing scores for all {tot_samples} samples. This may take a while...", file_only=True)
         if self.attack_configs.use_gaussian:
-            self.logger.print_it("Gaussian quantile scores use signed-log margins to avoid scale overflow.")
+            self.logger.print_it("Gaussian quantile scores are signed-log z-scores, to avoid scale overflow.")
         for sample_index, (sample, label, _, _) in enumerate(audit_loader):
             self.logger.print_it_same_line(f'Quantile MIA attacker: computing score for sample {sample_index+1}/{tot_samples}...', console_only=True)
             with torch.no_grad():
                 target_score, _ = self.defender_scoring_fn(sample, label, device=device)
                 predicted_scores = quantile_model(sample.to(device))
-                
-                quantile_value = 1 - self.attack_configs.quantile_alpha
-                quantile_index = torch.argmin(torch.abs(self.quantile - quantile_value))
                 if self.attack_configs.use_gaussian:
-                    # A finite log_std can overflow exp(log_std), even in a
+                    # A finite log_std can overflow exp(-log_std), even in a
                     # poorly calibrated but otherwise finite trained model.
-                    score = gaussian_margin_scores(
-                        target_score.detach().cpu().numpy(),
-                        predicted_scores.detach().cpu().numpy(),
-                        float(self.quantile.reshape(-1)[quantile_index].item()),
-                    )[0]
+                    score = gaussian_z_scores(target_score.detach().cpu().numpy(),
+                                              predicted_scores.detach().cpu().numpy())[0]
                 else:
+                    quantile_value = 1 - self.attack_configs.quantile_alpha
+                    quantile_index = torch.argmin(torch.abs(self.quantile - quantile_value))
                     score = target_score.detach().cpu().item() - predicted_scores[0, quantile_index].detach().cpu().item()
                 scores[sample_index] = score
         self.logger.set_logger_newline(console_only=True)
@@ -156,8 +169,43 @@ class QuantileMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Quantile MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))
         # The paper's rule: a member when the target's score exceeds the predicted quantile.
+        if self.attack_configs.use_gaussian:
+            # The (1 - alpha) quantile of N(mu, sigma) is mu + sigma * Phi^-1(1 - alpha), so the z-score must exceed
+            # Phi^-1(1 - alpha), on the same signed-log scale as the scores.
+            z_alpha = ndtri(1 - self.attack_configs.quantile_alpha)
+            return [MembershipScores(scores, decisions=scores > np.sign(z_alpha) * np.log1p(np.abs(z_alpha)))]
         return [MembershipScores(scores, decisions=scores > 0)]
     
+
+def validation_split(n_samples: int, val_split: float, seed: int):
+    """Split positions 0..n_samples-1 at random into a training part and a validation part of val_split of them."""
+    if not 0 < val_split < 1:
+        raise ValueError(f"The validation share must lie strictly between 0 and 1, got {val_split}.")
+    n_val = int(round(val_split * n_samples))
+    if not 0 < n_val < n_samples:
+        raise ValueError(f"A validation share of {val_split} of {n_samples} samples leaves one part empty.")
+    positions = np.random.default_rng(seed).permutation(n_samples)
+    return np.sort(positions[n_val:]), np.sort(positions[:n_val])
+
+
+def gaussian_z_scores(target_scores, predictions):
+    """Score each target by its z-score under the Gaussian head, z = (s - mu) / sigma, as sign(z) * log1p(|z|).
+
+    Ranking by z is the paper's ROC: a sample is a member at level 1 - alpha when z exceeds Phi^-1(1 - alpha). The
+    signed log is strictly increasing, so it keeps that ranking, and it is computed from log_std without forming
+    sigma, so that no predicted scale overflows.
+    """
+    targets = np.asarray(target_scores, dtype=np.float64).reshape(-1)
+    predictions = np.asarray(predictions, dtype=np.float64)
+    if predictions.shape != (len(targets), 2):
+        raise ValueError("Gaussian predictions must contain one (mu, log_std) pair per target")
+    if not np.isfinite(targets).all() or not np.isfinite(predictions).all():
+        raise ValueError("Gaussian targets and predictions must be finite")
+    residual = targets - predictions[:, 0]
+    with np.errstate(divide="ignore"):
+        log_abs_z = np.log(np.abs(residual)) - predictions[:, 1]
+    return np.sign(residual) * np.logaddexp(0., log_abs_z)
+
 
 def gaussian_margin_scores(target_scores, predictions, quantile):
     """Compute signed-log Gaussian quantile margins without exponentiating log_std.

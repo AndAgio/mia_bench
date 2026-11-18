@@ -305,6 +305,9 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="use logscale for quantile MIA attack",)
         parser.add_argument("--attacker_quantile_use_gaussian", action="store_true", default=False,
                                 help="use use_gaussian for quantile MIA attack",)
+        parser.add_argument('--attacker_quantile_val_split', type=float, default=None,
+                                help="Share of the attacker's data held out to choose the epoch of the Quantile "
+                                     "regression model, the one with the lowest validation loss (default: 0.2)")
         # Neural MIA parameters
         parser.add_argument('--attacker_neural_model_layers', type=int, nargs="+", default=[64, 32],
                                 help='List of hidden layer sizes for the neural MIA attacker model')

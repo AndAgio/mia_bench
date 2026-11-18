@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import TensorDataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.mia.attacks.black_box.quantile import QuantileMIA, gaussian_margin_scores
+from src.mia.attacks.black_box.quantile import QuantileMIA, gaussian_margin_scores, gaussian_z_scores
 
 
 class GaussianQuantileTests(unittest.TestCase):
@@ -58,26 +58,48 @@ class GaussianQuantileTests(unittest.TestCase):
             with self.subTest(predictions=predictions), self.assertRaises(ValueError):
                 gaussian_margin_scores([0.], predictions, .8)
 
-    def test_attack_scoring_uses_stable_gaussian_scores(self):
+    def test_z_scores_keep_the_ranking_of_the_z_score(self):
+        rng = np.random.default_rng(123)
+        targets = rng.normal(size=128)
+        predictions = rng.normal(size=(128, 2))
+        z = (targets - predictions[:, 0]) / np.exp(predictions[:, 1])
+        scores = gaussian_z_scores(targets, predictions)
+        np.testing.assert_allclose(scores, np.sign(z) * np.log1p(np.abs(z)), atol=1e-12)
+        np.testing.assert_array_equal(np.argsort(scores), np.argsort(z))
+
+    def test_z_scores_stay_finite_for_scales_beyond_float64_exp_range(self):
+        predictions = np.array([[0., -800.], [0., -900.], [0., 2000.], [1., 5.]])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            scores = gaussian_z_scores([1., 1., 1., 1.], predictions)
+        self.assertTrue(np.isfinite(scores).all())
+        self.assertGreater(scores[1], scores[0])
+        self.assertEqual(scores[3], 0.)
+        for predictions in ([[0., np.inf]], [[np.nan, 0.]], [[0.]]):
+            with self.subTest(predictions=predictions), self.assertRaises(ValueError):
+                gaussian_z_scores([0.], predictions)
+
+    def test_attack_scoring_ranks_by_z_score_and_decides_at_one_minus_alpha(self):
         class LargeScaleHead(torch.nn.Module):
             def forward(self, inputs):
                 return torch.stack((torch.zeros(len(inputs)), inputs[:, 0]), dim=1)
 
-        dataset = TensorDataset(torch.tensor([[100.], [200.]]), torch.zeros(2, dtype=torch.long),
-                                torch.arange(2), torch.arange(2))
+        # Column 0 is the predicted log_std (mu is 0), column 1 the target's score: z = e^800, e^900, -1, 0.5.
+        dataset = TensorDataset(torch.tensor([[-800., 1.], [-900., 1.], [0., -1.], [0., .5]], dtype=torch.float64),
+                                torch.zeros(4, dtype=torch.long), torch.arange(4), torch.arange(4))
         attack = object.__new__(QuantileMIA)
         attack.logger = Mock()
         attack.reset_logger = Mock()
         attack.shadow_manager = SimpleNamespace(get_model=lambda **_: LargeScaleHead())
         attack.defender_model = torch.nn.Identity()
-        attack.defender_scoring_fn = lambda *args, **kwargs: (torch.tensor([0.]), None)
+        attack.defender_scoring_fn = lambda sample, *args, **kwargs: (sample[:, 1], None)
         attack.attack_configs = SimpleNamespace(use_gaussian=True, quantile_alpha=.2)
         attack.quantile = torch.tensor([[.1, .8, .9]])
         [(scores, decisions, _)] = attack.score(dataset, device="cpu")
         self.assertTrue(np.isfinite(scores).all())
-        self.assertGreater(scores[0], scores[1])
-        # The paper's rule: a member when the target's score exceeds the predicted quantile.
-        np.testing.assert_array_equal(decisions, scores > 0)
+        np.testing.assert_array_equal(np.argsort(scores), [2, 3, 0, 1])
+        # The paper's rule: a member when z exceeds Phi^-1(1 - alpha) = 0.84, i.e. the score exceeds the quantile.
+        np.testing.assert_array_equal(decisions, [True, True, False, False])
 
 
 if __name__ == "__main__":

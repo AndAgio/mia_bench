@@ -312,6 +312,7 @@ class QuantileMiaConfigs:
     use_logscale: bool = False
     use_gaussian: bool = False
     quantile_alpha: float = 0.05
+    val_split: Optional[float] = None
 
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -893,7 +894,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.attacker_mode == 'lira':
         attack_configs = LiraMiaConfigs(mode='online')
     elif settings.attacker_mode == 'quantile':
-        attacker_train_configs.metric_to_track = "quantile_coverage"
+        # Unset, the loss picks the epoch: the regression model is the one with the lowest validation loss.
+        attacker_train_configs.metric_to_track = None
         attacker_train_configs.metrics = ["quantile_coverage"]
         attack_configs = QuantileMiaConfigs(mode='offline',
                                             n_quantile=settings.attacker_quantile_n,
@@ -901,7 +903,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                             high_quantile=settings.attacker_quantile_high,
                                             use_logscale=settings.attacker_quantile_use_logscale,
                                             use_gaussian=settings.attacker_quantile_use_gaussian,
-                                            quantile_alpha=settings.attacker_quantile_alpha)
+                                            quantile_alpha=settings.attacker_quantile_alpha,
+                                            val_split=settings.attacker_quantile_val_split)
         attacker_shadow_configs.mode = 'offline'
     elif settings.attacker_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
         neural_input_mode = settings.attacker_mode.split('_')[-1]
