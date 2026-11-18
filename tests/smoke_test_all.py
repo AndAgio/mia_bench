@@ -286,7 +286,10 @@ def expand_grid(specs: Sequence[str], parser: argparse.ArgumentParser) -> list[V
             if action.nargs == 0:  # switch flags such as --defender_nesterov
                 if value.lower() not in ("true", "false"):
                     raise ValueError(f"{option} is a switch: use {name}=true,false")
-                args = (option,) if value.lower() == "true" else ()
+                # A switch that is on by default is turned off with its --no- form.
+                negative = "--no-" + option[2:]
+                off = (negative,) if negative in action.option_strings else ()
+                args = (option,) if value.lower() == "true" else off
             else:
                 args = (option, *shlex.split(value))
             axis.append((option, value, args))

@@ -1,12 +1,14 @@
+import copy
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from scipy.special import logsumexp, ndtri
+from scipy.stats import binom
 from src.data.helpers import IndexedDataset, SubsampledDataset
 from src.data.helpers import MultiDatasets
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
-from src.utils.configs import AttackerConfigs, TrainConfigs
+from src.utils.configs import AttackerConfigs, OptimizerConfigs, SchedulerConfigs, TrainConfigs
 from src.utils.log import get_logger
 from src.utils import convert_to_hms
 from typing import Union
@@ -16,9 +18,21 @@ from src.trainer.train_manager import TrainManager
 # Share of the attacker's data held out to choose the regression model's epoch when --attacker_quantile_val_split is
 # unset.
 DEFAULT_VAL_SPLIT = 0.2
-# Rule of thumb: with fewer training samples than this above the 1 - alpha level, the pinball head cannot place it
-# reliably (with about one sample above a 0.9999 level, a CIFAR-10 head let through 0.64% of non-members, not 0.01%).
-MIN_SAMPLES_ABOVE_LEVEL = 10
+# Levels always added to the pinball grid: log-spaced from 0.9 to 0.9999, where small alphas decide. The loss averages
+# over the levels, so a grid crowded near 1 fits that tail better: on CIFAR-10 at alpha = 0.01, 100 even levels let
+# 4.8% of non-members through, and these 50 extra levels brought it to 1.8%, as the authors' 41-level grid did.
+TAIL_LEVELS, TAIL_LOW, TAIL_HIGH = 50, 0.9, 0.9999
+# After training, a warning when the share of validation samples (non-members) above their threshold is this
+# unlikely under a false-positive rate of alpha (one-sided binomial test).
+VALIDATION_WARNING_P_VALUE = 0.01
+# The authors' training recipe for the regression model, used instead of the --attacker_* training settings, which
+# stay for the shadow models of the other attacks: the defaults of quantile-mia's train_mia.py (AdamW, learning rate
+# 1e-4, weight decay 1e-4, gradient clipping 1.0, no scheduler, 30 epochs), with batch 64, the effective batch the
+# paper's tuning consistently chose (App. D). Under the attacker's SGD settings, the Gaussian head learned nothing.
+PAPER_OPTIMIZER = dict(name='adamw', lr=1e-4, weight_decay=1e-4)
+PAPER_EPOCHS = 30
+PAPER_BATCH_SIZE = 64
+PAPER_GRAD_CLIP = 1.0
 
 
 class QuantileMIA(BaseMIA):
@@ -26,9 +40,9 @@ class QuantileMIA(BaseMIA):
 
     Paper: "Scalable membership inference attacks via quantile regression",
     https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html.
-    The regression model keeps the epoch with the lowest loss on a held-out share of the attacker's data. The Gaussian
-    head ranks samples by (s - mu) / sigma, the paper's ROC; the pinball head, whose grid always includes 1 - alpha,
-    by the distance to that head.
+    The regression model trains with the authors' recipe and keeps the epoch with the lowest loss on a held-out share
+    of the attacker's data. The Gaussian head (the default) ranks samples by (s - mu) / sigma, the paper's ROC; the
+    pinball head, whose grid always includes 50 levels near 1 and 1 - alpha, by the distance to its 1 - alpha head.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
@@ -38,18 +52,15 @@ class QuantileMIA(BaseMIA):
         if not 0 < self.attack_configs.quantile_alpha < 1:
             raise ValueError(f"--attacker_quantile_alpha must lie strictly between 0 and 1, got "
                              f"{self.attack_configs.quantile_alpha}.")
-        # The pinball head learns the grid's levels plus 1 - alpha, the level it decides at, so that the attack uses
-        # the alpha it is given instead of the nearest grid level.
         decision_level = 1 - self.attack_configs.quantile_alpha
-        self.quantile = with_level(quantile_levels(n=self.attack_configs.n_quantile,
-                                                   low=self.attack_configs.low_quantile,
-                                                   high=self.attack_configs.high_quantile,
-                                                   use_logscale=self.attack_configs.use_logscale),
-                                   decision_level).reshape([1, -1])
+        self.quantile = pinball_levels(n=self.attack_configs.n_quantile, low=self.attack_configs.low_quantile,
+                                       high=self.attack_configs.high_quantile,
+                                       use_logscale=self.attack_configs.use_logscale,
+                                       alpha=self.attack_configs.quantile_alpha).reshape([1, -1])
         if not self.attack_configs.use_gaussian:
             self.logger.print_it(f"Quantile MIA attacker: {self.quantile.shape[1]} pinball levels from "
-                                 f"{self.quantile.min().item():.4g} to {self.quantile.max().item():.4g}, deciding at "
-                                 f"{decision_level:.4g}.")
+                                 f"{self.quantile.min().item():.4g} to {self.quantile.max().item():.4g}, including "
+                                 f"{TAIL_LEVELS} from {TAIL_LOW} to {TAIL_HIGH}, deciding at {decision_level:.4g}.")
         if self.shadow_configs.n_shadow_datasets != 1:
             self.logger.print_it(f"Quantile MIA attacker [WARNING]: when using quantile MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
             self.shadow_configs.n_shadow_datasets = 1
@@ -66,7 +77,13 @@ class QuantileMIA(BaseMIA):
                                                 model_configs=self.model_configs)
 
     def optimize(self, train_config: TrainConfigs):
+        """Train the regression model on the attacker's data, keeping the epoch with the lowest validation loss."""
         self.logger.print_it('Quantile MIA attacker: setting quantiles and loss function...')
+        train_config = paper_train_config(train_config)
+        self.logger.print_it(f"Quantile MIA attacker: the regression model trains with the authors' recipe "
+                             f"(AdamW, lr {PAPER_OPTIMIZER['lr']}, weight decay {PAPER_OPTIMIZER['weight_decay']}, "
+                             f"gradient clipping {PAPER_GRAD_CLIP}, batch {PAPER_BATCH_SIZE}, {PAPER_EPOCHS} epochs), "
+                             f"not the --attacker_* training settings.")
         # Set up quantiles
         device = self.get_device(dev_str=train_config.device)
         self.quantile = self.quantile.to(device)
@@ -102,12 +119,6 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it(f"Quantile MIA attacker: constructed quantile dataset in {time.time() - start_data:.2f}s: "
                              f"{len(fit_positions)} samples to train the regression model, {len(val_positions)} to "
                              f"choose its epoch.")
-        expected_above = self.attack_configs.quantile_alpha * len(fit_positions)
-        if not self.attack_configs.use_gaussian and expected_above < MIN_SAMPLES_ABOVE_LEVEL:
-            self.logger.print_it(f"Quantile MIA attacker [WARNING]: only about {expected_above:.1f} of the "
-                                 f"{len(fit_positions)} training samples lie above the 1 - alpha level, too few to "
-                                 f"learn it reliably: expect more false positives than alpha = "
-                                 f"{self.attack_configs.quantile_alpha}.")
 
         self.logger.print_it('Quantile MIA attacker: training quantile model. This will take a while. Sit back and chill...')
         start = time.time()
@@ -126,6 +137,23 @@ class QuantileMIA(BaseMIA):
                                             return_stats=False)
         self.shadow_manager.update_model(index=0,
                                         model=quantile_model)
+        # The attacker's own estimate of its false-positive rate: its validation samples are known non-members.
+        quantile_model.eval()
+        with torch.no_grad():
+            model_device = next(quantile_model.parameters()).device
+            predictions = torch.cat([quantile_model(chunk.to(model_device)).cpu()
+                                     for chunk in features[val_positions].split(256)])
+        _, val_decisions = self.membership_scores(target_scores[val_positions].numpy(), predictions.numpy())
+        alpha = self.attack_configs.quantile_alpha
+        self.logger.print_it(f"Quantile MIA attacker: {val_decisions.mean():.2%} of the {len(val_positions)} "
+                             f"validation samples, all non-members, exceed their threshold: the attacker's estimate "
+                             f"of its false-positive rate at alpha = {alpha}.")
+        p_value = binom.sf(int(val_decisions.sum()) - 1, len(val_positions), alpha)
+        if p_value < VALIDATION_WARNING_P_VALUE:
+            advice = '' if self.attack_configs.use_gaussian else ', or the Gaussian head'
+            self.logger.print_it(f"Quantile MIA attacker [WARNING]: that is significantly more than alpha "
+                                 f"(one-sided binomial test, p = {p_value:.2g}), so the decisions will likely flag "
+                                 f"more non-members than alpha. Consider --decision_rule calibrated{advice}.")
         stop = time.time()
         self.reset_logger()
         h, m, s = convert_to_hms(stop-start)
@@ -160,7 +188,7 @@ class QuantileMIA(BaseMIA):
         self.reset_logger()
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
-        scores = np.zeros((len(audit_dataset), ))
+        target_scores, predictions = [], []
         self.logger.print_it(f"Computing scores for all {tot_samples} samples. This may take a while...", file_only=True)
         if self.attack_configs.use_gaussian:
             self.logger.print_it("Gaussian quantile scores are signed-log z-scores, to avoid scale overflow.")
@@ -168,29 +196,45 @@ class QuantileMIA(BaseMIA):
             self.logger.print_it_same_line(f'Quantile MIA attacker: computing score for sample {sample_index+1}/{tot_samples}...', console_only=True)
             with torch.no_grad():
                 target_score, _ = self.defender_scoring_fn(sample, label, device=device)
-                predicted_scores = quantile_model(sample.to(device))
-                if self.attack_configs.use_gaussian:
-                    # A finite log_std can overflow exp(-log_std), even in a
-                    # poorly calibrated but otherwise finite trained model.
-                    score = gaussian_z_scores(target_score.detach().cpu().numpy(),
-                                              predicted_scores.detach().cpu().numpy())[0]
-                else:
-                    quantile_value = 1 - self.attack_configs.quantile_alpha
-                    quantile_index = torch.argmin(torch.abs(self.quantile - quantile_value))
-                    score = target_score.detach().cpu().item() - predicted_scores[0, quantile_index].detach().cpu().item()
-                scores[sample_index] = score
+                target_scores.append(target_score.detach().cpu().numpy())
+                predictions.append(quantile_model(sample.to(device)).detach().cpu().numpy())
         self.logger.set_logger_newline(console_only=True)
+        scores, decisions = self.membership_scores(np.concatenate(target_scores), np.concatenate(predictions))
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Quantile MIA attacker: score computation done! Time taken to compute: {}:{:02d}:{:02d}...'.format(h, m, s))
-        # The paper's rule: a member when the target's score exceeds the predicted quantile.
+        return [MembershipScores(scores, decisions=decisions)]
+
+    def membership_scores(self, target_scores, predictions):
+        """Scores, higher for members, and decisions at 1 - alpha from the target's scores and the model's outputs.
+
+        The paper's rule: a member when the target's score exceeds its predicted (1 - alpha) quantile.
+        """
+        target_scores = np.asarray(target_scores, dtype=np.float64).reshape(-1)
+        predictions = np.asarray(predictions, dtype=np.float64)
+        alpha = self.attack_configs.quantile_alpha
         if self.attack_configs.use_gaussian:
+            # A finite log_std can overflow exp(-log_std), even in a poorly calibrated but otherwise finite model.
+            scores = gaussian_z_scores(target_scores, predictions)
             # The (1 - alpha) quantile of N(mu, sigma) is mu + sigma * Phi^-1(1 - alpha), so the z-score must exceed
             # Phi^-1(1 - alpha), on the same signed-log scale as the scores.
-            z_alpha = ndtri(1 - self.attack_configs.quantile_alpha)
-            return [MembershipScores(scores, decisions=scores > np.sign(z_alpha) * np.log1p(np.abs(z_alpha)))]
-        return [MembershipScores(scores, decisions=scores > 0)]
+            z_alpha = ndtri(1 - alpha)
+            return scores, scores > np.sign(z_alpha) * np.log1p(np.abs(z_alpha))
+        # As the authors do, each sample's thresholds are sorted, so that they increase with the level.
+        decision_index = int(torch.argmin(torch.abs(self.quantile.reshape(-1).cpu() - (1 - alpha))))
+        scores = target_scores - np.sort(predictions, axis=1)[:, decision_index]
+        return scores, scores > 0
     
+
+def paper_train_config(train_config):
+    """A copy of the attacker's train configs with the authors' recipe for the regression model."""
+    config = copy.deepcopy(train_config)
+    config.optimizer_config = OptimizerConfigs(**PAPER_OPTIMIZER)
+    config.scheduler_config = SchedulerConfigs(name='const', epochs=PAPER_EPOCHS)
+    config.batch_size = PAPER_BATCH_SIZE
+    config.grad_clip = PAPER_GRAD_CLIP
+    return config
+
 
 def quantile_levels(n: int, low: float, high: float, use_logscale: bool) -> torch.Tensor:
     """The pinball head's n levels from low to high, evenly spaced or, on a log scale, crowded near 1.
@@ -204,6 +248,18 @@ def quantile_levels(n: int, low: float, high: float, use_logscale: bool) -> torc
         raise ValueError(f"A log-scale grid needs 0 <= --attacker_quantile_low and --attacker_quantile_high < 1, got "
                          f"{low} and {high}.")
     return torch.sort(1 - torch.logspace(np.log10(1 - high), np.log10(1 - low), n))[0]
+
+
+def pinball_levels(n: int, low: float, high: float, use_logscale: bool, alpha: float) -> torch.Tensor:
+    """The pinball head's levels: the grid of the options, the levels near 1 (TAIL_LEVELS) and 1 - alpha.
+
+    1 - alpha is the level the attack decides at, added so that it uses the alpha it is given, not the nearest level.
+    """
+    levels = quantile_levels(n=n, low=low, high=high, use_logscale=use_logscale)
+    tail = 1 - torch.logspace(np.log10(1 - TAIL_LOW), np.log10(1 - TAIL_HIGH), TAIL_LEVELS)
+    for level in tail.tolist() + [1 - alpha]:
+        levels = with_level(levels, level)
+    return levels
 
 
 def with_level(levels: torch.Tensor, level: float) -> torch.Tensor:

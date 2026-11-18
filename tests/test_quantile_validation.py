@@ -33,7 +33,18 @@ class ValidationSplitTests(unittest.TestCase):
 ORIGINAL_INDICES = list(range(100, 120))
 
 
-def optimize(alpha=.05):
+class ConstantThresholds(torch.nn.Module):
+    """Predicts the same thresholds for every sample: by default 150, 0, 50, 100, for the levels 0.1, 0.5, 0.9 and
+    0.95 (unsorted)."""
+    def __init__(self, thresholds=(150., 0., 50., 100.)):
+        super().__init__()
+        self.bias = torch.nn.Parameter(torch.tensor(thresholds))
+
+    def forward(self, inputs):
+        return self.bias.repeat(len(inputs), 1)
+
+
+def optimize(alpha=.05, thresholds=(150., 0., 50., 100.)):
     """Run optimize on 20 samples (16 to train, 4 to validate) with the trainer mocked; return it and the attack."""
     shadow_dataset = IndexedDataset(TensorDataset(torch.arange(20.).reshape(-1, 1), torch.zeros(20).long()),
                                     original_indices=ORIGINAL_INDICES)
@@ -49,6 +60,7 @@ def optimize(alpha=.05):
     train_config = SimpleNamespace(device='cpu', seed=7)
     with patch('src.mia.attacks.black_box.quantile.TrainManager') as manager, \
             patch('src.mia.attacks.black_box.quantile.get_logger'):
+        manager.return_value.train.return_value = ConstantThresholds(thresholds)
         attack.optimize(train_config)
     return manager, attack
 
@@ -75,13 +87,35 @@ class OptimizeTests(unittest.TestCase):
         best_model = manager.return_value.train.return_value
         attack.shadow_manager.update_model.assert_called_once_with(index=0, model=best_model)
 
-    def test_warns_when_too_few_training_samples_lie_above_the_decision_level(self):
-        # 16 training samples: about 0.8 above the 0.95 level, but 14.4 above the 0.1 level.
-        _, attack = optimize(alpha=.05)
+    def test_trains_with_the_authors_recipe_and_leaves_the_attackers_settings_alone(self):
+        manager, attack = optimize()
+        config = manager.call_args.kwargs['train_configs']
+        self.assertEqual((config.optimizer_config.name, config.optimizer_config.lr,
+                          config.optimizer_config.weight_decay), ('adamw', 1e-4, 1e-4))
+        self.assertEqual((config.scheduler_config.name, config.scheduler_config.epochs), ('const', 30))
+        self.assertEqual((config.batch_size, config.grad_clip), (64, 1.))
+        self.assertIs(manager.return_value.initialize_train.call_args.kwargs['configs'], config)
+
+    def test_logs_the_share_of_validation_samples_above_their_sorted_threshold(self):
+        manager, attack = optimize(alpha=.05)
+        # Sorted, the 0.95 threshold is 150 (unsorted, that head predicts 100); the targets are 10 * (index - 100).
+        val = manager.return_value.initialize_train.call_args.kwargs['dataset'].get('val')
+        expected = np.mean([float(y) > 150 for _, y, _, _ in val])
+        messages = [call.args[0] for call in attack.logger.print_it.call_args_list]
+        logged = [message for message in messages if 'validation samples' in message]
+        self.assertEqual(len(logged), 1)
+        self.assertIn(f'{expected:.2%} of the 4 validation samples', logged[0])
+
+    def test_warns_when_significantly_more_validation_samples_than_alpha_exceed_their_threshold(self):
+        # The 4 validation targets lie between 0 and 190. All of them exceed -1000: p = 0.05^4, a warning.
+        _, attack = optimize(alpha=.05, thresholds=(-1000.,) * 4)
         self.assertEqual(len(warnings_of(attack)), 1)
-        self.assertIn('0.8 of the 16 training samples', warnings_of(attack)[0])
-        _, attack = optimize(alpha=.9)
-        self.assertEqual(warnings_of(attack), [])
+        self.assertIn('--decision_rule calibrated, or the Gaussian head', warnings_of(attack)[0])
+        # None of them exceeds 1000, and 1 of 4 at alpha 0.5 is not significant: no warning.
+        for alpha, thresholds in ((.05, (1000.,) * 4), (.5, (150.,) * 4)):
+            with self.subTest(alpha=alpha, thresholds=thresholds):
+                _, attack = optimize(alpha=alpha, thresholds=thresholds)
+                self.assertEqual(warnings_of(attack), [])
 
 
 if __name__ == "__main__":

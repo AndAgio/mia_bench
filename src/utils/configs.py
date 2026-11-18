@@ -88,6 +88,8 @@ class TrainConfigs:
     device: Optional[str] = 'cpu'
     distributed: Optional[bool] = False
     seed: Optional[int] = 12345
+    # Maximum norm of the gradients, clipped before each optimizer step; unset, no clipping.
+    grad_clip: Optional[float] = None
     resume: Optional[bool] = True
     ckpts_folder: Optional[pathlib.Path] = DEFAULT_MODELS_FOLDER
     resume_ckpts_folder: Optional[pathlib.Path] = DEFAULT_RESUME_CKPTS_FOLDER
@@ -310,7 +312,7 @@ class QuantileMiaConfigs:
     low_quantile: float = 0.01
     high_quantile: float = 0.99 
     use_logscale: bool = False
-    use_gaussian: bool = False
+    use_gaussian: bool = True
     quantile_alpha: float = 0.05
     val_split: Optional[float] = None
 
@@ -894,9 +896,10 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.attacker_mode == 'lira':
         attack_configs = LiraMiaConfigs(mode='online')
     elif settings.attacker_mode == 'quantile':
-        # Unset, the loss picks the epoch: the regression model is the one with the lowest validation loss.
+        # Unset, the loss picks the epoch: the regression model is the one with the lowest validation loss. No other
+        # metric is logged: after training, the attack logs its false-positive rate on the validation split instead.
         attacker_train_configs.metric_to_track = None
-        attacker_train_configs.metrics = ["quantile_coverage"]
+        attacker_train_configs.metrics = []
         attack_configs = QuantileMiaConfigs(mode='offline',
                                             n_quantile=settings.attacker_quantile_n,
                                             low_quantile=settings.attacker_quantile_low,

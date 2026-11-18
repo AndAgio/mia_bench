@@ -11,7 +11,7 @@ from torch.utils.data import TensorDataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.mia.attacks.base_mia import BaseMIA
-from src.mia.attacks.black_box.quantile import QuantileMIA, quantile_levels, with_level
+from src.mia.attacks.black_box.quantile import QuantileMIA, pinball_levels, quantile_levels, with_level
 
 
 class GridTests(unittest.TestCase):
@@ -45,6 +45,17 @@ class DecisionLevelTests(unittest.TestCase):
                 self.assertEqual(len(levels), 101)
                 self.assertTrue((torch.diff(levels) > 0).all())
                 self.assertAlmostEqual(levels[torch.argmin(torch.abs(levels - level))].item(), level, places=6)
+
+    def test_the_pinball_grid_always_adds_fifty_levels_near_one_and_one_minus_alpha(self):
+        tail = np.sort(1 - np.logspace(-1, -4, 50))
+        for alpha, size in ((.05, 151), (.01, 150)):           # 0.99 is already one of the 100 even levels
+            with self.subTest(alpha=alpha):
+                levels = pinball_levels(n=100, low=.01, high=.99, use_logscale=False, alpha=alpha).numpy()
+                self.assertEqual(len(levels), size)
+                self.assertTrue((np.diff(levels) > 0).all())
+                for level in list(tail) + [1 - alpha]:
+                    self.assertLess(np.abs(levels - level).min(), 1e-6)
+        self.assertEqual((pinball_levels(n=100, low=.01, high=.99, use_logscale=False, alpha=.05) >= .9).sum(), 61)
 
     def test_a_level_already_in_the_grid_is_not_added_twice(self):
         self.assertEqual(len(with_level(torch.linspace(.01, .99, 100), .99)), 100)

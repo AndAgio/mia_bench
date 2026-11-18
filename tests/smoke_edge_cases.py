@@ -47,11 +47,12 @@ def attack_specs(component):
                 spec("Alternate shadow optimizer and one full shadow batch",
                      attacker_optimizer="adam", attacker_lr=.001))
     if component == "quantile":
+        pinball = {"no-attacker_quantile_use_gaussian": True}
         return (baseline,
                 spec("Single median quantile", attacker_quantile_n=1,
-                     attacker_quantile_low=.5, attacker_quantile_high=.5, attacker_quantile_alpha=.5),
+                     attacker_quantile_low=.5, attacker_quantile_high=.5, attacker_quantile_alpha=.5, **pinball),
                 spec("Log-spaced tail quantiles", attacker_quantile_use_logscale=True,
-                     attacker_quantile_n=5, attacker_quantile_low=.001, attacker_quantile_high=.999),
+                     attacker_quantile_n=5, attacker_quantile_low=.001, attacker_quantile_high=.999, **pinball),
                 spec("Gaussian mean/variance head", attacker_quantile_use_gaussian=True,
                      attacker_quantile_n=5, attacker_quantile_low=.01, attacker_quantile_high=.99),
                 spec("Gaussian head with log-spaced quantiles and full batches",

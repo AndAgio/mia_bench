@@ -40,6 +40,9 @@ class TrainManager(Loggable):
 
     Defenses subclass it and override setup_loss, train_step or train_epoch.
     """
+    # Maximum gradient norm before each step, from the configs' grad_clip in setup_training; None, no clipping.
+    grad_clip = None
+
     def __init__(self, train_configs: TrainConfigs, name: str, logger: MyLogger = None):
         """Set up the checkpoint folders, the device (and DDP) and the random seed."""
         super().__init__(logger=logger)
@@ -176,6 +179,10 @@ class TrainManager(Loggable):
             self.optimizer = Adam(params=self.model.parameters(),
                                 lr=opt_cfg.lr)
             self.criterion.reduction = 'mean'
+        elif opt_cfg.name == 'adamw':
+            self.optimizer = torch.optim.AdamW(params=self.model.parameters(),
+                                               lr=opt_cfg.lr,
+                                               weight_decay=opt_cfg.weight_decay)
         elif opt_cfg.name == 'sgd':
             self.optimizer = SGD(params=self.model.parameters(),
                                 lr=opt_cfg.lr,
@@ -311,6 +318,9 @@ class TrainManager(Loggable):
         self.setup_performance_metrics(metrics=self.train_configs.metrics,
                                         metric_to_track=self.train_configs.metric_to_track)
         self.setup_optimizer(opt_cfg=self.train_configs.optimizer_config)
+        self.grad_clip = self.train_configs.grad_clip
+        if self.grad_clip is not None and type(self.optimizer) in [SAM, ESAM, WSAM, LookSAM, FriendlySAM]:
+            raise ValueError('Gradient clipping is not supported with SAM-like optimizers.')
         self.setup_lr_scheduler(sched_cfg=self.train_configs.scheduler_config)
         self.logger.print_it('Training setup done!')
 
@@ -489,6 +499,10 @@ class TrainManager(Loggable):
         h, m, s = convert_to_hms(self.train_stats_tracker.total_time())
         self.logger.print_it('Training for "{}" with seed {} completed in: {}:{:02d}:{:02d}'.format(self.model_name, self.seed, h, m, s))
 
+        if self.train_stats_tracker.get_best_epoch() == 0:
+            raise RuntimeError(f"No epoch improved the {self.train_stats_tracker.stage_to_track_best} "
+                               f"{self.train_stats_tracker.metric_to_track_best}, for example because it was NaN "
+                               f"from the first epoch, so there is no best model to return.")
         best_model = self.ckpts_manager.load_best_model()
         if return_best_model:
             if return_last_model:
@@ -584,6 +598,8 @@ class TrainManager(Loggable):
             # loss = loss.mean() if loss.numel() > 1 else loss
             loss = loss.mean() if self.to_be_averaged_loss(loss) else loss
             loss.backward()
+            if self.grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             self.optimizer.step()
 
         self.epoch_stats_tracker.update(preds=outputs, targets=targets, extras=self.extra_configs)

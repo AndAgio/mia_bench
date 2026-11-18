@@ -294,7 +294,9 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Gamma value to be used in the RobustMIA attack')
         # Quantile MIA parameters
         parser.add_argument('--attacker_quantile_n', type=int, default=100,
-                                help='Number of quantiles')
+                                help='Number of pinball levels from --attacker_quantile_low to '
+                                     '--attacker_quantile_high; 50 levels from 0.9 to 0.9999 and the level 1 - alpha '
+                                     'are always added')
         parser.add_argument('--attacker_quantile_low', type=float, default=0.01,
                                 help='Lowest quantile in the quantile MIA attack')
         parser.add_argument('--attacker_quantile_high', type=float, default=0.99,
@@ -305,8 +307,10 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument("--attacker_quantile_use_logscale", action="store_true", default=False,
                                 help="Space the pinball levels on a log scale, crowded near 1 as in the authors' "
                                      "grid (needs --attacker_quantile_high below 1)",)
-        parser.add_argument("--attacker_quantile_use_gaussian", action="store_true", default=False,
-                                help="use use_gaussian for quantile MIA attack",)
+        parser.add_argument("--attacker_quantile_use_gaussian", action=argparse.BooleanOptionalAction, default=True,
+                                help="Use the Gaussian head, which predicts a mean and a scale per sample, as the "
+                                     "paper does on CIFAR; --no-attacker_quantile_use_gaussian uses the pinball head, "
+                                     "one output per level of the grid",)
         parser.add_argument('--attacker_quantile_val_split', type=float, default=None,
                                 help="Share of the attacker's data held out to choose the epoch of the Quantile "
                                      "regression model, the one with the lowest validation loss (default: 0.2)")
