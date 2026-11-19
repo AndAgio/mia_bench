@@ -14,39 +14,20 @@ from src.utils import convert_to_hms
 from typing import Union
 import time
 from src.trainer.train_manager import TrainManager
-
-# Share of the attacker's data held out to choose the regression model's epoch when --attacker_quantile_val_split is
-# unset.
-DEFAULT_VAL_SPLIT = 0.2
-# Levels always added to the pinball grid: log-spaced from 0.9 to 0.9999, where small alphas decide. The loss averages
-# over the levels, so a grid crowded near 1 fits that tail better: on CIFAR-10 at alpha = 0.01, 100 even levels let
-# 4.8% of non-members through, and these 50 extra levels brought it to 1.8%, as the authors' 41-level grid did.
-TAIL_LEVELS, TAIL_LOW, TAIL_HIGH = 50, 0.9, 0.9999
-# After training, a warning when the share of validation samples (non-members) above their threshold is this
-# unlikely under a false-positive rate of alpha (one-sided binomial test).
-VALIDATION_WARNING_P_VALUE = 0.01
-# The authors' training recipe for the regression model, used instead of the --attacker_* training settings, which
-# stay for the shadow models of the other attacks: the defaults of quantile-mia's train_mia.py (AdamW, learning rate
-# 1e-4, weight decay 1e-4, gradient clipping 1.0, no scheduler, 30 epochs), with batch 64, the effective batch the
-# paper's tuning consistently chose (App. D). Under the attacker's SGD settings, the Gaussian head learned nothing.
-PAPER_OPTIMIZER = dict(name='adamw', lr=1e-4, weight_decay=1e-4)
-PAPER_EPOCHS = 30
-PAPER_BATCH_SIZE = 64
-PAPER_GRAD_CLIP = 1.0
-
+from src.utils.variables import (QUANTILE_DEFAULT_VAL_SPLIT, QUANTILE_PAPER_BATCH_SIZE, QUANTILE_PAPER_EPOCHS,
+                                 QUANTILE_PAPER_GRAD_CLIP, QUANTILE_PAPER_OPTIMIZER, QUANTILE_TAIL_HIGH,
+                                 QUANTILE_TAIL_LEVELS, QUANTILE_TAIL_LOW, QUANTILE_VALIDATION_WARNING_P_VALUE)
 
 class QuantileMIA(BaseMIA):
-    """Quantile regression attack: a model trained on non-members predicts a threshold for each sample.
+    """Quantile regression: a model trained on the attacker's non-members predicts each sample's threshold.
 
-    Paper: "Scalable membership inference attacks via quantile regression",
-    https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html.
-    The regression model trains with the authors' recipe and keeps the epoch with the lowest loss on a held-out share
-    of the attacker's data. The Gaussian head (the default) ranks samples by (s - mu) / sigma, the paper's ROC; the
-    pinball head, whose grid always includes 50 levels near 1 and 1 - alpha, by the distance to its 1 - alpha head.
+    Paper: "Scalable Membership Inference Attacks via Quantile Regression", https://arxiv.org/abs/2307.03694.
+    Documentation: docs/attacks/quantile.md.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
+        """Check alpha, build the pinball levels, sample the attacker's data and define the regression model."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Quantile MIA!")
         if not 0 < self.attack_configs.quantile_alpha < 1:
@@ -60,7 +41,8 @@ class QuantileMIA(BaseMIA):
         if not self.attack_configs.use_gaussian:
             self.logger.print_it(f"Quantile MIA attacker: {self.quantile.shape[1]} pinball levels from "
                                  f"{self.quantile.min().item():.4g} to {self.quantile.max().item():.4g}, including "
-                                 f"{TAIL_LEVELS} from {TAIL_LOW} to {TAIL_HIGH}, deciding at {decision_level:.4g}.")
+                                 f"{QUANTILE_TAIL_LEVELS} from {QUANTILE_TAIL_LOW} to {QUANTILE_TAIL_HIGH}, "
+                                 f"deciding at {decision_level:.4g}.")
         if self.shadow_configs.n_shadow_datasets != 1:
             self.logger.print_it(f"Quantile MIA attacker [WARNING]: when using quantile MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
             self.shadow_configs.n_shadow_datasets = 1
@@ -81,8 +63,10 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it('Quantile MIA attacker: setting quantiles and loss function...')
         train_config = paper_train_config(train_config)
         self.logger.print_it(f"Quantile MIA attacker: the regression model trains with the authors' recipe "
-                             f"(AdamW, lr {PAPER_OPTIMIZER['lr']}, weight decay {PAPER_OPTIMIZER['weight_decay']}, "
-                             f"gradient clipping {PAPER_GRAD_CLIP}, batch {PAPER_BATCH_SIZE}, {PAPER_EPOCHS} epochs), "
+                             f"(AdamW, lr {QUANTILE_PAPER_OPTIMIZER['lr']}, weight decay "
+                             f"{QUANTILE_PAPER_OPTIMIZER['weight_decay']}, gradient clipping "
+                             f"{QUANTILE_PAPER_GRAD_CLIP}, batch {QUANTILE_PAPER_BATCH_SIZE}, "
+                             f"{QUANTILE_PAPER_EPOCHS} epochs), "
                              f"not the --attacker_* training settings.")
         # Set up quantiles
         device = self.get_device(dev_str=train_config.device)
@@ -111,7 +95,8 @@ class QuantileMIA(BaseMIA):
         target_scores = torch.cat(target_scores)
         quantile_dataset = IndexedDataset(TensorDataset(features, target_scores), original_indices=original_indices)
         # The epoch is chosen on a held-out share of the attacker's own data, never on the samples it attacks.
-        val_split = DEFAULT_VAL_SPLIT if self.attack_configs.val_split is None else self.attack_configs.val_split
+        val_split = self.attack_configs.val_split
+        val_split = QUANTILE_DEFAULT_VAL_SPLIT if val_split is None else val_split
         fit_positions, val_positions = validation_split(len(quantile_dataset), val_split, seed=train_config.seed)
         quantile_dataset = MultiDatasets([SubsampledDataset.from_positions(quantile_dataset, fit_positions),
                                           SubsampledDataset.from_positions(quantile_dataset, val_positions)],
@@ -149,7 +134,7 @@ class QuantileMIA(BaseMIA):
                              f"validation samples, all non-members, exceed their threshold: the attacker's estimate "
                              f"of its false-positive rate at alpha = {alpha}.")
         p_value = binom.sf(int(val_decisions.sum()) - 1, len(val_positions), alpha)
-        if p_value < VALIDATION_WARNING_P_VALUE:
+        if p_value < QUANTILE_VALIDATION_WARNING_P_VALUE:
             advice = '' if self.attack_configs.use_gaussian else ', or the Gaussian head'
             self.logger.print_it(f"Quantile MIA attacker [WARNING]: that is significantly more than alpha "
                                  f"(one-sided binomial test, p = {p_value:.2g}), so the decisions will likely flag "
@@ -160,6 +145,7 @@ class QuantileMIA(BaseMIA):
         self.logger.print_it('Quantile MIA attacker: Done optimizing. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
     def defender_scoring_fn(self, data: torch.Tensor, target: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+        """The target's hinge score of each sample (its true-class logit minus its largest other logit), and logits."""
         if isinstance(device, str):
             device = QuantileMIA.get_device(dev_str=device)
         self.defender_model.eval()
@@ -229,10 +215,10 @@ class QuantileMIA(BaseMIA):
 def paper_train_config(train_config):
     """A copy of the attacker's train configs with the authors' recipe for the regression model."""
     config = copy.deepcopy(train_config)
-    config.optimizer_config = OptimizerConfigs(**PAPER_OPTIMIZER)
-    config.scheduler_config = SchedulerConfigs(name='const', epochs=PAPER_EPOCHS)
-    config.batch_size = PAPER_BATCH_SIZE
-    config.grad_clip = PAPER_GRAD_CLIP
+    config.optimizer_config = OptimizerConfigs(**QUANTILE_PAPER_OPTIMIZER)
+    config.scheduler_config = SchedulerConfigs(name='const', epochs=QUANTILE_PAPER_EPOCHS)
+    config.batch_size = QUANTILE_PAPER_BATCH_SIZE
+    config.grad_clip = QUANTILE_PAPER_GRAD_CLIP
     return config
 
 
@@ -251,12 +237,12 @@ def quantile_levels(n: int, low: float, high: float, use_logscale: bool) -> torc
 
 
 def pinball_levels(n: int, low: float, high: float, use_logscale: bool, alpha: float) -> torch.Tensor:
-    """The pinball head's levels: the grid of the options, the levels near 1 (TAIL_LEVELS) and 1 - alpha.
+    """The pinball head's levels: the grid of the options, the levels near 1 (QUANTILE_TAIL_LEVELS) and 1 - alpha.
 
     1 - alpha is the level the attack decides at, added so that it uses the alpha it is given, not the nearest level.
     """
     levels = quantile_levels(n=n, low=low, high=high, use_logscale=use_logscale)
-    tail = 1 - torch.logspace(np.log10(1 - TAIL_LOW), np.log10(1 - TAIL_HIGH), TAIL_LEVELS)
+    tail = 1 - torch.logspace(np.log10(1 - QUANTILE_TAIL_LOW), np.log10(1 - QUANTILE_TAIL_HIGH), QUANTILE_TAIL_LEVELS)
     for level in tail.tolist() + [1 - alpha]:
         levels = with_level(levels, level)
     return levels
@@ -335,11 +321,15 @@ def gaussian_margin_scores(target_scores, predictions, quantile):
 
 # Custom loss functions
 class PinballLoss(torch.nn.Module):
+    """Pinball loss of each level, the quantile regression loss: its minimum is the level's quantile."""
     def __init__(self, quantile: torch.Tensor):
+        """Keep the levels, one per output of the model, as a (1, levels) tensor."""
         super(PinballLoss, self).__init__()
         self.quantile = quantile
     
     def forward(self, input: torch.Tensor, target: torch.Tensor):
+        """Loss of each sample and level: level x (target - output) when the target is above, else (1 - level) x
+        (output - target)."""
         target = target.reshape([-1, 1])
         delta_score = target - input
         loss = torch.nn.functional.relu(delta_score) * self.quantile + torch.nn.functional.relu(-delta_score) * (1.0 - self.quantile)
@@ -347,10 +337,13 @@ class PinballLoss(torch.nn.Module):
 
 
 class GaussianLoss(torch.nn.Module):
+    """Negative log-likelihood of a Gaussian, up to a constant: the model predicts a mean and a log scale per sample."""
     def __init__(self):
+        """No parameters."""
         super(GaussianLoss, self).__init__()
 
     def forward(self, input: torch.Tensor, target: torch.Tensor):
+        """log sigma + (target - mu)^2 / (2 sigma^2) for each sample, from the outputs (mu, log sigma)."""
         mu = input[:, 0]
         log_std = input[:, 1]
         loss = log_std + 0.5 * torch.exp(-2 * log_std) * (target - mu) ** 2

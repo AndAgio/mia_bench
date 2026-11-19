@@ -124,3 +124,23 @@ DP_PAPER_DELTA = 1e-5
 # Park et al. without tuning, for all their models but one (arXiv 2306.05651, Appendix G.2, Table 10). Their tuned
 # values range from 0.01 to 0.1 (Table 5). Unset --defender_sam_rho takes it.
 DP_SAT_PAPER_RHO = 0.03
+
+# Quantile regression attack (src/mia/attacks/black_box/quantile.py, docs/attacks/quantile.md).
+# Share of the attacker's data held out to choose the regression model's epoch when --attacker_quantile_val_split is
+# unset.
+QUANTILE_DEFAULT_VAL_SPLIT = 0.2
+# Levels always added to the pinball grid: log-spaced from 0.9 to 0.9999, where small alphas decide. The loss averages
+# over the levels, so a grid crowded near 1 fits that tail better: on CIFAR-10 at alpha = 0.01, 100 even levels let
+# 4.8% of non-members through, and these 50 extra levels brought it to 1.8%, as the authors' 41-level grid did.
+QUANTILE_TAIL_LEVELS, QUANTILE_TAIL_LOW, QUANTILE_TAIL_HIGH = 50, 0.9, 0.9999
+# After training, a warning when the share of validation samples (non-members) above their threshold is this
+# unlikely under a false-positive rate of alpha (one-sided binomial test).
+QUANTILE_VALIDATION_WARNING_P_VALUE = 0.01
+# The authors' training recipe for the regression model, used instead of the --attacker_* training settings, which
+# stay for the shadow models of the other attacks: the defaults of quantile-mia's train_mia.py (AdamW, learning rate
+# 1e-4, weight decay 1e-4, gradient clipping 1.0, no scheduler, 30 epochs), with batch 64, the effective batch the
+# paper's tuning consistently chose (App. D). Under the attacker's SGD settings, the Gaussian head learned nothing.
+QUANTILE_PAPER_OPTIMIZER = dict(name='adamw', lr=1e-4, weight_decay=1e-4)
+QUANTILE_PAPER_EPOCHS = 30
+QUANTILE_PAPER_BATCH_SIZE = 64
+QUANTILE_PAPER_GRAD_CLIP = 1.0

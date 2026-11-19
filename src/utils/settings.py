@@ -4,6 +4,7 @@ import os
 import pathlib
 from src.utils.configs import generate_configs_from_settings, get_hash_from_settings, get_relevant_settings
 from src.utils.training_defaults import apply_training_defaults
+from .variables import QUANTILE_DEFAULT_VAL_SPLIT, QUANTILE_TAIL_HIGH, QUANTILE_TAIL_LEVELS, QUANTILE_TAIL_LOW
 from .variables import DECISION_RULES, DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
 
 
@@ -319,13 +320,14 @@ def build_parser() -> argparse.ArgumentParser:
                                      "ratio is at least gamma times z's (the paper uses 2, App. B.4)")
         # Quantile MIA parameters
         parser.add_argument('--attacker_quantile_n', type=int, default=100,
-                                help='Number of pinball levels from --attacker_quantile_low to '
-                                     '--attacker_quantile_high; 50 levels from 0.9 to 0.9999 and the level 1 - alpha '
-                                     'are always added')
+                                help=f'Number of pinball levels from --attacker_quantile_low to '
+                                     f'--attacker_quantile_high; {QUANTILE_TAIL_LEVELS} levels from '
+                                     f'{QUANTILE_TAIL_LOW} to {QUANTILE_TAIL_HIGH} and the level 1 - alpha are always '
+                                     f'added')
         parser.add_argument('--attacker_quantile_low', type=float, default=0.01,
-                                help='Lowest quantile in the quantile MIA attack')
+                                help='Lowest pinball level')
         parser.add_argument('--attacker_quantile_high', type=float, default=0.99,
-                                help='Highest quantile in the quantile MIA attack')
+                                help='Highest pinball level; below 1 with --attacker_quantile_use_logscale')
         parser.add_argument('--attacker_quantile_alpha', type=float, default=0.05,
                                 help='False-positive rate the Quantile attack decides at; the pinball head adds the '
                                      'level 1 - alpha to its grid')
@@ -338,7 +340,8 @@ def build_parser() -> argparse.ArgumentParser:
                                      "one output per level of the grid",)
         parser.add_argument('--attacker_quantile_val_split', type=float, default=None,
                                 help="Share of the attacker's data held out to choose the epoch of the Quantile "
-                                     "regression model, the one with the lowest validation loss (default: 0.2)")
+                                     f"regression model, the one with the lowest validation loss (default: "
+                                     f"{QUANTILE_DEFAULT_VAL_SPLIT})")
         # Neural MIA parameters
         parser.add_argument('--attacker_neural_model_layers', type=int, nargs="+", default=[64, 32],
                                 help='List of hidden layer sizes for the neural MIA attacker model')

@@ -256,6 +256,25 @@ def training_defaults():
 write_generated('training_defaults.md', training_defaults())
 
 
+def quantile_parameters():
+    from src.utils import variables
+    optimizer = variables.QUANTILE_PAPER_OPTIMIZER
+    return (f"The pinball head always adds {variables.QUANTILE_TAIL_LEVELS} levels, log-spaced from "
+            f"{format_default(variables.QUANTILE_TAIL_LOW)} to {format_default(variables.QUANTILE_TAIL_HIGH)}, and the "
+            f"level 1 − α.\n\nThe regression model trains with the authors' recipe: AdamW with a learning rate of "
+            f"{format_default(optimizer['lr'])} and a weight decay of {format_default(optimizer['weight_decay'])}, "
+            f"gradients clipped at a norm of {format_default(variables.QUANTILE_PAPER_GRAD_CLIP)}, batches of "
+            f"{variables.QUANTILE_PAPER_BATCH_SIZE} and a constant learning rate, for "
+            f"{variables.QUANTILE_PAPER_EPOCHS} epochs. It keeps the epoch with the lowest loss on a held-out share of the attacker's data, "
+            f"{format_default(variables.QUANTILE_DEFAULT_VAL_SPLIT)} when `--attacker_quantile_val_split` is unset. "
+            f"After training, a warning follows when the share of held-out samples above their threshold is "
+            f"significantly above α (one-sided binomial test, p < "
+            f"{format_default(variables.QUANTILE_VALIDATION_WARNING_P_VALUE)}).\n")
+
+
+write_generated('quantile_parameters.md', quantile_parameters())
+
+
 def option_table(prefixes: list) -> str:
     from src.utils.settings import build_parser
     actions = [action for action in build_parser()._actions
@@ -281,7 +300,8 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'selena': ['defender_selena_'],
                   'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_'],
                   'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha'],
-                  'data_augmentation': ['defender_augment_'], 'dp': ['defender_dp_']}
+                  'data_augmentation': ['defender_augment_'], 'dp': ['defender_dp_'],
+                  'quantile': ['attacker_quantile_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

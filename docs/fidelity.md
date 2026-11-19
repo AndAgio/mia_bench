@@ -58,3 +58,10 @@ Where our implementations depart from the original papers. Each method's page ha
 | DP | BatchNorm replaced by GroupNorm | Opacus cannot compute per-sample gradients through BatchNorm |
 | DP | the best validation model, with the ε of the whole run | as for every defense in the benchmark |
 | DP | DP-SAT's ρ = 0.03 for every dataset and model | the paper's value without tuning; it tunes ρ per run |
+| [Quantile regression](attacks/quantile.md#differences-from-the-paper) | ResNet-18 from scratch, not a pretrained ConvNeXt-Tiny | pretrained weights need a download; larger inputs cost far more |
+| Quantile regression | epoch chosen on the attacker's held-out data, no hyperparameter search | the authors' choice sees the evaluated non-members |
+| Quantile regression | batches of 64, not 16 | the effective batch the paper's tuning chose |
+| Quantile regression | pinball head ranks by the distance to its 1 − α threshold | a level sweep has no ROC points at low false-positive rates |
+| Quantile regression | levels near 1 and 1 − α added to the pinball grid | better calibrated at small α; decisions use the α given |
+| Quantile regression | Gaussian head ranks by (s − μ)/σ | the paper's ROC at every α; the code evaluates 41 levels |
+| Quantile regression | warning on the held-out false-positive rate | ours |
