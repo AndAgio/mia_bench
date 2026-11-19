@@ -41,20 +41,17 @@ shadow models of the other attacks.
 
 ## Differences from the paper
 
-- The regression model is the `--attacker_model`, ResNet-18 by default, trained from scratch at the dataset's
-  resolution, not a pretrained ConvNeXt-Tiny at 224 pixels with an MLP head. Pretrained weights need a download, and
-  the larger inputs cost far more.
-- The epoch is the one with the lowest loss on a held-out share of the attacker's data. The authors choose the epoch,
-  and their hyperparameters over 32 trials, by the loss on the CIFAR test split, where they also measure the attack:
-  their choice sees the very non-members it is evaluated on. We search no hyperparameters.
-- Batches of 64, the effective batch that the paper's tuning chose (App. D), instead of the code's default of 16.
-- The pinball head ranks samples by the distance to its 1 − α threshold, not by sweeping the levels. A sweep has no
-  point of the ROC curve below the false-positive rate of its top level: on CIFAR-10, the 0.9999 level let 0.64% of
-  the non-members through, so the sweep had no point at 0.1%.
-- The pinball grid always adds levels near 1, and the level 1 − α, to the grid of the options. The loss averages over
-  the levels, so more levels near 1 fit that tail better: at α = 0.01 on CIFAR-10, the false-positive rate fell from
-  4.8% with 100 evenly spaced levels to 1.8%, as low as with the authors' grid. The level 1 − α lets the decisions use
-  the α given instead of the nearest level.
-- The Gaussian head ranks samples by (s − μ)/σ, the paper's ROC curve "by varying α", taken at every α. The authors'
-  code evaluates 41 levels.
+The main difference is the regression model: the `--attacker_model`, ResNet-18 by default, trained from scratch
+rather than the authors' pretrained ConvNeXt-Tiny at 224 pixels, so that the attack needs no download and stays
+cheap. The others are small:
+
+- The epoch is chosen on a held-out share of the attacker's data. The authors choose it, with their hyperparameters,
+  on the very non-members they evaluate on, which a real attacker could not do.
+- Batches of 64, the effective batch the paper's tuning chose, rather than the code's default of 16.
+- The Gaussian head ranks samples by (s − μ)/σ, the paper's sweep over α taken at every α; the authors' code samples
+  41 levels.
+- The pinball head ranks samples by the distance to its 1 − α threshold, since a sweep over its levels gives no
+  points at very low false-positive rates.
+- The pinball grid always adds levels near 1 and the level 1 − α, so that its thresholds at small α fit better and
+  the decisions use the α given.
 - The warning on the held-out false-positive rate is ours.
