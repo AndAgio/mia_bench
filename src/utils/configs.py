@@ -67,6 +67,8 @@ def build_scheduler_configs_from_settings(settings: Any, mode: str = 'defender')
         extra['exp_gamma'] = settings.defender_lr_exp_gamma if mode == 'defender' else settings.attacker_lr_exp_gamma
     elif name == 'cosine':
         extra['cosine_min'] = settings.defender_lr_cosine_min if mode == 'defender' else settings.attacker_lr_cosine_min
+    elif name == 'const':
+        pass
     else:
         raise ValueError(f"Learning rate scheduler '{name}' not available!")
     return SchedulerConfigs(name=name,

@@ -21,12 +21,16 @@ import smoke_test_all as smoke
 def cli_parser():
     # Exercise the actual project's flag definitions without importing its training
     # stack. settings.py's build_parser uses only argparse, pathlib and constants.
+    # Its parser class fills the per-dataset training defaults, from a module without imports.
     path = smoke.REPO_ROOT / "src/utils/settings.py"
-    definition = next(node for node in ast.parse(path.read_text()).body
-                      if isinstance(node, ast.FunctionDef) and node.name == "build_parser")
+    definitions = [node for node in ast.parse(path.read_text()).body
+                   if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+                   and node.name in ("SettingsParser", "build_parser")
+                   or isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "UNSET_TRAINING_DEFAULT"]
     namespace = runpy.run_path(str(smoke.REPO_ROOT / "src/utils/variables.py"))
+    namespace.update(runpy.run_path(str(smoke.REPO_ROOT / "src/utils/training_defaults.py")))
     namespace.update(argparse=argparse, pathlib=__import__("pathlib"))
-    exec(compile(ast.Module(body=[definition], type_ignores=[]), str(path), "exec"), namespace)
+    exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), "exec"), namespace)
     return namespace["build_parser"]()
 
 

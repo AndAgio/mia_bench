@@ -3,7 +3,21 @@ import json
 import os
 import pathlib
 from src.utils.configs import generate_configs_from_settings, get_hash_from_settings, get_relevant_settings
+from src.utils.training_defaults import apply_training_defaults
 from .variables import DECISION_RULES, DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
+
+
+# Ends the help of the training options whose default depends on the dataset.
+UNSET_TRAINING_DEFAULT = "; unset, the dataset's default (src/utils/training_defaults.py)"
+
+
+class SettingsParser(argparse.ArgumentParser):
+        """The benchmark's argument parser: after parsing, unset training options take their dataset's defaults."""
+        def parse_known_args(self, args=None, namespace=None):
+                """Parse the arguments, then fill the unset training options (see src/utils/training_defaults.py)."""
+                namespace, extras = super().parse_known_args(args, namespace)
+                apply_training_defaults(namespace)
+                return namespace, extras
 
 
 def gather_settings():
@@ -12,7 +26,7 @@ def gather_settings():
 
 def build_parser() -> argparse.ArgumentParser:
         # Training settings
-        parser = argparse.ArgumentParser(description='MIA Benchmarking code')
+        parser = SettingsParser(description='MIA Benchmarking code')
         
         # Dataset parameters
         parser.add_argument("--dataset", type=str, default="cifar100",
@@ -51,22 +65,26 @@ def build_parser() -> argparse.ArgumentParser:
         #                     help="whether to visualize the plot of the NN or not (for debugging)",)
 
         # Training parameters 
-        parser.add_argument('--defender_optimizer', type=str, required=False, default='sgd',
-                                help='optimizer')
-        parser.add_argument('--defender_epochs', type=int, default=100,
-                                help='Max number of epochs to train')
-        parser.add_argument('--defender_batch_size', type=int, required=False, default=256,
-                                help='Batch size for training. With --distributed, the global batch: each GPU takes an equal share, so it must be divisible by the number of GPUs')
+        parser.add_argument('--defender_optimizer', type=str, required=False, default=None,
+                                help="Optimizer: sgd, adam, adamw or a SAM-like one" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--defender_epochs', type=int, default=None,
+                                help="Max number of epochs to train" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--defender_batch_size', type=int, required=False, default=None,
+                                help="Batch size for training. With --distributed, the global batch: each GPU takes an "
+                                     "equal share, so it must be divisible by the number of GPUs"
+                                     + UNSET_TRAINING_DEFAULT)
         parser.add_argument('--defender_loss', type=str, required=False, default='crossentropy',
                                 help='loss to be used for training', choices=['crossentropy'])
         parser.add_argument('--perf_metrics', type=str, nargs="+", required=False, default=['accuracy'],
                                 help='performance metrics to be used for training', choices=['accuracy', 'mse', 'mae', 'rmse'])
         parser.add_argument('--perf_metric_to_track', type=str, required=False, default='accuracy',
                                 help='performance metric to track best model while training', choices=['accuracy', 'mse', 'mae', 'rmse'])
-        parser.add_argument('--defender_lr', type=float, required=False, default=0.01,
-                                help='learning rate')
-        parser.add_argument('--defender_lr_sched', type=str, required=False, default='cosine',
-                                help='lr scheduler', choices=['const', 'step', 'multistep', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+        parser.add_argument('--defender_lr', type=float, required=False, default=None,
+                                help="Learning rate" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--defender_lr_sched', type=str, required=False, default=None,
+                                help="Learning rate scheduler" + UNSET_TRAINING_DEFAULT,
+                                choices=['const', 'step', 'multistep', 'exp', 'cosine', 'warmup_step', 'warmup_exp',
+                                         'warmup_cosine'])
         parser.add_argument('--defender_lr_step_size', type=int, required=False, default=50,
                                 help='step size in epochs for the step, warmup step lr schedulers')
         parser.add_argument('--defender_lr_step_gamma', type=float, required=False, default=0.1,
@@ -86,10 +104,10 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_lr_step_milestones', nargs="+", type=int, default=[60, 120],
                                 help='Set of milestones to be used to decay lr in multistep lr scheduler')
 
-        parser.add_argument('--defender_weight_decay', type=float, required=False, default=5e-4,
-                                help='weight decay')
-        parser.add_argument('--defender_momentum', type=float, required=False, default=0.9,
-                                help='momentum')
+        parser.add_argument('--defender_weight_decay', type=float, required=False, default=None,
+                                help="Weight decay" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--defender_momentum', type=float, required=False, default=None,
+                                help="Momentum of SGD-like optimizers" + UNSET_TRAINING_DEFAULT)
         parser.add_argument('--defender_nesterov', action="store_true", default=False,
                                 help='nesterov')
         # Settings of the SAM-like optimizers: unset (None) means the default given in the help, so that setting a
@@ -388,18 +406,22 @@ def build_parser() -> argparse.ArgumentParser:
                                         "mobile_small", "mobile_large", 
                                         "vit",
                                         "tabular_mlp",])
-        parser.add_argument('--attacker_optimizer', type=str, required=False, default='sgd',
-                                help='optimizer')
-        parser.add_argument('--attacker_epochs', type=int, default=100,
-                                help='Max number of epochs to train')
-        parser.add_argument('--attacker_batch_size', type=int, required=False, default=256,
-                                help='Batch size for training. With --distributed, the global batch: each GPU takes an equal share, so it must be divisible by the number of GPUs')
+        parser.add_argument('--attacker_optimizer', type=str, required=False, default=None,
+                                help="Optimizer: sgd, adam, adamw or a SAM-like one" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--attacker_epochs', type=int, default=None,
+                                help="Max number of epochs to train" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--attacker_batch_size', type=int, required=False, default=None,
+                                help="Batch size for training. With --distributed, the global batch: each GPU takes an "
+                                     "equal share, so it must be divisible by the number of GPUs"
+                                     + UNSET_TRAINING_DEFAULT)
         parser.add_argument('--attacker_loss', type=str, required=False, default='crossentropy',
                                 help='loss to be used for training', choices=['crossentropy'])
-        parser.add_argument('--attacker_lr', type=float, required=False, default=0.01,
-                                help='learning rate')
-        parser.add_argument('--attacker_lr_sched', type=str, required=False, default='cosine',
-                                help='lr scheduler', choices=['const', 'step', 'multistep', 'exp', 'cosine', 'warmup_step', 'warmup_exp', 'warmup_cosine'])
+        parser.add_argument('--attacker_lr', type=float, required=False, default=None,
+                                help="Learning rate" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--attacker_lr_sched', type=str, required=False, default=None,
+                                help="Learning rate scheduler" + UNSET_TRAINING_DEFAULT,
+                                choices=['const', 'step', 'multistep', 'exp', 'cosine', 'warmup_step', 'warmup_exp',
+                                         'warmup_cosine'])
         parser.add_argument('--attacker_lr_step_size', type=int, required=False, default=50,
                                 help='step size in epochs for the step, warmup step lr schedulers')
         parser.add_argument('--attacker_lr_step_gamma', type=float, required=False, default=0.1,
@@ -419,10 +441,10 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_lr_step_milestones', nargs="+", type=int, default=[60, 120],
                                 help='Set of milestones to be used to decay lr in multistep lr scheduler')
 
-        parser.add_argument('--attacker_weight_decay', type=float, required=False, default=5e-4,
-                                help='weight decay')
-        parser.add_argument('--attacker_momentum', type=float, required=False, default=0.9,
-                                help='momentum')
+        parser.add_argument('--attacker_weight_decay', type=float, required=False, default=None,
+                                help="Weight decay" + UNSET_TRAINING_DEFAULT)
+        parser.add_argument('--attacker_momentum', type=float, required=False, default=None,
+                                help="Momentum of SGD-like optimizers" + UNSET_TRAINING_DEFAULT)
         parser.add_argument('--attacker_nesterov', action="store_true", default=False,
                                 help='nesterov')
         # Settings of the SAM-like optimizers: unset (None) means the default given in the help, so that setting a

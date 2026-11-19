@@ -84,7 +84,9 @@ def setup(app):
 
 
 # ---- Tables generated from the code, so that the pages cannot drift from it ----
-DATASET_NAMES = {'cifar10': 'CIFAR-10', 'cifar100': 'CIFAR-100', 'purchase': 'Purchase', 'texas': 'Texas'}
+DATASET_NAMES = {'cifar10': 'CIFAR-10', 'cifar100': 'CIFAR-100', 'cinic10': 'CINIC-10', 'svhn': 'SVHN',
+                 'fmnist': 'Fashion-MNIST', 'gtsrb': 'GTSRB', 'tinyimagenet': 'Tiny ImageNet', 'imagenet': 'ImageNet',
+                 'purchase': 'Purchase', 'texas': 'Texas', 'news': 'News'}
 
 
 def write_if_changed(path: pathlib.Path, text: str):
@@ -232,6 +234,26 @@ def memguard_parameters():
 
 
 write_generated('memguard_parameters.md', memguard_parameters())
+
+
+def training_defaults():
+    from src.utils.training_defaults import TRAINING_DEFAULTS, TRAINING_OPTIONS
+    headers = {'optimizer': 'Optimizer', 'lr': 'Learning rate', 'lr_sched': 'Schedule', 'weight_decay': 'Weight decay',
+               'momentum': 'Momentum', 'epochs': 'Epochs', 'batch_size': 'Batch size'}
+    assert set(headers) == set(TRAINING_OPTIONS), 'name every training option in training_defaults'
+
+    def cell(defaults, option):
+        if option == 'momentum' and defaults['optimizer'] in ('adam', 'adamw'):
+            return 'not used'
+        return format_default(defaults[option])
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | '
+            + ' | '.join(cell(defaults, option) for option in TRAINING_OPTIONS) + ' |'
+            for dataset, defaults in TRAINING_DEFAULTS.items()]
+    return '\n'.join(['| Dataset | ' + ' | '.join(headers[option] for option in TRAINING_OPTIONS) + ' |',
+                      '|---' * (len(TRAINING_OPTIONS) + 1) + '|', *rows, ''])
+
+
+write_generated('training_defaults.md', training_defaults())
 
 
 def option_table(prefixes: list) -> str:

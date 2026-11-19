@@ -7,6 +7,7 @@ defense. To install it and run a first experiment, see the [README](https://gith
 - [Attacks](attacks/index.md)
 - [Differences from the papers](fidelity.md)
 - [Command-line options](reference/cli.md)
+- [Training defaults](reference/training.md)
 - [API reference](reference/api.md)
 - [Documenting a method](contributing.md)
 
@@ -24,6 +25,7 @@ fidelity
 :caption: Reference
 
 reference/cli
+reference/training
 reference/api
 ```
 
