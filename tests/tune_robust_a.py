@@ -35,22 +35,29 @@ def tuning_aucs(probs, sample_ids, is_member, population_probs, population_ids, 
     references, for each a in TUNING_A_GRID.
 
     probs and population_probs hold the probabilities of the tuning samples and of the population under every shadow
-    model, one column each; maps holds each shadow model's training samples. As in the attack, Pr(x)_OUT averages the
-    references not trained on x and Pr(z) averages the references. The population keeps only non-members of the
-    attacked model, as the attack's population holds non-members of the target.
+    model, one column each; maps holds each shadow model's training samples. As in the attack, Pr(x) and Pr(z) both
+    average the references not trained on the sample, through a. The population keeps only non-members of the attacked
+    model, as the attack's population holds non-members of the target, with at least one reference not trained on them.
     """
     references = [column for column in range(probs.shape[1]) if column != attacked]
     reference_sets = [set(maps[column]) for column in references]
-    out = np.array([[sample not in members for members in reference_sets] for sample in sample_ids],
-                   dtype=bool).reshape(len(sample_ids), len(references))
-    keep = out.any(axis=1)
-    p_x_out = (probs[:, references] * out).sum(axis=1) / np.maximum(out.sum(axis=1), 1)
+
+    def out_of(samples):
+        """Whether each reference model was not trained on each sample."""
+        return np.array([[sample not in members for members in reference_sets] for sample in samples],
+                        dtype=bool).reshape(len(samples), len(references))
+
+    def p_out(sample_probs, out):
+        return (sample_probs[:, references] * out).sum(axis=1) / np.maximum(out.sum(axis=1), 1)
+    out_x, out_z = out_of(sample_ids), out_of(population_ids)
+    keep = out_x.any(axis=1)
     attacked_members = set(maps[attacked])
-    z_out = np.array([z not in attacked_members for z in population_ids])
-    ratio_z = population_probs[z_out, attacked] / (population_probs[z_out][:, references].mean(axis=1) + 1e-15)
+    z_keep = np.array([z not in attacked_members for z in population_ids]) & out_z.any(axis=1)
+    p_x_out, p_z_out = p_out(probs, out_x)[keep], p_out(population_probs, out_z)[z_keep]
     is_member = np.asarray(is_member, dtype=bool)[keep]
-    return [roc_auc_score(is_member, rmia_scores(probs[keep, attacked] / (offline_p_x(p_x_out[keep], a) + 1e-15),
-                                                 ratio_z, gamma))
+    return [roc_auc_score(is_member, rmia_scores(probs[keep, attacked] / (offline_p_x(p_x_out, a) + 1e-15),
+                                                 population_probs[z_keep, attacked] / (offline_p_x(p_z_out, a) + 1e-15),
+                                                 gamma))
             for a in TUNING_A_GRID]
 
 
@@ -87,7 +94,7 @@ def main(argv=None):
                                      device=device)
     row = {sample: index for index, sample in enumerate(sample_ids)}
     population_ids = attack.shadow_manager.sample_random_population_indices(
-        num_data=configs.attacker.attack.random_pop_size)
+        num_data=configs.attacker.attack.random_pop_size, exclude=attack.population_exclusions())
     population = attack.shadow_manager.get_random_population(indices=population_ids, labels='original')
     population_probs = attack.compute_p_x_theta(audit_dataset=population,
                                                 models_for_sample=[model_ids for _ in population_ids], device=device)

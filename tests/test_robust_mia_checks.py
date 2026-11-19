@@ -80,6 +80,40 @@ class TuneATests(unittest.TestCase):
         self.assertEqual(TUNING_A_GRID[int(np.argmax(aucs))], .2)
 
 
+class PopulationTests(unittest.TestCase):
+    """Pr(z) is computed like Pr(x): offline from the shadow models not trained on z, through a; online as the mean of
+    those trained on z and those not."""
+
+    def attack(self, mode):
+        attack = build(mode, n_shadows=3, a=.5)
+        # Two population samples under three shadow models; the first was trained on by models 0 and 1.
+        attack.population_probs = np.array([[.9, .8, .2], [.4, .6, .5]])
+        attack.population_trained = np.array([[True, True, False], [False, True, False]])
+        attack.population_target_probs = np.array([.5, .5])
+        return attack
+
+    def test_offline_pr_z_averages_the_models_not_trained_on_z_through_a(self):
+        p_out = np.array([.2, (.4 + .5) / 2])
+        np.testing.assert_allclose(self.attack('offline').population_ratios(a=.5),
+                                   .5 / (.5 * (1.5 * p_out + .5)))
+
+    def test_online_pr_z_averages_the_models_trained_on_z_and_those_not(self):
+        p_z = .5 * np.array([(.9 + .8) / 2, .6]) + .5 * np.array([.2, (.4 + .5) / 2])
+        np.testing.assert_allclose(self.attack('online').population_ratios(), .5 / p_z)
+
+    def test_samples_without_the_models_pr_z_needs_are_left_out_of_the_population(self):
+        maps = {0: [1, 2, 3], 1: [2, 3, 4], 2: [3, 4, 5]}
+        for mode, excluded in (('offline', {3}), ('online', {3, 0, 6, 7})):
+            with self.subTest(mode=mode):
+                attack = build(mode, n_shadows=3, a=.5)
+                pool = SimpleNamespace(get_indices=lambda mode: list(range(8)))
+                attack.shadow_manager = SimpleNamespace(
+                    get_all_model_indeces=lambda: [0, 1, 2],
+                    shadow_data=SimpleNamespace(get_map=lambda index: maps[index],
+                                                attacker_data_distribution=SimpleNamespace(get=lambda name: pool)))
+                self.assertEqual(attack.population_exclusions(), excluded)
+
+
 class ResultLabelTests(unittest.TestCase):
     def test_offline_results_carry_their_a_and_the_online_result_carries_none(self):
         offline = build('offline', a=[0., 1.])

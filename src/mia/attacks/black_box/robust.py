@@ -5,13 +5,14 @@ from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
+from collections import Counter
 from typing import Union
 import time
 
 # The default a of each dataset. The paper's values where it reports one (App. B.2.2); the others were found with the
 # paper's procedure by tests/tune_robust_a.py, run once offline, not by the attack.
-# TODO: tune svhn, fmnist, texas, news, gtsrb and tinyimagenet with tests/tune_robust_a.py, once offline Pr(z) is
-# settled and the training defaults of the image datasets are checked: a tuned a depends on both.
+# TODO: tune svhn, fmnist, texas, news, gtsrb and tinyimagenet with tests/tune_robust_a.py, once the training defaults
+# of the image datasets are checked: a tuned a depends on how the shadow models are trained.
 DEFAULT_A = {'cifar10': 0.3, 'cinic10': 0.3, 'cifar100': 0.6, 'imagenet': 1.0, 'purchase': 0.2}
 
 
@@ -53,6 +54,8 @@ class RobustMIA(BaseMIA):
         self.population_ids = None
         self.population_probs = None
         self.population_target_probs = None
+        # Which shadow models were trained on each population sample, one column per model.
+        self.population_trained = None
         self.logger.print_it(f"Working with RobustMIA in {self.mode.upper()} mode!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('RobustMIA attacker: sampling of shadow datasets...')
@@ -100,15 +103,30 @@ class RobustMIA(BaseMIA):
                                                      device=device),
                                  params={'a': a}) for a in self.a_values()]
 
+    def population_exclusions(self) -> set:
+        """Pool samples whose Pr(z) cannot be computed like Pr(x): offline, those every shadow model was trained on
+        (no OUT model); online, also those no shadow model was trained on (no IN model)."""
+        shadow_data = self.shadow_manager.shadow_data
+        model_ids = self.shadow_manager.get_all_model_indeces()
+        counts = Counter(sample for model in model_ids for sample in shadow_data.get_map(model))
+        excluded = {sample for sample, count in counts.items() if count == len(model_ids)}
+        if self.mode == 'online':
+            pool = shadow_data.attacker_data_distribution.get('all').get_indices(mode='original')
+            excluded |= {sample for sample in pool if sample not in counts}
+        return excluded
+
     def ensure_population(self, device: Union[torch.device, str] = 'cpu'):
         """Draw the population Z once and compute its probabilities under each shadow model and the target."""
         if self.population_probs is not None:
             return
         self.population_ids = self.shadow_manager.sample_random_population_indices(
-            num_data=self.attack_configs.random_pop_size)
+            num_data=self.attack_configs.random_pop_size, exclude=self.population_exclusions())
         population = self.shadow_manager.get_random_population(indices=self.population_ids, labels='original')
         self.reset_logger()
         model_ids = self.shadow_manager.get_all_model_indeces()
+        trained_sets = [set(self.shadow_manager.shadow_data.get_map(model)) for model in model_ids]
+        self.population_trained = np.array([[z in trained for trained in trained_sets] for z in self.population_ids],
+                                           dtype=bool).reshape(len(self.population_ids), len(model_ids))
         self.logger.print_it(f"Computing p(z)...")
         self.population_probs = self.compute_p_x_theta(audit_dataset=population,
                                                        models_for_sample=[model_ids for _ in self.population_ids],
@@ -117,6 +135,19 @@ class RobustMIA(BaseMIA):
         self.population_target_probs = self.compute_p_x_theta(
             audit_dataset=population, models_for_sample=[[self.defender_model] for _ in self.population_ids],
             device=device)[:, 0]
+
+    def population_ratios(self, a: float = None) -> np.ndarray:
+        """Pr(z|theta) / Pr(z) for each population sample, with Pr(z) computed like Pr(x), as both of the authors'
+        codebases do: offline from the shadow models not trained on z, through a; online as the mean of those trained
+        on z and those not."""
+        trained = self.population_trained
+        p_z_out = (self.population_probs * ~trained).sum(axis=1) / (~trained).sum(axis=1)
+        if self.mode == 'offline':
+            p_z = offline_p_x(p_z_out, a)
+        else:
+            p_z_in = (self.population_probs * trained).sum(axis=1) / trained.sum(axis=1)
+            p_z = 0.5 * p_z_in + 0.5 * p_z_out
+        return self.population_target_probs / (p_z + 1e-15)
 
     def compute_with_a(self, dataset: Dataset, a: float = None, gamma: float = 2,
                        device: Union[torch.device, str] = 'cpu'):
@@ -135,7 +166,7 @@ class RobustMIA(BaseMIA):
                                                   device=device)
 
         self.ensure_population(device=device)
-        right_lr = self.population_target_probs / (np.mean(self.population_probs, axis=1) + 1e-15)
+        right_lr = self.population_ratios(a)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('RobustMIA attacker: LR computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))

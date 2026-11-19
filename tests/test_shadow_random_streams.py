@@ -61,6 +61,15 @@ class CachedShadowDatasetsTests(unittest.TestCase):
                 patch.object(shadow_data_manager, 'DEFAULT_SHADOW_DATASETS_FOLDER', folder):
             self.assertNotEqual(alone, build('offline', seed=1).sample_random_indices(num_data=20))
 
+    def test_the_population_draw_leaves_out_the_excluded_samples(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(shadow_data_manager, 'DEFAULT_SHADOW_DATASETS_FOLDER', folder):
+            manager = build('offline')
+            excluded = set(range(0, 1000, 2))
+            population = manager.sample_random_indices(num_data=400, exclude=excluded)
+        self.assertEqual(len(population), 400)
+        self.assertFalse(set(population) & excluded)
+
     def test_no_draw_comes_from_the_auditing_samples(self):
         with tempfile.TemporaryDirectory() as folder, \
                 patch.object(shadow_data_manager, 'DEFAULT_SHADOW_DATASETS_FOLDER', folder):

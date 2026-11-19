@@ -168,9 +168,11 @@ class ShadowDatasetsManager(Loggable):
         self.logger.print_it(f"Checking executed in {time.time() - s} seconds with {final_outcome_str} outcome.")
         return all(found_outcomes)
 
-    def sample_random_indices(self, num_data: int = 1000):
+    def sample_random_indices(self, num_data: int = 1000, exclude: set = None):
+        """Draw num_data of the attacker's samples, neither auditing nor calibration ones, nor any in `exclude`."""
+        exclude = exclude or set()
         available_indices = self.attacker_data_distribution.get('all').get_indices(mode='original')
-        available_indices = [i for i in available_indices if i not in self.inserted_set]
+        available_indices = [i for i in available_indices if i not in self.inserted_set and i not in exclude]
         self.logger.print_it(f"Sampling random sample dataset...")
         sampled_indices = self._population_rng.choice(available_indices,
                                         num_data,

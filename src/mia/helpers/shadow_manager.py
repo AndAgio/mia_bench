@@ -101,8 +101,9 @@ class ShadowManager(Loggable):
     def find_all_in_dataset_indices_for_sample_id(self, id: int):
         return self.shadow_data.find_shadow_datasets_containing_sample_id(id=id)
     
-    def sample_random_population_indices(self, num_data: int = None):
-        return self.shadow_data.sample_random_indices(num_data=num_data)
+    def sample_random_population_indices(self, num_data: int = None, exclude: set = None):
+        """Draw num_data population samples from the attacker's pool, none of them in `exclude`."""
+        return self.shadow_data.sample_random_indices(num_data=num_data, exclude=exclude)
     
     def get_random_population(self, indices: dict = None, num_data: int = None, labels: str = 'original'):
         return self.shadow_data.get_random_population(indices=indices,
