@@ -1,5 +1,7 @@
 name: "Run TODO to Issue"
-on: [ "push" ]
+on:
+  push:
+    branches: [ "**" ]
 jobs:
   build:
     runs-on: "ubuntu-latest"
@@ -23,7 +25,9 @@ jobs:
           git add -A
           if [[ `git status --porcelain` ]]; then
             git commit -m "Automatically added GitHub issue links to TODOs"
-            git push origin main
+            # Take in commits pushed while this run was going, or the push below is rejected.
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push origin "HEAD:$GITHUB_REF"
           else
             echo "No changes to commit"
           fi

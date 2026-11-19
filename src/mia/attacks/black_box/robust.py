@@ -12,6 +12,7 @@ import time
 # The default a of each dataset. The paper's values where it reports one (App. B.2.2); the others were found with the
 # paper's procedure by tests/tune_robust_a.py, run once offline, not by the attack.
 # TODO: tune svhn, fmnist, texas, news, gtsrb and tinyimagenet with tests/tune_robust_a.py, once the training defaults
+# Issue URL: https://github.com/AndAgio/mia_bench/issues/53
 # of the image datasets are checked: a tuned a depends on how the shadow models are trained.
 DEFAULT_A = {'cifar10': 0.3, 'cinic10': 0.3, 'cifar100': 0.6, 'imagenet': 1.0, 'purchase': 0.2}
 

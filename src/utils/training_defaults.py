@@ -10,6 +10,7 @@ TRAINING_OPTIONS = ('optimizer', 'lr', 'lr_sched', 'weight_decay', 'momentum', '
 
 # Image datasets: SGD with momentum and a cosine schedule, the benchmark's defaults for its ResNets.
 # TODO: check each image dataset as the tabular ones were (train and test accuracy per epoch, against e.g. SGD at 0.1),
+# Issue URL: https://github.com/AndAgio/mia_bench/issues/52
 # and give each its own values: Fashion-MNIST already fits 99.6% of its training data by epoch 10 of 100.
 IMAGE_TRAINING = dict(optimizer='sgd', lr=0.01, lr_sched='cosine', weight_decay=5e-4, momentum=0.9, epochs=100,
                       batch_size=256)

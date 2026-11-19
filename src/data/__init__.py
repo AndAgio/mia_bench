@@ -122,6 +122,7 @@ def import_dataset_by_name(dataset: str, datasets_folder: str = DEFAULT_DATASETS
         test_dataset = ImageNet1K(root=root, split='val', download=True, transform=transform)
     elif dataset == 'tinyimagenet':
         # TODO: Fix loading Tiny ImageNet: TinyImageNet takes no download argument, so this branch raises a TypeError.
+        # Issue URL: https://github.com/AndAgio/mia_bench/issues/50
         # Check whether the class should download the dataset itself, as the other datasets here do.
         # assignees: AndAgio
         root = os.path.join(datasets_folder, 'tinyimagenet')
