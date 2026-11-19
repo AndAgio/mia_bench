@@ -2,7 +2,7 @@ from typing import Union
 import numpy as np
 import torch
 import time
-from src.mia.helpers.reference_thresholds import batched_smoothed_thresholds
+from src.mia.helpers.reference_thresholds import alpha_star, loss_like
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
@@ -16,9 +16,11 @@ class AttackPMIA(BaseMIA):
 
     Paper: "Enhanced Membership Inference Attacks against Machine Learning Models",
     https://arxiv.org/pdf/2111.09679.
+    Each sample is scored by -alpha_star, the smallest false-positive rate at which the population's threshold makes it
+    a member, computed as for Attack-R, and is a member when alpha_star <= --attacker_pmia_alpha.
     """
-    # The smoothed threshold of the target's scores on the population data, computed once for every scored dataset.
-    population_threshold = None
+    # The target's losses on the population data, computed once for every scored dataset.
+    population_losses = None
 
     def __init__(self, 
                 defender_model: torch.nn.Module,
@@ -27,6 +29,8 @@ class AttackPMIA(BaseMIA):
         self.shadow_configs.n_shadow_datasets = 1
         self.shadow_configs.mode = 'offline'
         assert self.attack_configs.p_score_type in ['loss', 'confidence', 'entropy'], f"When using Attack-P MIA, p_score_type must be one of ['loss', 'confidence', 'entropy']!"
+        if not 0 <= self.attack_configs.p_alpha <= 1:
+            raise ValueError(f"--attacker_pmia_alpha must lie between 0 and 1, got {self.attack_configs.p_alpha}.")
         self.logger.print_it(f"Working with Attack-P and scoring mode {self.attack_configs.p_score_type}!")
         self.name = f"Attack-P {self.attack_configs.p_score_type} attacker"
         self.shadow_manager = ShadowManager(logger=self.logger)
@@ -41,14 +45,13 @@ class AttackPMIA(BaseMIA):
         pass
 
     def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
-        """Score each sample by its margin to the smoothed threshold of the target's scores on population data."""
+        """Score each sample by -alpha_star against the target's scores on population data; members score higher."""
         start = time.time()
         if isinstance(device, str):
             device = AttackPMIA.get_device(dev_str=device)
         self.logger.print_it(f"{self.name}: computing scores. This may take a while...")
-        if self.population_threshold is None:
-            self.population_threshold = self.compute_population_threshold(device=device)
-        thresholds = self.population_threshold
+        if self.population_losses is None:
+            self.population_losses = self.compute_population_losses(device=device)
         # compute target model batch losses
         self.logger.print_it(f"{self.name}: forwarding through auditing and thresholding. This may take a while...")
         start_thresh = time.time()
@@ -65,14 +68,9 @@ class AttackPMIA(BaseMIA):
             )
         self.logger.set_logger_newline(console_only=True)
         audit_scores = np.concatenate(audit_scores, axis=0)
-        # Keep the continuous margin for ROC/AUC, with membership above zero.
-        if self.attack_configs.p_score_type == "confidence":
-            scores = audit_scores - thresholds
-        elif self.attack_configs.p_score_type in ["entropy", "loss"]:
-            scores = thresholds - audit_scores
-        else:
-            raise ValueError(f"Unsupported scoring type '{self.attack_configs.p_score_type}'.")
-        decisions = scores >= 0
+        alpha_stars = alpha_star(self.population_losses, loss_like(audit_scores, self.attack_configs.p_score_type))
+        scores = -alpha_stars
+        decisions = alpha_stars <= self.attack_configs.p_alpha
 
         self.logger.print_it(f"{self.name}: auditing forward and thresholding completed in {time.time() - start_thresh:.2f}s.")
         stop = time.time()
@@ -80,8 +78,8 @@ class AttackPMIA(BaseMIA):
         self.logger.print_it(f"{self.name}: score computation done! Time taken: {h}:{m:02d}:{s:02d}...")
         return [MembershipScores(scores, decisions=decisions)]
 
-    def compute_population_threshold(self, device: torch.device):
-        """Return the smoothed threshold of the target's scores on the population data, the shadow dataset."""
+    def compute_population_losses(self, device: torch.device):
+        """Return the target's scores on the population data, the shadow dataset, as losses (see loss_like)."""
         shadow_dataset = self.shadow_manager.get_dataset(index=0,
                                                         labels='original')
         shadow_loader = torch.utils.data.DataLoader(shadow_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -102,12 +100,7 @@ class AttackPMIA(BaseMIA):
         pop_scores = np.concatenate(pop_scores, axis=0)
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"{self.name}: built reference scores matrix in {time.time() - start_ref:.2f}s.")
-        # compute smoothed thresholds for each audit sample 
-        self.logger.print_it(f"{self.name}: computing smoothed thresholds. This may take a while...")
-        start_smooth = time.time()
-        thresholds = AttackPMIA.batched_smoothed_thresholds(pop_scores, self.attack_configs.p_alpha)
-        self.logger.print_it(f"{self.name}: computed smoothed thresholds in {time.time() - start_smooth:.2f}s.")
-        return thresholds
+        return loss_like(pop_scores, self.attack_configs.p_score_type)
 
     def compute_batch_scores(self, model: torch.nn.Module, data: torch.Tensor, label: torch.Tensor):
         model.eval()
@@ -142,8 +135,3 @@ class AttackPMIA(BaseMIA):
         log_probs = torch.log(probs + 1e-12)
         entropy = -torch.sum(probs * log_probs, dim=-1)
         return entropy
-
-    @staticmethod
-    def batched_smoothed_thresholds(ref_matrix: np.ndarray, alpha: float):
-        """Compute the shared, numerically stable reference-score thresholds."""
-        return batched_smoothed_thresholds(ref_matrix, alpha)

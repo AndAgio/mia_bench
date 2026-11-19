@@ -2,7 +2,7 @@ from typing import Union
 import numpy as np
 import torch
 import time
-from src.mia.helpers.reference_thresholds import batched_smoothed_thresholds
+from src.mia.helpers.reference_thresholds import alpha_star, loss_like
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils import convert_to_hms
@@ -16,6 +16,9 @@ class AttackRMIA(BaseMIA):
 
     Paper: "Enhanced Membership Inference Attacks against Machine Learning Models",
     https://arxiv.org/pdf/2111.09679.
+    Each sample is scored by -alpha_star, the smallest false-positive rate at which its reference models' threshold
+    makes it a member, as the authors' figure code computes it. It is a member when alpha_star is at most
+    --attacker_rmia_alpha.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
@@ -24,6 +27,8 @@ class AttackRMIA(BaseMIA):
         assert self.shadow_configs.n_shadow_datasets >= 1, f"When using Attack-R MIA, at least 1 shadow dataset must be used!"
         assert self.shadow_configs.mode == 'offline', f"When using Attack-R MIA, only offline shadow datasets are supported!"
         assert self.attack_configs.r_score_type in ['loss', 'confidence', 'entropy'], f"When using Attack-R MIA, r_score_type must be one of ['loss', 'confidence', 'entropy']!"
+        if not 0 <= self.attack_configs.r_alpha <= 1:
+            raise ValueError(f"--attacker_rmia_alpha must lie between 0 and 1, got {self.attack_configs.r_alpha}.")
         self.logger.print_it(f"Working with Attack-R and scoring mode {self.attack_configs.r_score_type}!")
         self.name = f"Attack-R {self.attack_configs.r_score_type} attacker"
         self.shadow_manager = ShadowManager(logger=self.logger)
@@ -48,7 +53,7 @@ class AttackRMIA(BaseMIA):
         self.logger.print_it(f"{self.name}: done optimizing. It took {h}:{m:02d}:{s:02d}...")
 
     def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
-        """Score each sample by its margin to the smoothed threshold of its reference models' scores."""
+        """Score each sample by -alpha_star against its reference models' scores; members score higher."""
         start = time.time()
         if isinstance(device, str):
             device = AttackRMIA.get_device(dev_str=device)
@@ -74,11 +79,6 @@ class AttackRMIA(BaseMIA):
             ref_matrix[i] = np.concatenate(losses, axis=0)
         self.logger.set_logger_newline(console_only=True)
         self.logger.print_it(f"{self.name}: built reference loss matrix in {time.time() - start_ref:.2f}s.")
-        # compute smoothed thresholds for each audit sample 
-        self.logger.print_it(f"{self.name}: computing smoothed thresholds. This may take a while...")
-        start_smooth = time.time()
-        thresholds = AttackRMIA.batched_smoothed_thresholds(ref_matrix, self.attack_configs.r_alpha)
-        self.logger.print_it(f"{self.name}: smoothed loss matrix in {time.time() - start_smooth:.2f}s.")
         # compute target model batch losses
         self.logger.print_it(f"{self.name}: forwarding through auditing and thresholding. This may take a while...")
         start_thresh = time.time()
@@ -94,12 +94,10 @@ class AttackRMIA(BaseMIA):
             )
         self.logger.set_logger_newline(console_only=True)
         target_losses = np.concatenate(target_losses, axis=0)
-        # Keep the continuous margin for ROC/AUC, with membership above zero.
-        if self.attack_configs.r_score_type == "confidence":
-            scores = target_losses - thresholds
-        else:
-            scores = thresholds - target_losses
-        decisions = scores >= 0
+        score_type = self.attack_configs.r_score_type
+        alpha_stars = alpha_star(loss_like(ref_matrix, score_type), loss_like(target_losses, score_type))
+        scores = -alpha_stars
+        decisions = alpha_stars <= self.attack_configs.r_alpha
         self.logger.print_it(f"{self.name}: auditing forward and thresholding completed in {time.time() - start_thresh:.2f}s.")
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
@@ -140,7 +138,3 @@ class AttackRMIA(BaseMIA):
         entropy = -torch.sum(probs * log_probs, dim=-1)
         return entropy
 
-    @staticmethod
-    def batched_smoothed_thresholds(ref_matrix: np.ndarray, alpha: float):
-        """Compute the shared, numerically stable reference-score thresholds."""
-        return batched_smoothed_thresholds(ref_matrix, alpha)

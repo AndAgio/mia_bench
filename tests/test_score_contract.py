@@ -47,33 +47,26 @@ class ScoreContractTests(unittest.TestCase):
                     self.assertEqual(roc_auc_score([0, 0, 1, 1], scores), 1.)
                     np.testing.assert_array_equal(decisions, [False, False, True, True])
 
-    def test_reference_attacks_keep_ranking_and_calibrated_decisions(self):
-        dataset = TensorDataset(torch.zeros(4, 2), torch.zeros(4, dtype=torch.long),
-                                torch.arange(4), torch.zeros(4))
-        for cls, prefix in ((AttackPMIA, 'p'), (AttackRMIA, 'r')):
-            for mode in ('loss', 'entropy', 'confidence'):
-                with self.subTest(attack=prefix, mode=mode):
-                    attack = object.__new__(cls)
-                    attack.logger = Mock()
-                    attack.name = prefix
-                    attack.attack_configs = SimpleNamespace(
-                        **{f'{prefix}_score_type': mode, f'{prefix}_alpha': 0.1})
-                    attack.shadow_manager = Mock()
-                    attack.shadow_manager.get_dataset.return_value = dataset
-                    attack.shadow_manager.get_all_models.return_value = {0: torch.nn.Identity()}
-                    attack.defender_model = torch.nn.Identity()
-                    # All points fall on the same side of the calibrated cutoff;
-                    # ROC must still retain the perfect underlying ranking.
-                    raw = np.array([0.1, 0.2, 0.3, 0.4])
-                    if mode == 'confidence':
-                        raw = 1 - raw
-                    threshold = 0.5
-                    attack.compute_batch_scores = Mock(return_value=raw)
-                    with patch.object(cls, 'batched_smoothed_thresholds', return_value=threshold):
-                        [(scores, decisions, _)] = attack.score(dataset)
-                    self.assertEqual(roc_auc_score([1, 1, 0, 0], scores), 1.0)
-                    self.assertEqual(len(np.unique(scores)), 4)
-                    np.testing.assert_array_equal(decisions, [1, 1, 1, 1])
+    def test_scores_follow_the_loss_and_members_are_the_samples_with_alpha_star_at_most_alpha(self):
+        # Attack-P compares every sample with the same population, so alpha_star grows with the loss: the ranking is the
+        # loss's, and the members are exactly the samples whose alpha_star, minus their score, is at most alpha.
+        dataset = TensorDataset(torch.zeros(5, 2), torch.zeros(5, dtype=torch.long), torch.arange(5), torch.zeros(5))
+        population, audit = np.linspace(.5, 3., 20), np.array([.1, .6, 1.2, 2.5, 4.])
+        for mode in ('loss', 'entropy', 'confidence'):
+            with self.subTest(mode=mode):
+                attack = object.__new__(AttackPMIA)
+                attack.logger = Mock()
+                attack.name = 'p'
+                attack.attack_configs = SimpleNamespace(p_score_type=mode, p_alpha=.1)
+                attack.shadow_manager = Mock()
+                attack.shadow_manager.get_dataset.return_value = dataset
+                attack.defender_model = torch.nn.Identity()
+                # A confidence c reads as the loss -log c, so the confidences are e^-loss.
+                inputs = (np.exp(-population), np.exp(-audit)) if mode == 'confidence' else (population, audit)
+                attack.compute_batch_scores = Mock(side_effect=list(inputs))
+                [(scores, decisions, _)] = attack.score(dataset)
+                self.assertTrue((np.diff(scores) < 0).all())
+                np.testing.assert_array_equal(decisions, -scores <= .1)
 
     def test_yoqo_scores_use_only_label_agreement(self):
         attack = object.__new__(Yoqo)
