@@ -8,6 +8,22 @@ from src.utils import convert_to_hms
 from typing import Union
 import time
 
+# The default a of each dataset. The paper's values where it reports one (App. B.2.2); the others were found with the
+# paper's procedure by tests/tune_robust_a.py, run once offline, not by the attack.
+# TODO: tune svhn, fmnist, texas, news, gtsrb and tinyimagenet with tests/tune_robust_a.py, once offline Pr(z) is
+# settled and the training defaults of the image datasets are checked: a tuned a depends on both.
+DEFAULT_A = {'cifar10': 0.3, 'cinic10': 0.3, 'cifar100': 0.6, 'imagenet': 1.0, 'purchase': 0.2}
+
+
+def offline_p_x(p_x_out: np.ndarray, a: float) -> np.ndarray:
+    """The paper's equation 10: Pr(x) with the IN models approximated as Pr(x)_IN = a Pr(x)_OUT + 1 - a."""
+    return 0.5 * ((1 + a) * p_x_out + (1 - a))
+
+
+def rmia_scores(ratio_x: np.ndarray, ratio_z: np.ndarray, gamma: float) -> np.ndarray:
+    """The share of population samples z that each x gamma-dominates: Pr(x|theta)/Pr(x) > gamma Pr(z|theta)/Pr(z)."""
+    return np.mean(ratio_x[:, np.newaxis] / ratio_z[np.newaxis, :] > gamma, axis=1)
+
 
 class RobustMIA(BaseMIA):
     """RMIA: a likelihood ratio between the sample and population samples, computed with reference models.
@@ -28,12 +44,15 @@ class RobustMIA(BaseMIA):
             raise ValueError(f"Online RobustMIA needs at least 2 shadow models (--n_shadows), got "
                              f"{self.shadow_configs.n_shadow_datasets}: it averages the models trained with each "
                              f"sample (IN) and those without it (OUT), and with 1 model no model is IN.")
-        if self.mode == 'offline' and not all(0 <= a <= 1 for a in self.a_values()):
-            raise ValueError(f"RobustMIA's a (--attacker_robust_a) must lie between 0 and 1, got "
-                             f"{self.attack_configs.a}.")
-        # The population z and its ratios p(z|theta)/p(z), drawn once so that every value of a and every scored dataset
-        # (auditing and calibration samples) is compared with the same population.
-        self.population_ratios = None
+        if self.mode == 'offline':
+            a_values = self.a_values()
+            if not all(0 <= a <= 1 for a in a_values):
+                raise ValueError(f"RobustMIA's a (--attacker_robust_a) must lie between 0 and 1, got {a_values}.")
+        # The population Z and its probabilities under each shadow model and the target, drawn once so that every value
+        # of a and every scored dataset (auditing and calibration samples) is compared with the same population.
+        self.population_ids = None
+        self.population_probs = None
+        self.population_target_probs = None
         self.logger.print_it(f"Working with RobustMIA in {self.mode.upper()} mode!")
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('RobustMIA attacker: sampling of shadow datasets...')
@@ -58,27 +77,48 @@ class RobustMIA(BaseMIA):
 
 
     def a_values(self) -> list[float]:
-        """The values of the paper's a to score with in offline mode, one result each."""
+        """The values of the paper's a to score with in offline mode, one result each: the given ones, or else the
+        dataset's default (DEFAULT_A)."""
         a = self.attack_configs.a
-        return [float(value) for value in (a if isinstance(a, list) else [a])]
+        if a is not None:
+            return [float(value) for value in (a if isinstance(a, list) else [a])]
+        dataset = self.base_dataset_configs.name
+        if dataset not in DEFAULT_A:
+            raise ValueError(f"RobustMIA has no default a for {dataset}: pass --attacker_robust_a, or find one with "
+                             f"tests/tune_robust_a.py and add it to DEFAULT_A in src/mia/attacks/black_box/robust.py.")
+        return [DEFAULT_A[dataset]]
 
     def score(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
         """Score each sample with the share of population samples it dominates, once for each value of a offline."""
-        random_pop_size = self.attack_configs.random_pop_size
         gamma = self.attack_configs.gamma
         if self.mode == 'online':
             # The online test averages the IN and OUT models: it has no a, so its result carries no a either.
-            return [MembershipScores(self.compute_with_a(dataset=dataset, random_pop_size=random_pop_size, a=None,
-                                                         gamma=gamma, device=device))]
+            return [MembershipScores(self.compute_with_a(dataset=dataset, a=None, gamma=gamma, device=device))]
         return [MembershipScores(self.compute_with_a(dataset=dataset,
-                                                     random_pop_size=random_pop_size,
                                                      a=a,
                                                      gamma=gamma,
                                                      device=device),
                                  params={'a': a}) for a in self.a_values()]
 
+    def ensure_population(self, device: Union[torch.device, str] = 'cpu'):
+        """Draw the population Z once and compute its probabilities under each shadow model and the target."""
+        if self.population_probs is not None:
+            return
+        self.population_ids = self.shadow_manager.sample_random_population_indices(
+            num_data=self.attack_configs.random_pop_size)
+        population = self.shadow_manager.get_random_population(indices=self.population_ids, labels='original')
+        self.reset_logger()
+        model_ids = self.shadow_manager.get_all_model_indeces()
+        self.logger.print_it(f"Computing p(z)...")
+        self.population_probs = self.compute_p_x_theta(audit_dataset=population,
+                                                       models_for_sample=[model_ids for _ in self.population_ids],
+                                                       device=device)
+        self.logger.print_it(f"Computing p(z|theta) with defender model...")
+        self.population_target_probs = self.compute_p_x_theta(
+            audit_dataset=population, models_for_sample=[[self.defender_model] for _ in self.population_ids],
+            device=device)[:, 0]
 
-    def compute_with_a(self, dataset: Dataset, random_pop_size: int, a: float = None, gamma: float = 1,
+    def compute_with_a(self, dataset: Dataset, a: float = None, gamma: float = 2,
                        device: Union[torch.device, str] = 'cpu'):
         """Score the dataset for one value of a (offline; None online): the share of population samples it dominates."""
         # Compute P(x|theta) for all samples in the auditing dataset
@@ -94,24 +134,13 @@ class RobustMIA(BaseMIA):
         left_lr = self.compute_p_x_theta_over_p_x(dataset=audit_dataset, dataset_indices=audit_dataset_indices, a=a,
                                                   device=device)
 
-        if self.population_ratios is None:
-            random_data_indices = self.shadow_manager.sample_random_population_indices(num_data=random_pop_size)
-            random_data = self.shadow_manager.get_random_population(indices=random_data_indices,
-                                                                    labels='original')
-            self.reset_logger()
-            self.population_ratios = self.compute_p_z_theta_over_p_z(dataset=random_data, device=device)
-        right_lr = self.population_ratios
+        self.ensure_population(device=device)
+        right_lr = self.population_target_probs / (np.mean(self.population_probs, axis=1) + 1e-15)
         stop = time.time()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('RobustMIA attacker: LR computation done! Time taken to compute LR: {}:{:02d}:{:02d}...'.format(h, m, s))
-
-        lr_ratios = np.divide(left_lr[:, np.newaxis], right_lr)
         self.logger.print_it(f'RobustMIA attacker: scoring with gamma={gamma}')
-        positives_indices = lr_ratios > gamma
-        positives = np.sum(positives_indices, axis=1)
-        total = right_lr.shape[0]
-        scores = positives/total
-        return scores        
+        return rmia_scores(left_lr, right_lr, gamma)
 
 
     def compute_p_x_theta_over_p_x(self, dataset: Dataset, dataset_indices: list[int], a: float = None,
@@ -146,8 +175,7 @@ class RobustMIA(BaseMIA):
         # p_x_theta_out = np.mean(p_x_thetas_out, axis=1)
         p_x_out = np.mean(p_x_thetas_out, axis=1)
         if self.mode == 'offline':
-            # The paper's equation 10: Pr(x)_IN approximated as a * Pr(x)_OUT + 1 - a.
-            p_x = 0.5*((1+a)*p_x_out + (1-a))
+            p_x = offline_p_x(p_x_out, a)
         elif self.mode == 'online':
             # p_x_theta_in = np.mean(p_x_thetas_in, axis=1)
             p_x_in = np.mean(p_x_thetas_in, axis=1)
@@ -163,25 +191,6 @@ class RobustMIA(BaseMIA):
         return ratio
 
 
-    def compute_p_z_theta_over_p_z(self, dataset: Dataset, device: Union[torch.device, str] = 'cpu'):
-        all_models_indices = self.shadow_manager.get_all_model_indeces()
-        trained_shadow_models_for_sample = [all_models_indices for _ in range(len(dataset))]
-        self.logger.print_it(f"Computing p(z)...")
-        p_z_thetas = self.compute_p_x_theta(audit_dataset=dataset,
-                                            models_for_sample=trained_shadow_models_for_sample,
-                                            device=device)
-        p_z = np.mean(p_z_thetas, axis=1)
-
-        self.logger.print_it(f"Computing p(z|theta) with defender model...")
-        p_z_thetas_defender = self.compute_p_x_theta(audit_dataset=dataset,
-                                                models_for_sample=[[self.defender_model] for _ in range(len(dataset))],
-                                                device=device)
-        p_z_thetas_defender = p_z_thetas_defender.squeeze()
-
-        ratio = p_z_thetas_defender/(p_z + 1e-15)
-        return ratio
-        
-        
     def compute_p_x_theta(self, audit_dataset: Dataset, models_for_sample: list[list[Union[int, torch.nn.Module]]], device: Union[torch.device, str] = 'cpu'):
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)

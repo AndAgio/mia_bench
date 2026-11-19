@@ -352,7 +352,6 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
     queries = "50" if medium else "3"
     quantiles = "50" if medium else "3"
     auxiliary_batch_size = str(profile.batch_size) if medium else "4"
-    robust_a = "0.5" if medium else str(profile.alpha)
     statistical_alpha = "0.05" if medium else str(profile.alpha)
     return [
         "--dataset", args.dataset,
@@ -371,8 +370,8 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         # Every rule, so that each attack also scores its calibration samples.
         "--n_calibration_samples", str(profile.audit_samples),
         "--decision_rule", "attack", "calibrated", "oracle",
+        # RobustMIA's a is left unset, so that its default runs: the paper's value, or else the tuning.
         "--attacker_robust_rand_pop_size", str(profile.audit_samples),
-        "--attacker_robust_a", robust_a,
         "--attacker_quantile_n", quantiles,
         "--attacker_quantile_low", "0.01" if medium else "0.10",
         "--attacker_quantile_high", "0.99" if medium else "0.90",

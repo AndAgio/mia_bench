@@ -316,14 +316,18 @@ class ShadowDatasetsManager(Loggable):
         else:
             raise ValueError('Labels mode should be either mia, original or shadow!')
         
-    def sample_outside_shadow_dataset(self, index: int, num_data: int, labels: str = 'original'):
+    def indices_outside_shadow_dataset(self, index: int) -> list[int]:
+        """Original indices of the attacker's samples outside shadow dataset `index`, auditing and calibration ones
+        excluded: non-members of that shadow model."""
         assert self.check_id(index), f"Invalid ID for shadow dataset you are trying to get with id {index}"
-        assert labels in ['original', 'shadow'], f"Invalid labels mode {labels} found when trying to sample outside shadow dataset with id {index}!"
-        inside_ids = self.shadow_datasets_map[index]
+        inside_set = set(self.shadow_datasets_map[index])
         all_available_data = self.attacker_data_distribution.get('all').get_indices(mode='original')
-        indices_train = [i for i in all_available_data if i not in self.inserted_set]
-        inside_set = set(inside_ids)
-        available_indices = [i for i in indices_train if i not in inside_set]
+        return [i for i in all_available_data if i not in self.inserted_set and i not in inside_set]
+
+    def sample_outside_shadow_dataset(self, index: int, num_data: int, labels: str = 'original'):
+        assert labels in ['original', 'shadow'], \
+            f"Invalid labels mode {labels} found when trying to sample outside shadow dataset with id {index}!"
+        available_indices = self.indices_outside_shadow_dataset(index)
         assert len(available_indices) >= num_data, f"Not enough available data to sample outside shadow dataset! Requested {num_data} samples but only {len(available_indices)} are available."
         sampled_indices = self._outside_rng.choice(available_indices, num_data, replace=False).tolist()
         if labels == 'original':

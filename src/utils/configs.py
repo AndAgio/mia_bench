@@ -296,8 +296,9 @@ class RobustMiaConfigs:
     strategy: Literal["robust"] = "robust"
     mode: str = 'offline'
     # The paper's a (App. B.2.2), the slope of the offline approximation of the IN models; not a false-positive rate.
-    a: Union[float, list[float]] = 0.5
-    gamma: float = 1
+    # Unset, the paper's value for the dataset, or else tuned on the attacker's shadow models.
+    a: Optional[Union[float, list[float]]] = None
+    gamma: float = 2
     random_pop_size: int = 1000
 
 
@@ -892,7 +893,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     if settings.attacker_mode in ['online_robust', 'offline_robust', 'on_robust', 'off_robust']:
         robust_mode = 'online' if settings.attacker_mode in ['online_robust', 'on_robust'] else 'offline'
         attack_configs = RobustMiaConfigs(mode=robust_mode,
-                                        a=settings.attacker_robust_alphas,
+                                        a=settings.attacker_robust_a,
                                         gamma=settings.attacker_robust_gamma,
                                         random_pop_size=settings.attacker_robust_rand_pop_size)
         attacker_shadow_configs.mode = robust_mode

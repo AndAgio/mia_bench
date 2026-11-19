@@ -306,14 +306,17 @@ def build_parser() -> argparse.ArgumentParser:
         # RobustMIA parameters
         parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
                                 help='Number of samples in Z to select randomly for LR computation')
-        # The former name stays as an alias, and as the setting's name, so that run hashes do not change.
-        parser.add_argument('--attacker_robust_a', '--attacker_robust_alphas', dest='attacker_robust_alphas',
-                                nargs="+", type=float, default=0.5,
+        # The former name stays as an alias, so that existing scripts keep working.
+        parser.add_argument('--attacker_robust_a', '--attacker_robust_alphas', dest='attacker_robust_a',
+                                nargs="+", type=float, default=None,
                                 help="Offline RobustMIA's a (the paper's App. B.2.2), between 0 and 1: a model trained "
                                      "on a sample is approximated as Pr_IN(x) = a Pr_OUT(x) + 1 - a. Several values "
-                                     "score once each; online mode does not use it. Formerly --attacker_robust_alphas")
-        parser.add_argument('--attacker_robust_gamma', type=float, default=1,
-                                help='Gamma value to be used in the RobustMIA attack')
+                                     "score once each; online mode does not use it. Unset, the dataset's default "
+                                     "(DEFAULT_A in src/mia/attacks/black_box/robust.py); offline runs on a dataset "
+                                     "without one need a value. Formerly --attacker_robust_alphas")
+        parser.add_argument('--attacker_robust_gamma', type=float, default=2,
+                                help="RobustMIA's gamma: a population sample z counts against x only if x's likelihood "
+                                     "ratio is at least gamma times z's (the paper uses 2, App. B.4)")
         # Quantile MIA parameters
         parser.add_argument('--attacker_quantile_n', type=int, default=100,
                                 help='Number of pinball levels from --attacker_quantile_low to '
