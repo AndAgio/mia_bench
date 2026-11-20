@@ -40,7 +40,7 @@ def make_manager():
     manager = WeightedSmoothingTrainManager.__new__(WeightedSmoothingTrainManager)
     manager.model = nn.Sequential(nn.Linear(2, 6), nn.BatchNorm1d(6), nn.Dropout(0.5), nn.Linear(6, 3))
     manager.device = torch.device('cpu')
-    manager.weighted_smoothing_configs = SimpleNamespace(sigma_noise=0.8, warmup_epochs=0)
+    manager.weighted_smoothing_configs = SimpleNamespace(sigma_noise=0.8, plain_epochs=0)
     manager.criterion = nn.CrossEntropyLoss(reduction='none')
     manager.weights = torch.ones(5)
     manager.logger = MagicMock()
@@ -61,7 +61,7 @@ class WeightedSmoothingTests(unittest.TestCase):
         defender = WeightedSmoothingDefender.__new__(WeightedSmoothingDefender)
         defender.logger = MagicMock()
         defender.name = 'weighted_smoothing'
-        defender.weighted_smoothing_configs = SimpleNamespace(warmup_epochs=1)
+        defender.weighted_smoothing_configs = SimpleNamespace(plain_epochs=1)
         defender.dataset = MagicMock()
         defender.untrained_model = nn.Linear(2, 3)
         final_model = nn.Linear(2, 3)
@@ -76,25 +76,25 @@ class WeightedSmoothingTests(unittest.TestCase):
     def test_schedule_requires_smoothing_epochs(self):
         manager = make_manager()
         manager.train_configs = SimpleNamespace(scheduler_config=SimpleNamespace(epochs=2))
-        for warmup in (-1, 2, 3):
-            manager.weighted_smoothing_configs.warmup_epochs = warmup
-            with self.subTest(warmup=warmup), patch.object(TrainManager, 'train') as train:
-                with self.assertRaisesRegex(ValueError, 'warmup_epochs < total epochs'):
+        for plain in (-1, 2, 3):
+            manager.weighted_smoothing_configs.plain_epochs = plain
+            with self.subTest(plain=plain), patch.object(TrainManager, 'train') as train:
+                with self.assertRaisesRegex(ValueError, 'plain_epochs < total epochs'):
                     manager.train()
                 train.assert_not_called()
 
-    def test_warmup_epochs_are_never_kept_as_best(self):
+    def test_plain_epochs_are_never_kept_as_best(self):
         with tempfile.TemporaryDirectory() as folder:
             configs = TrainConfigs(optimizer_config=OptimizerConfigs(name='sgd', lr=0.1),
                                    scheduler_config=SchedulerConfigs(name='const', epochs=4),
                                    batch_size=5, device='cpu', resume=False,
                                    ckpts_folder=Path(folder) / 'ckpts', resume_ckpts_folder=Path(folder) / 'resume')
             manager = WeightedSmoothingTrainManager(configs, 'weighted_smoothing', logger=MagicMock(),
-                                                   weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(warmup_epochs=2))
+                                                   weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(plain_epochs=2))
             model = nn.Linear(2, 3)
             model.name = 'linear'
             manager.initialize_train(MultiDatasets(datasets=[CountingDataset()], ids=['train']), model, configs)
-            # The warmup epochs score best, then epoch 3 beats epoch 4: epoch 3 must be kept.
+            # The plain epochs score best, then epoch 3 beats epoch 4: epoch 3 must be kept.
             scores = {1: 10.0, 2: 9.0, 3: 2.0, 4: 1.0}
             manager.performance_metrics = {'score': lambda preds, targets: scores[manager.epoch]}
             manager.metric_to_track = 'score'
@@ -104,9 +104,6 @@ class WeightedSmoothingTests(unittest.TestCase):
             self.assertEqual(best['epoch'], 3)
             for name, value in best_model.state_dict().items():
                 torch.testing.assert_close(value, best['model_state'][name])
-
-    def test_other_trainers_can_keep_any_epoch(self):
-        self.assertEqual(TrainManager.first_selectable_epoch, 1)
 
     def test_noise_streams_are_rank_specific_and_resume_at_epoch_boundary(self):
         predictions = torch.zeros(5, 3)
@@ -137,7 +134,7 @@ class WeightedSmoothingTests(unittest.TestCase):
                                        batch_size=5, device='cpu', resume=resume,
                                        ckpts_folder=directory / 'ckpts', resume_ckpts_folder=directory / 'resume')
                 manager = WeightedSmoothingTrainManager(configs, 'weighted_smoothing', logger=MagicMock(),
-                                                       weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(warmup_epochs=1))
+                                                       weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(plain_epochs=1))
                 model = nn.Linear(2, 3)
                 model.name = 'linear'
                 manager.initialize_train(MultiDatasets(datasets=[CountingDataset()], ids=['train']), model, configs)
@@ -295,22 +292,22 @@ class WeightedSmoothingTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(WeightedSmoothingTrainManager.mentr(logits, torch.tensor([0, 0]))).all())
 
 
-def warmup_epochs(*argv):
-    # The warmup that the command line selects.
+def plain_epochs(*argv):
+    # The plain epochs that the command line selects.
     settings = build_parser().parse_args([*argv, '--defender_mode', 'weighted_smoothing'])
     configs = generate_configs_from_settings(settings)
-    return configs.defender.defense.warmup_epochs
+    return configs.defender.defense.plain_epochs
 
 
 class WeightedSmoothingConfigsTests(unittest.TestCase):
-    def test_unset_warmup_follows_the_paper_for_the_kind_of_dataset(self):
+    def test_unset_plain_epochs_follow_the_paper_for_the_kind_of_dataset(self):
         tabular = ['--defender_model', 'tabular_mlp', '--attacker_model', 'tabular_mlp']
         for argv, expected in [(['--dataset', 'cifar10'], 2), (['--dataset', 'svhn'], 2),
                                (['--dataset', 'purchase', *tabular], 1), (['--dataset', 'news', *tabular], 1)]:
-            self.assertEqual(warmup_epochs(*argv), expected, argv)
+            self.assertEqual(plain_epochs(*argv), expected, argv)
 
-    def test_set_warmup_wins(self):
-        self.assertEqual(warmup_epochs('--dataset', 'cifar10', '--defender_weighted_smoothing_warmup_epochs', '7'), 7)
+    def test_set_plain_epochs_win(self):
+        self.assertEqual(plain_epochs('--dataset', 'cifar10', '--defender_weighted_smoothing_plain_epochs', '7'), 7)
 
 
 if __name__ == '__main__':

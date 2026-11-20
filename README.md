@@ -270,7 +270,7 @@ preset, and CLI aliases are not rerun as separate algorithms.
 | RelaxLoss / Mixup / HAMP training/full | Descent/ascent/flattening branches; zero and strong mixing/entropy settings; upper bounds; SAM closures |
 | AdvReg / MMD / MMD+Mixup | Zero/weak/strong penalties; additional adversary steps or mixup limits; alternate optimizers |
 | SELENA / MIST / MIST+Mixup | Small ensembles; exclusion boundaries; random/stratified partitions; inner passes; zero/strong cross-difference loss |
-| Weighted smoothing | Zero/large prediction noise; early and final-epoch warmup transitions |
+| Weighted smoothing | Zero/large prediction noise; early and final-epoch plain-to-smoothing transitions |
 | LDL / Data augmentation | Single/multiple noisy queries; zero/tiny/large input noise; disabled/always-on transforms; large rotations; SAM |
 
 Attack cases also vary audit size (2, 8, 10), member fraction (0.25, 0.5, 0.75), and

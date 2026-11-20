@@ -212,9 +212,9 @@ def defense_specs(component, epochs):
     if component == "weighted_smoothing":
         return (baseline,
                 spec("Zero prediction noise", defender_weighted_smoothing_sigma_noise=0.),
-                spec("Warmup-to-smoothing transition", defender_weighted_smoothing_warmup_epochs=min(1, epochs - 1)),
+                spec("Plain-to-smoothing transition", defender_weighted_smoothing_plain_epochs=min(1, epochs - 1)),
                 spec("Large prediction noise", defender_weighted_smoothing_sigma_noise=1.),
-                spec("Final-epoch smoothing transition", defender_weighted_smoothing_warmup_epochs=epochs - 1))
+                spec("Final-epoch smoothing transition", defender_weighted_smoothing_plain_epochs=epochs - 1))
     if component == "purifier":
         return (baseline,
                 spec("One-dimensional latent and zero latent noise", defender_purifier_reformer_latent_dim=1,

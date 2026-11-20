@@ -7,7 +7,7 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  LDL_CODE_N_QUERIES, LDL_PAPER_FLIP_PROBS, PURIFIER_PAPER_REFORMER,
                                  PURIFIER_FALLBACK_DATASET, MIST_PAPER_PARAMETERS, MIST_FALLBACK_DATASET,
                                  RELAXLOSS_CODE_PARAMETERS, RELAXLOSS_IMAGE_FALLBACK_DATASET,
-                                 RELAXLOSS_NONIMAGE_FALLBACK_DATASET, WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS,
+                                 RELAXLOSS_NONIMAGE_FALLBACK_DATASET, WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS,
                                  ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
                                  ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
                                  DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA)
@@ -522,8 +522,8 @@ class WeightedSmoothingDefenseConfigs:
     strategy: Literal["weighted_smoothing"] = "weighted_smoothing"
     sigma_noise: float = 0.1
     # The paper's value on image datasets. generate_configs_from_settings sets the dataset's
-    # (WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS).
-    warmup_epochs: int = 2
+    # (WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS).
+    plain_epochs: int = 2
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class PurifierDefenseConfigs:
@@ -785,13 +785,13 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                     mix_up=mixup,
                                                     alpha_mixup=settings.defender_mixup_alpha if mixup else 0.0)
     elif settings.defender_mode in ['weighted_smoothing', 'weighted-smoothing', 'weighted_smooth', 'weighted-smooth', 'weightedsmoothing', 'weightedsmooth', 'ws']:
-        # Unset warmup takes the paper's value for image or non-image datasets (Sec. 5.4).
-        warmup_epochs = settings.defender_weighted_smoothing_warmup_epochs
-        if warmup_epochs is None:
+        # Unset plain epochs take the paper's value for image or non-image datasets (Sec. 5.4).
+        plain_epochs = settings.defender_weighted_smoothing_plain_epochs
+        if plain_epochs is None:
             is_image_dataset = settings.dataset not in ["purchase", "news", "texas"]
-            warmup_epochs = WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS['image' if is_image_dataset else 'non_image']
+            plain_epochs = WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS['image' if is_image_dataset else 'non_image']
         defender_defense_configs = WeightedSmoothingDefenseConfigs(sigma_noise=settings.defender_weighted_smoothing_sigma_noise,
-                                                                warmup_epochs=warmup_epochs)
+                                                                plain_epochs=plain_epochs)
     elif settings.defender_mode in ['purifier']:
         # Unset reformer settings take the paper's values for the dataset (appendix), or CIFAR-10's.
         paper_reformer = PURIFIER_PAPER_REFORMER.get(settings.dataset,

@@ -298,14 +298,14 @@ checkpoint.write_text('target')
         from dataclasses import replace
         self.assertNotEqual(key, smoke.target_cache_key(flags, replace(profile, data_limit=200), self.parser))
 
-    def test_edge_filters_and_warmup_follow_requested_epochs(self):
+    def test_edge_filters_and_plain_epochs_follow_requested_epochs(self):
         _, cases = self.cases(["--preset", "edge", "--epochs", "1", "--profiles", "alternate",
                                "--only", "defense:weighted_smoothing", "attack:quantile"])
         self.assertEqual(len(cases), 2)
         for case in cases:
             settings = self.settings(case)
             self.assertEqual(settings.defender_epochs, 1)
-            self.assertLess(settings.defender_weighted_smoothing_warmup_epochs, 1)
+            self.assertLess(settings.defender_weighted_smoothing_plain_epochs, 1)
         _, cases = self.cases(["--preset", "edge", "--grid", "defender_lr=0.01,0.02",
                                "--only", "attack:pmia_loss"])
         self.assertEqual(len(cases), 10)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one MNIST epoch with prediction noise + PyTorch CE and no warmup.
+"""Run one MNIST epoch with prediction noise + PyTorch CE and no plain epochs.
 
     python tests/smoke_weighted_smoothing_mnist.py
     python tests/smoke_weighted_smoothing_mnist.py --device mps
@@ -88,8 +88,8 @@ def main():
     logger = get_logger(name='weighted_smoothing_mnist', log_folder=str(args.output_dir / 'logs'))
     manager = WeightedSmoothingTrainManager(
         configs, name='weighted_smoothing_mnist', logger=logger,
-        # Zero warmup ensures the only training epoch actually uses smoothing.
-        weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(warmup_epochs=0, sigma_noise=args.sigma),
+        # No plain epochs, so the only training epoch uses smoothing.
+        weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(plain_epochs=0, sigma_noise=args.sigma),
     )
     manager.initialize_train(dataset=data, model=MNISTCNN(), configs=configs)
     before = [parameter.detach().clone() for parameter in manager.model.parameters()]

@@ -3,8 +3,8 @@
 Choose a defense with `--defender_mode`. Every defense but MMD has its own page so far.
 
 Defenses that change training train on the defender's training split and keep the model of the epoch with the best
-validation score (`--perf_metric_to_track`), never one from a warmup of normal training. The audited non-members are
-drawn from the defender's test split, which no defense trains or tunes on.
+validation score (`--perf_metric_to_track`). The audited non-members are drawn from the defender's test split, which
+no defense trains or tunes on.
 
 Every defense can be paired with every attack, including attacks outside the defense's threat model. LDL,
 MemGuard, Purifier and `hamp_test` act only at inference, so the trained model's internal features are not defended.

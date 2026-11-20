@@ -404,7 +404,7 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         "--defender_selena_L", "2" if medium else "1",
         "--defender_mist_num_submodels", "4" if medium else "2",
         "--defender_mist_submodel_epochs", "1" if args.preset == "edge" else epochs,
-        "--defender_weighted_smoothing_warmup_epochs", "2" if medium else "0",
+        "--defender_weighted_smoothing_plain_epochs", "2" if medium else "0",
         "--defender_purifier_reformer_latent_dim", "16" if medium else "4",
         "--defender_purifier_reformer_hidden_dim", "64" if medium else "8",
         "--defender_purifier_reformer_epochs", epochs,

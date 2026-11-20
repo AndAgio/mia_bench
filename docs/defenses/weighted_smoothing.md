@@ -7,9 +7,10 @@ epochs of normal training, each epoch scores every training sample with Mentr
 sample is within its class. Inference is unchanged. The code the paper links, github.com/BennyTMT/weighted-smoothing,
 no longer exists.
 
-As with the other defenses, training keeps the epoch with the best validation score, but only among the epochs after
-the warmup, which trains normally. The modified loss defends on its own, even without noise: runs with
-`--defender_weighted_smoothing_sigma_noise 0` separate the effect of the loss from that of the noise.
+As with the other defenses, training keeps the epoch with the best validation score, but only among the smoothed
+epochs: the plain epochs that come first train normally, so their model is undefended. The modified loss defends on its
+own, even without noise: runs with `--defender_weighted_smoothing_sigma_noise 0` separate the effect of the loss from
+that of the noise.
 
 ## Usage
 
@@ -24,8 +25,8 @@ The defense is {py:class}`~src.mia.defenses.training.weighted_smoothing.Weighted
 `--defender_weighted_smoothing_sigma_noise` is σ, the standard deviation of the noise before the weights scale it.
 The paper gives no single value: it varies σ to trace the trade-off between accuracy and privacy.
 
-`--defender_weighted_smoothing_warmup_epochs` is the number of epochs of normal training before the smoothing starts,
-and must be below `--defender_epochs`. When left unset, it takes the values of Sec. 5.4:
+`--defender_weighted_smoothing_plain_epochs` is the number of plain epochs, of normal training, before the smoothing
+starts, and must be below `--defender_epochs`. When left unset, it takes the values of Sec. 5.4:
 
 ```{include} ../_generated/weighted_smoothing_parameters.md
 ```

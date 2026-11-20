@@ -92,8 +92,8 @@ RELAXLOSS_NONIMAGE_FALLBACK_DATASET = 'purchase'
 
 # Weighted smoothing's epochs of normal training before the smoothing starts, from Sec. 5.4 of the paper
 # (doi.org/10.1145/3627106.3627189): 2 on image datasets, 1 on tabular ones. Unset
-# --defender_weighted_smoothing_warmup_epochs takes the value for the dataset's kind; News counts as non-image.
-WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS = {'image': 2, 'non_image': 1}
+# --defender_weighted_smoothing_plain_epochs takes the value for the dataset's kind; News counts as non-image.
+WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS = {'image': 2, 'non_image': 1}
 
 # AdvReg's adversarial regularization factor lambda per dataset, from Table 3 of the paper (arXiv 1807.05852). The
 # authors' code (github.com/SPIN-UMass/ML-Privacy-Regulization) agrees on Purchase only, and uses other penalties. Unset

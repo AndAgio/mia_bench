@@ -166,10 +166,10 @@ write_generated('relax_loss_parameters.md', relax_loss_parameters())
 
 
 def weighted_smoothing_parameters():
-    from src.utils.variables import WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS
+    from src.utils.variables import WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS
     kinds = {'image': 'Image', 'non_image': 'Non-image'}
-    rows = [f'| {kinds[kind]} | {epochs} |' for kind, epochs in WEIGHTED_SMOOTHING_PAPER_WARMUP_EPOCHS.items()]
-    return '\n'.join(['| Datasets | Warmup epochs |', '|---|---|', *rows, ''])
+    rows = [f'| {kinds[kind]} | {epochs} |' for kind, epochs in WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS.items()]
+    return '\n'.join(['| Datasets | Plain epochs |', '|---|---|', *rows, ''])
 
 
 write_generated('weighted_smoothing_parameters.md', weighted_smoothing_parameters())

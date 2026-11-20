@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 from src.data.helpers import IndexTrackingMixin
 from src.trainer.train_manager import TrainManager
+from src.trainer.stats_tracker import TrainStats
 from src.optimizers import SAM, ESAM, WSAM, LookSAM, FriendlySAM
 from src.optimizers.utils import enable_running_stats, disable_running_stats
 from src.utils.configs import DefenderConfigs, WeightedSmoothingDefenseConfigs
@@ -25,7 +26,7 @@ class WeightedSmoothingDefender(BaseDefender):
         self.weighted_smoothing_configs = defender_configs.defense
 
     def train_model(self, train_configs, return_stats: bool = False):
-        """Train with weighted smoothing and return the best model after the warmup, with the stats if return_stats."""
+        """Train with weighted smoothing and return the best smoothed model, with the stats if return_stats."""
         self.logger.print_it(f'Weighted Smoothing Defender: training defender model...')
         train_manager = WeightedSmoothingTrainManager(train_configs=train_configs,
                                                 name=self.name,
@@ -55,22 +56,30 @@ class WeightedSmoothingDefender(BaseDefender):
 
 
 class WeightedSmoothingTrainManager(TrainManager):
-    """TrainManager whose epochs after the warmup follow Algorithm 1 of weighted smoothing."""
+    """TrainManager whose epochs after the plain ones follow Algorithm 1 of weighted smoothing."""
     def __init__(self, train_configs, name: str, logger=None, weighted_smoothing_configs: WeightedSmoothingDefenseConfigs = None):
         """Set up the training as TrainManager does, and keep weighted smoothing's settings."""
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.weighted_smoothing_configs = weighted_smoothing_configs
 
     def train(self, extra_configs=None, return_best_model=True, return_last_model=False, return_stats=False):
-        """Check that at least one epoch follows the warmup, then train as TrainManager does."""
-        warmup = self.weighted_smoothing_configs.warmup_epochs
+        """Check that at least one epoch follows the plain ones, then train as TrainManager does."""
+        plain = self.weighted_smoothing_configs.plain_epochs
         epochs = self.train_configs.scheduler_config.epochs
-        if not 0 <= warmup < epochs:
-            raise ValueError(f"Weighted Smoothing requires 0 <= warmup_epochs < total epochs, got {warmup} and {epochs}")
-        # The warmup trains normally, so a model kept from it would be undefended.
-        self.first_selectable_epoch = warmup + 1
+        if not 0 <= plain < epochs:
+            raise ValueError(f"Weighted Smoothing requires 0 <= plain_epochs < total epochs, got {plain} and {epochs}")
         return super().train(extra_configs=extra_configs, return_best_model=return_best_model,
                              return_last_model=return_last_model, return_stats=return_stats)
+
+    def reset_running_stats(self):
+        """Reset as TrainManager does, with stats that never keep a plain epoch, which is undefended, as the best."""
+        super().reset_running_stats()
+        stats = self.train_stats_tracker
+        self.train_stats_tracker = SmoothedEpochsStats(plain_epochs=self.weighted_smoothing_configs.plain_epochs,
+                                                       stage_to_track_best=stats.stage_to_track_best,
+                                                       metric_to_track_best=stats.metric_to_track_best,
+                                                       best_record=stats.best_record, best_epoch=stats.best_epoch,
+                                                       mode_to_track_best=stats.mode_to_track_best)
 
     def sample_prediction_noise(self, predictions):
         """Return Gaussian noise of standard deviation sigma_noise with the shape and device of the predictions."""
@@ -87,18 +96,18 @@ class WeightedSmoothingTrainManager(TrainManager):
                            generator=self._noise_generator).to(predictions.device) * self.weighted_smoothing_configs.sigma_noise
 
     def train_epoch(self):
-        """Run one epoch: plain steps during the warmup, weighted smoothing steps with fresh weights after it."""
+        """Run one epoch: plain steps in the plain epochs, weighted smoothing steps with fresh weights after them."""
         # reset epoch stats and per-epoch profiler
         self.reset_epoch_stats(phase='train')
         self.model.train()
         if self.distributed:
             self.train_loader.sampler.set_epoch(self.epoch)
-        if self.epoch <= self.weighted_smoothing_configs.warmup_epochs:
+        if self.epoch <= self.weighted_smoothing_configs.plain_epochs:
             for batch_idx, (inputs, targets, _, _) in enumerate(self.train_loader):
-                # Standard training for the first warmup_epochs
+                # Standard training for the first plain_epochs
                 self.train_step(inputs, targets, batch_idx=batch_idx, total_batches=len(self.train_loader))
         else:
-            # Weighted Smoothing training after warmup_epochs
+            # Weighted Smoothing training after plain_epochs
             # The existing loader already yields local sample indices and, in DDP,
             # uses the rank's distributed sampler.
             self.indexed_train_loader = self.train_loader
@@ -260,3 +269,16 @@ class WeightedSmoothingTrainManager(TrainManager):
         message = self.build_message_for_batch_end(index_batch=batch_idx+1,
                                                 total_batches=total_batches)
         self.logger.print_it_same_line(message, console_only=True)
+
+
+class SmoothedEpochsStats(TrainStats):
+    """TrainStats that keeps the best model among the smoothed epochs only, never one of the plain epochs."""
+    def __init__(self, plain_epochs: int, **kwargs):
+        """Set up the stats as TrainStats does, and keep the number of plain epochs."""
+        super().__init__(**kwargs)
+        self.plain_epochs = plain_epochs
+
+    def update_best_if_better(self):
+        """Update the best as TrainStats does, for epochs after the plain ones only."""
+        if self.last_epoch_summary().epoch > self.plain_epochs:
+            super().update_best_if_better()
