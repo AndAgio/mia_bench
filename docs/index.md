@@ -5,7 +5,6 @@ defense. To install it and run a first experiment, see the [README](https://gith
 
 - [Defenses](defenses/index.md)
 - [Attacks](attacks/index.md)
-- [Differences from the papers](fidelity.md)
 - [Command-line options](reference/cli.md)
 - [Training defaults](reference/training.md)
 - [API reference](reference/api.md)
@@ -17,7 +16,6 @@ defense. To install it and run a first experiment, see the [README](https://gith
 
 defenses/index
 attacks/index
-fidelity
 ```
 
 ```{toctree}

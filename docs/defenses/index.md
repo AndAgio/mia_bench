@@ -1,11 +1,15 @@
 # Defenses
 
-Choose a defense with `--defender_mode`. Only differential privacy, data augmentation, mixup, AdvReg, weighted smoothing, RelaxLoss, SELENA, MIST, MemGuard, LDL, Purifier and HAMP have their own pages so far.
+Choose a defense with `--defender_mode`. Every defense but MMD has its own page so far.
 
-Every defense can be paired with every attack, including attacks outside the defense's threat model. LDL, MemGuard,
-Purifier and `hamp_test` act only at inference, so the trained model's internal features are not defended. `neural_feat`
-reads those features: against these defenses, it measures what the undefended model leaks to an attacker who can read
-them. The run log notes these pairings.
+Defenses that change training train on the defender's training split and keep the model of the epoch with the best
+validation score (`--perf_metric_to_track`); weighted smoothing keeps the last epoch's model. The audited non-members
+are drawn from the defender's test split, which no defense trains or tunes on.
+
+Every defense can be paired with every attack, including attacks outside the defense's threat model. LDL,
+MemGuard, Purifier and `hamp_test` act only at inference, so the trained model's internal features are not defended.
+`neural_feat` reads those features: against these defenses, it measures what the undefended model leaks to an
+attacker who can read them. The run log notes these pairings.
 
 | Defense | `--defender_mode` | Paper |
 |---|---|---|

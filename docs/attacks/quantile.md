@@ -33,25 +33,14 @@ crowded near 1 as in the authors' grid.
 ```{include} ../_generated/quantile_parameters.md
 ```
 
-Of the attacker's training options, only `--attacker_model` applies to the regression model. The others train the
-shadow models of the other attacks.
+Of the attacker's training options, only `--attacker_model` applies to the regression model, which trains with the
+authors' recipe. The others train the shadow models of the other attacks. The regression model is kept at the epoch
+with the lowest loss on a held-out share `--attacker_quantile_val_split` of the attacker's data.
 
 ```{include} ../_generated/options_quantile.md
 ```
 
 ## Differences from the paper
 
-The main difference is the regression model: the `--attacker_model`, ResNet-18 by default, trained from scratch
-rather than the authors' pretrained ConvNeXt-Tiny at 224 pixels, so that the attack needs no download and stays
-cheap. The others are small:
-
-- The epoch is chosen on a held-out share of the attacker's data. The authors choose it, with their hyperparameters,
-  on the very non-members they evaluate on, which a real attacker could not do.
-- Batches of 64, the effective batch the paper's tuning chose, rather than the code's default of 16.
-- The Gaussian head ranks samples by (s − μ)/σ, the paper's sweep over α taken at every α; the authors' code samples
-  41 levels.
-- The pinball head ranks samples by the distance to its 1 − α threshold, since a sweep over its levels gives no
-  points at very low false-positive rates.
-- The pinball grid always adds levels near 1 and the level 1 − α, so that its thresholds at small α fit better and
-  the decisions use the α given.
-- The warning on the held-out false-positive rate is ours.
+- The regression model is the `--attacker_model`, ResNet-18 by default, trained from scratch, rather than the
+  authors' pretrained ConvNeXt-Tiny at 224 pixels, so that the attack needs no download and stays cheap.
