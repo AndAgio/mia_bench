@@ -7,9 +7,9 @@ epochs of normal training, each epoch scores every training sample with Mentr
 sample is within its class. Inference is unchanged. The code the paper links, github.com/BennyTMT/weighted-smoothing,
 no longer exists.
 
-Unlike the other defenses, training returns the model of the last epoch, as in the paper's Algorithm 1. The modified
-loss defends on its own, even without noise: runs with `--defender_weighted_smoothing_sigma_noise 0` separate the
-effect of the loss from that of the noise.
+As with the other defenses, training keeps the epoch with the best validation score, but only among the epochs after
+the warmup, which trains normally. The modified loss defends on its own, even without noise: runs with
+`--defender_weighted_smoothing_sigma_noise 0` separate the effect of the loss from that of the noise.
 
 ## Usage
 

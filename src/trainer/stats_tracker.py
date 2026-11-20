@@ -504,10 +504,12 @@ class TrainStats:
             self.best_record = last_value
             self.best_epoch = last_epoch
 
-    def update_history_and_best(self, epoch_summary: EpochSummary) -> Tuple[int, float]:
+    def update_history_and_best(self, epoch_summary: EpochSummary, selectable: bool = True) -> Tuple[int, float]:
+        """Record the epoch and, if it is selectable, make it the best when it beats the best so far."""
         self.update_timer()
         self.add_epoch_summary(epoch_summary)
-        self.update_best_if_better()
+        if selectable:
+            self.update_best_if_better()
         return self.get_best()
 
     # ----- serialization helpers -----

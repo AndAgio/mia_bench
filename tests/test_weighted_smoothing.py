@@ -57,7 +57,7 @@ def make_manager():
 
 
 class WeightedSmoothingTests(unittest.TestCase):
-    def test_defender_requests_final_model(self):
+    def test_defender_requests_best_model(self):
         defender = WeightedSmoothingDefender.__new__(WeightedSmoothingDefender)
         defender.logger = MagicMock()
         defender.name = 'weighted_smoothing'
@@ -71,7 +71,7 @@ class WeightedSmoothingTests(unittest.TestCase):
                 result = defender.train_model(SimpleNamespace(), return_stats=return_stats)
                 self.assertIs(result[0] if return_stats else result, final_model)
                 self.assertEqual(trainer.return_value.train.call_args.kwargs,
-                                 dict(return_best_model=False, return_last_model=True, return_stats=return_stats))
+                                 dict(return_best_model=True, return_last_model=False, return_stats=return_stats))
 
     def test_schedule_requires_smoothing_epochs(self):
         manager = make_manager()
@@ -83,30 +83,30 @@ class WeightedSmoothingTests(unittest.TestCase):
                     manager.train()
                 train.assert_not_called()
 
-    def test_final_model_returned_when_warmup_checkpoint_is_best(self):
+    def test_warmup_epochs_are_never_kept_as_best(self):
         with tempfile.TemporaryDirectory() as folder:
             configs = TrainConfigs(optimizer_config=OptimizerConfigs(name='sgd', lr=0.1),
-                                   scheduler_config=SchedulerConfigs(name='const', epochs=2),
+                                   scheduler_config=SchedulerConfigs(name='const', epochs=4),
                                    batch_size=5, device='cpu', resume=False,
                                    ckpts_folder=Path(folder) / 'ckpts', resume_ckpts_folder=Path(folder) / 'resume')
             manager = WeightedSmoothingTrainManager(configs, 'weighted_smoothing', logger=MagicMock(),
-                                                   weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(warmup_epochs=1))
+                                                   weighted_smoothing_configs=WeightedSmoothingDefenseConfigs(warmup_epochs=2))
             model = nn.Linear(2, 3)
             model.name = 'linear'
             manager.initialize_train(MultiDatasets(datasets=[CountingDataset()], ids=['train']), model, configs)
-            # Force selection of the warmup checkpoint, independent of random accuracy.
-            manager.performance_metrics = {'warmup_preferred': lambda preds, targets: float(manager.epoch == 1)}
-            manager.metric_to_track = 'warmup_preferred'
-            final_model, stats = manager.train(return_stats=True)
+            # The warmup epochs score best, then epoch 3 beats epoch 4: epoch 3 must be kept.
+            scores = {1: 10.0, 2: 9.0, 3: 2.0, 4: 1.0}
+            manager.performance_metrics = {'score': lambda preds, targets: scores[manager.epoch]}
+            manager.metric_to_track = 'score'
+            best_model, stats = manager.train(return_stats=True)
             best = torch.load(Path(manager.resume_folder) / 'best.pth', weights_only=False)
-            last = torch.load(Path(manager.resume_folder) / 'last.pth', weights_only=False)
-            self.assertEqual(stats.best_epoch, 1)
-            self.assertEqual(best['epoch'], 1)
-            self.assertEqual(last['epoch'], 2)
-            for name, value in final_model.state_dict().items():
-                torch.testing.assert_close(value, last['model_state'][name])
-            self.assertTrue(any(not torch.equal(value, best['model_state'][name])
-                                for name, value in final_model.state_dict().items()))
+            self.assertEqual(stats.best_epoch, 3)
+            self.assertEqual(best['epoch'], 3)
+            for name, value in best_model.state_dict().items():
+                torch.testing.assert_close(value, best['model_state'][name])
+
+    def test_other_trainers_can_keep_any_epoch(self):
+        self.assertEqual(TrainManager.first_selectable_epoch, 1)
 
     def test_noise_streams_are_rank_specific_and_resume_at_epoch_boundary(self):
         predictions = torch.zeros(5, 3)

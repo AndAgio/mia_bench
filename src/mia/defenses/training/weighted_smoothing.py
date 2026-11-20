@@ -25,7 +25,7 @@ class WeightedSmoothingDefender(BaseDefender):
         self.weighted_smoothing_configs = defender_configs.defense
 
     def train_model(self, train_configs, return_stats: bool = False):
-        """Train with weighted smoothing and return the last model, with the stats if return_stats."""
+        """Train with weighted smoothing and return the best model after the warmup, with the stats if return_stats."""
         self.logger.print_it(f'Weighted Smoothing Defender: training defender model...')
         train_manager = WeightedSmoothingTrainManager(train_configs=train_configs,
                                                 name=self.name,
@@ -35,12 +35,12 @@ class WeightedSmoothingDefender(BaseDefender):
                                         model=self.untrained_model,
                                         configs=train_configs)
         if return_stats:
-            self.trained_model, train_stats = train_manager.train(return_best_model=False,
-                                                        return_last_model=True,
+            self.trained_model, train_stats = train_manager.train(return_best_model=True,
+                                                        return_last_model=False,
                                                         return_stats=return_stats)
         else:
-            self.trained_model = train_manager.train(return_best_model=False,
-                                            return_last_model=True,
+            self.trained_model = train_manager.train(return_best_model=True,
+                                            return_last_model=False,
                                             return_stats=return_stats)
         if return_stats:
             return self.trained_model, train_stats
@@ -61,13 +61,14 @@ class WeightedSmoothingTrainManager(TrainManager):
         super().__init__(train_configs=train_configs, name=name, logger=logger)
         self.weighted_smoothing_configs = weighted_smoothing_configs
 
-    def train(self, extra_configs=None, return_best_model=False, return_last_model=True, return_stats=False):
+    def train(self, extra_configs=None, return_best_model=True, return_last_model=False, return_stats=False):
         """Check that at least one epoch follows the warmup, then train as TrainManager does."""
-        # Algorithm 1 returns the final model, including the smoothing phase.
         warmup = self.weighted_smoothing_configs.warmup_epochs
         epochs = self.train_configs.scheduler_config.epochs
         if not 0 <= warmup < epochs:
             raise ValueError(f"Weighted Smoothing requires 0 <= warmup_epochs < total epochs, got {warmup} and {epochs}")
+        # The warmup trains normally, so a model kept from it would be undefended.
+        self.first_selectable_epoch = warmup + 1
         return super().train(extra_configs=extra_configs, return_best_model=return_best_model,
                              return_last_model=return_last_model, return_stats=return_stats)
 

@@ -42,6 +42,8 @@ class TrainManager(Loggable):
     """
     # Maximum gradient norm before each step, from the configs' grad_clip in setup_training; None, no clipping.
     grad_clip = None
+    # Epochs before this one are never kept as the best model, e.g. a defense's warmup of normal training.
+    first_selectable_epoch = 1
 
     def __init__(self, train_configs: TrainConfigs, name: str, logger: MyLogger = None):
         """Set up the checkpoint folders, the device (and DDP) and the random seed."""
@@ -475,9 +477,14 @@ class TrainManager(Loggable):
             epoch_time = self.epoch_stats_tracker.get_epoch_time()
             # Finalize epoch and checkpoint (rank-0)
             epoch_summary = self.epoch_stats_tracker.finalize_epoch(epoch=self.epoch)
-            best_epoch, new_best = self.train_stats_tracker.update_history_and_best(epoch_summary=epoch_summary)
+            best_epoch, new_best = self.train_stats_tracker.update_history_and_best(
+                epoch_summary=epoch_summary, selectable=self.epoch >= self.first_selectable_epoch)
 
-            self.logger.print_it(f"Best epoch so far is {best_epoch}: {'val' if self.run_val else 'test' if self.run_test else 'train'} {self.metric_to_track} = {new_best:.4f}")
+            if best_epoch == 0:
+                self.logger.print_it(f"No best epoch yet: epochs before {self.first_selectable_epoch} are not kept.")
+            else:
+                stage = 'val' if self.run_val else 'test' if self.run_test else 'train'
+                self.logger.print_it(f"Best epoch so far is {best_epoch}: {stage} {self.metric_to_track} = {new_best:.4f}")
 
             if self.local_rank == 0:
                 ckpt = self.ckpts_manager.build_checkpoint(epoch=self.epoch,
