@@ -189,6 +189,19 @@ def mmd_parameters():
 
 write_generated('mmd_parameters.md', mmd_parameters())
 
+
+def robust_parameters():
+    # DEFAULT_A stays next to the attack, so it is read from the source rather than imported with the attack's
+    # dependencies.
+    tree = ast.parse((REPO / 'src/mia/attacks/black_box/robust.py').read_text())
+    default_a = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                     and any(getattr(target, 'id', None) == 'DEFAULT_A' for target in node.targets))
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | {a:g} |' for dataset, a in default_a.items()]
+    return '\n'.join(['| Dataset | a |', '|---|---|', *rows, ''])
+
+
+write_generated('robust_parameters.md', robust_parameters())
+
 from src.utils.variables import MMD_CODE_MIN_ACCURACY_GAP, MMD_REFERENCE_FRACTION_OF_VAL_SPLIT  # noqa: E402
 myst_substitutions = {'mmd_min_accuracy_gap': f'{MMD_CODE_MIN_ACCURACY_GAP * 100:g} percentage points',
                       'mmd_reference_share': f'{MMD_REFERENCE_FRACTION_OF_VAL_SPLIT:.0%}'}
@@ -321,6 +334,7 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha'],
                   'data_augmentation': ['defender_augment_'], 'dp': ['defender_dp_'],
                   'mmd': ['defender_mmd_', 'defender_mixup_alpha'],
+                  'robust': ['attacker_robust_'],
                   'quantile': ['attacker_quantile_']}
 
 for name, prefixes in METHOD_OPTIONS.items():

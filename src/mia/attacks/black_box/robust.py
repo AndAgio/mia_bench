@@ -31,7 +31,7 @@ class RobustMIA(BaseMIA):
     """RMIA: a likelihood ratio between the sample and population samples, computed with reference models.
 
     Paper: "Low-Cost High-Power Membership Inference Attacks",
-    https://arxiv.org/pdf/2312.03262.
+    https://arxiv.org/abs/2312.03262. Documentation: docs/attacks/robust.md.
     """
     # The paper reports ROC curves only, so the attack decision rule calibrates the threshold.
     has_own_decisions = False
@@ -39,6 +39,7 @@ class RobustMIA(BaseMIA):
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
+        """Check the mode and a, then sample the shadow datasets and build the shadow models."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         assert self.shadow_configs.mode == self.attack_configs.mode, f"Whenever working with RobustMIA the mode for shadow datasets and attack should be the same!"
         self.mode = self.attack_configs.mode
@@ -70,6 +71,7 @@ class RobustMIA(BaseMIA):
                                                 model_configs=self.model_configs)
 
     def optimize(self, train_config: TrainConfigs):
+        """Train every shadow model on its shadow dataset."""
         self.logger.print_it('RobustMIA attacker: training all shadow models. This will take a while. Sit back and chill...')
         start = time.time()
         self.shadow_manager.train_all(train_configs=train_config,
@@ -224,6 +226,7 @@ class RobustMIA(BaseMIA):
 
 
     def compute_p_x_theta(self, audit_dataset: Dataset, models_for_sample: list[list[Union[int, torch.nn.Module]]], device: Union[torch.device, str] = 'cpu'):
+        """Return Pr(x|theta) for each sample (row) under each of its models (column): shadow model ids or modules."""
         tot_samples = len(audit_dataset)
         audit_loader = DataLoader(audit_dataset, batch_size=1, shuffle=False)
         p_x_thetas = np.zeros((len(audit_dataset), len(models_for_sample[0])))
@@ -250,6 +253,7 @@ class RobustMIA(BaseMIA):
 
     @staticmethod
     def get_prob(model: torch.nn.Module, data: torch.Tensor, target: torch.Tensor, device: Union[torch.device, str]):
+        """Return the model's softmax probability of the true class of a single sample."""
         if isinstance(device, str):
             device = RobustMIA.get_device(dev_str=device)
         model.eval()

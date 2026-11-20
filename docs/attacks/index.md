@@ -1,6 +1,6 @@
 # Attacks
 
-Choose an attack with `--attacker_mode`. Only quantile regression has its own page so far.
+Choose an attack with `--attacker_mode`. Only RMIA and quantile regression have their own pages so far.
 
 Every attack can be paired with every defense. Score-based attacks read the scores the defended model returns, and
 label-only attacks read only its predicted labels. `neural_feat` reads the model's internal features instead. LDL,
@@ -11,7 +11,7 @@ these pairings.
 | Attack | `--attacker_mode` | Reads | Paper |
 |---|---|---|---|
 | LiRA | `lira` | scores | [paper](https://ieeexplore.ieee.org/abstract/document/9833649) |
-| RMIA | `online_robust`, `offline_robust` | scores | [paper](https://arxiv.org/abs/2312.03262) |
+| [RMIA](robust.md) | `online_robust`, `offline_robust` | scores | [paper](https://arxiv.org/abs/2312.03262) |
 | [Quantile regression](quantile.md) | `quantile` | scores | [paper](https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html) |
 | Shadow-model classifier | `neural_prob`, `neural_logit`, `neural_feat` | scores, or features | [paper](https://ieeexplore.ieee.org/document/7958568) |
 | Attack-R | `rmia_loss`, `rmia_confidence`, `rmia_entropy` | scores | [paper](https://arxiv.org/abs/2111.09679) |
@@ -30,5 +30,6 @@ with QEBA.
 ```{toctree}
 :hidden:
 
+robust
 quantile
 ```

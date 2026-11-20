@@ -306,7 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Number of shadow models and datasets to be used for MIAs requiring shadow models')
         # RobustMIA parameters
         parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
-                                help='Number of samples in Z to select randomly for LR computation')
+                                help="Number of population samples z, drawn from the attacker's data, that RobustMIA compares each sample with")
         # The former name stays as an alias, so that existing scripts keep working.
         parser.add_argument('--attacker_robust_a', '--attacker_robust_alphas', dest='attacker_robust_a',
                                 nargs="+", type=float, default=None,
@@ -316,8 +316,8 @@ def build_parser() -> argparse.ArgumentParser:
                                      "(DEFAULT_A in src/mia/attacks/black_box/robust.py); offline runs on a dataset "
                                      "without one need a value. Formerly --attacker_robust_alphas")
         parser.add_argument('--attacker_robust_gamma', type=float, default=2,
-                                help="RobustMIA's gamma: a population sample z counts against x only if x's likelihood "
-                                     "ratio is at least gamma times z's (the paper uses 2, App. B.4)")
+                                help="RobustMIA's gamma: x dominates a population sample z when x's likelihood ratio is "
+                                     "more than gamma times z's (the paper uses 2, App. B.4)")
         # Quantile MIA parameters
         parser.add_argument('--attacker_quantile_n', type=int, default=100,
                                 help=f'Number of pinball levels from --attacker_quantile_low to '
