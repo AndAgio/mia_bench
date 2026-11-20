@@ -8,6 +8,7 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  PURIFIER_FALLBACK_DATASET, MIST_PAPER_PARAMETERS, MIST_FALLBACK_DATASET,
                                  RELAXLOSS_CODE_PARAMETERS, RELAXLOSS_IMAGE_FALLBACK_DATASET,
                                  RELAXLOSS_NONIMAGE_FALLBACK_DATASET, WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS,
+                                 MMD_PAPER_LAMBDAS, MMD_IMAGE_FALLBACK_DATASET, MMD_NONIMAGE_FALLBACK_DATASET,
                                  ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
                                  ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
                                  DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA)
@@ -542,7 +543,8 @@ class PurifierDefenseConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class MmdDefenseConfigs:
     strategy: Literal["mmd"] = "mmd"
-    lmbd: float = 1.0
+    # The paper's CIFAR-10 value. generate_configs_from_settings sets the dataset's (MMD_PAPER_LAMBDAS).
+    lmbd: float = 0.5
     use_mixup: bool = False
     mixup_alpha: float = 1.0
 
@@ -810,7 +812,13 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         noise_quantization=settings.defender_purifier_noise_quantization,
                                                         swap_threshold=settings.defender_purifier_swap_threshold)
     elif settings.defender_mode in ['mmd', 'mmd_mixup', 'mmd-mixup']:
-        defender_defense_configs = MmdDefenseConfigs(lmbd=settings.defender_mmd_lambda,
+        # Unset lambda takes the paper's value for the dataset (Table 5).
+        mmd_lambda = settings.defender_mmd_lambda
+        if mmd_lambda is None:
+            is_image_dataset = settings.dataset not in ["purchase", "news", "texas"]
+            fallback = MMD_IMAGE_FALLBACK_DATASET if is_image_dataset else MMD_NONIMAGE_FALLBACK_DATASET
+            mmd_lambda = MMD_PAPER_LAMBDAS.get(settings.dataset, MMD_PAPER_LAMBDAS[fallback])
+        defender_defense_configs = MmdDefenseConfigs(lmbd=mmd_lambda,
                                                     use_mixup=True if settings.defender_mode in ['mmd_mixup', 'mmd-mixup'] else False,
                                                     mixup_alpha=settings.defender_mixup_alpha)
     elif settings.defender_mode in ['ldl']:

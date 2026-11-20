@@ -31,7 +31,8 @@ def make_training_manager(folder, optimizer, use_mixup, resume=False):
                            ckpts_folder=folder / 'ckpts', resume_ckpts_folder=folder / 'resume')
     manager = MmdTrainManager(configs, name='mmd_lifecycle', logger=QuietLogger(),
                               mmd_configs=MmdDefenseConfigs(use_mixup=use_mixup))
-    manager.initialize_train(data, model, configs)
+    # The reference non-members have the same labels as val, so the accuracy gap opens as it would on val.
+    manager.initialize_train(data, model, configs, reference_dataset=CountingDataset([0, 1, 1, 1, 0, 1, 1, 1]))
     return manager
 
 
@@ -51,7 +52,7 @@ class MmdLifecycleTests(unittest.TestCase):
                             self.assertEqual(summary.num_batches, 2)
                             self.assertIn('mmd_loss', summary.metrics)
                         self.assertNotIn('mmd', stats.history[3].stages)
-                        self.assertEqual(full.dataset.get('val').target_scans, 1)
+                        self.assertEqual(full.reference_dataset.target_scans, 1)
 
                         interrupted = make_training_manager(root / 'resumed', optimizer, use_mixup)
                         execute_epoch = interrupted.train_executions

@@ -28,6 +28,8 @@ DECISION_RULES = ('attack', 'calibrated', 'oracle')
 
 # Fraction of the defender val split that AdvReg uses as its reference set D' (the rest selects the best checkpoint).
 ADV_REG_REFERENCE_FRACTION_OF_VAL_SPLIT = 0.5
+# Fraction of the defender val split that MMD uses as its reference non-members (the rest selects the best checkpoint).
+MMD_REFERENCE_FRACTION_OF_VAL_SPLIT = 0.5
 
 # HAMP's (gamma, alpha) per dataset: the entropy threshold of the soft labels and the strength of the entropy
 # regularizer, from Table III of the paper (arXiv 2307.01610, Appendix A). The authors' train-all.sh scripts use the same
@@ -102,6 +104,17 @@ WEIGHTED_SMOOTHING_PAPER_PLAIN_EPOCHS = {'image': 2, 'non_image': 1}
 ADV_REG_PAPER_LAMBDAS = {'purchase': 3.0, 'texas': 2.0, 'cifar100': 6.0}
 ADV_REG_IMAGE_FALLBACK_DATASET = 'cifar100'
 ADV_REG_NONIMAGE_FALLBACK_DATASET = 'purchase'
+
+# MMD's loss weight lambda per dataset, from Table 5 of the paper (arXiv 2002.12062): the largest weight whose test
+# accuracy stays within 1% of the undefended model's. On CIFAR, the ResNet-20 values, the paper's model closest to
+# ResNet-18. Unset --defender_mmd_lambda takes the dataset's value, other image datasets CIFAR-10's, and other non-image
+# datasets Purchase's.
+MMD_PAPER_LAMBDAS = {'cifar10': 0.5, 'cifar100': 4.0, 'purchase': 0.1, 'texas': 1.0}
+MMD_IMAGE_FALLBACK_DATASET = 'cifar10'
+MMD_NONIMAGE_FALLBACK_DATASET = 'purchase'
+# An epoch adds the MMD pass only when the training accuracy exceeds the reference accuracy by this much, as in the
+# authors' code (github.com/colaalex111/MMD-mixup-Defense), which finds MMD in every epoch unstable.
+MMD_CODE_MIN_ACCURACY_GAP = 0.03
 # AdvReg's learning rate of the attack model's Adam optimizer, from the authors' Purchase code. The paper's 0.001
 # (Sec. 5.3) lets the attack model die, and the code's CIFAR value 0.00001 is too slow (docs/defenses/adv_reg.md).
 # Unset --defender_adv_reg_attacker_lr takes it on every dataset.

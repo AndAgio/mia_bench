@@ -240,8 +240,8 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--defender_purifier_swap_threshold', type=float, default=0.01,
                                 help='Maximum L2 distance between log-confidence vectors for a query to match a swap-set member in the Purifier defense')
         # MMD parameters for defender model
-        parser.add_argument('--defender_mmd_lambda', type=float, default=1.0,
-                                help='Lambda parameter for MMD defense')
+        parser.add_argument('--defender_mmd_lambda', type=float, default=None,
+                                help='Weight of the MMD loss in the MMD defense; 0 turns it off. Unset: the paper\'s value for the dataset (Table 5), see MMD_PAPER_LAMBDAS in src/utils/variables.py')
         # LDL parameters for defender model
         parser.add_argument('--defender_ldl_n_queries', type=int, default=None,
                                 help='Number of noisy copies of each query that the LDL defense layer averages. Unset: the authors\' value for the dataset\'s noise, see LDL_CODE_N_QUERIES in src/utils/variables.py')

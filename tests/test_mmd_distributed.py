@@ -42,24 +42,25 @@ def distributed_worker(rank, rendezvous):
             accuracy_data = CountingDataset([0, 1, 0, 1])
             sampler = DistributedSampler(accuracy_data, num_replicas=2, rank=rank, shuffle=False)
             manager.train_loader = DataLoader(accuracy_data, batch_size=2, sampler=sampler)
-            manager.val_loader = manager.train_loader
+            manager.reference_loader = manager.train_loader
             # Rank 0 is locally 100% correct, rank 1 is 0%: both must report 50%.
             assert manager.get_train_accuracy() == 0.5
-            assert manager.get_val_accuracy() == 0.5
+            assert manager.get_reference_accuracy() == 0.5
             # Padding must not turn the true 3/5 accuracy into 4/6.
             uneven = CountingDataset([0, 1, 0, 1, 0])
             for shuffle in (False, True):
                 uneven_sampler = DistributedSampler(uneven, num_replicas=2, rank=rank, shuffle=shuffle)
                 manager.train_loader = DataLoader(uneven, batch_size=2, sampler=uneven_sampler)
-                manager.val_loader = manager.train_loader
+                manager.reference_loader = manager.train_loader
                 assert manager.get_train_accuracy() == 0.6
-                assert manager.get_val_accuracy() == 0.6
+                assert manager.get_reference_accuracy() == 0.6
             with torch.no_grad():
                 model.weight.copy_(torch.tensor([[0.2, -0.1], [-0.3, 0.1]]))
             before = torch.cat([p.detach().flatten() for p in model.parameters()]).clone()
 
             train = CountingDataset([0, 1, 0, 1, 0])
-            manager.dataset = {'train': train, 'val': ShiftedDataset([0, 1])}
+            manager.dataset = {'train': train}
+            manager.reference_dataset = ShiftedDataset([0, 1])
             manager.epoch_stats_tracker = EpochStats()
             manager.reset_epoch_stats = lambda phase: manager.epoch_stats_tracker.stage_begin(phase)
             seen_samplers = []
@@ -83,13 +84,14 @@ def distributed_worker(rank, rendezvous):
             assert torch.allclose(gathered[0], gathered[1])
 
         # Only rank 1 encounters the absent class; rank 0 must fail alongside it.
-        manager.dataset = {'train': accuracy_data, 'val': CountingDataset([0])}
+        manager.dataset = {'train': accuracy_data}
+        manager.reference_dataset = CountingDataset([0])
         try:
             manager.train_with_mmd_distance()
         except ValueError as error:
             assert 'no samples for training class' in str(error)
         else:
-            raise AssertionError('Missing validation class did not raise on every rank')
+            raise AssertionError('Missing reference class did not raise on every rank')
         dist.barrier()
     finally:
         dist.destroy_process_group()

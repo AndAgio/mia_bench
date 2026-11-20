@@ -1,6 +1,6 @@
 # Defenses
 
-Choose a defense with `--defender_mode`. Every defense but MMD has its own page so far.
+Choose a defense with `--defender_mode`. Every defense has its own page.
 
 Defenses that change training train on the defender's training split and keep the model of the epoch with the best
 validation score (`--perf_metric_to_track`). The audited non-members are drawn from the defender's test split, which
@@ -22,7 +22,7 @@ attacker who can read them. The run log notes these pairings.
 | [SELENA](selena.md) | `selena` | [paper](https://arxiv.org/abs/2110.08324) |
 | [MIST](mist.md) | `mist`, `mist_mixup` | [paper](https://arxiv.org/abs/2311.00919) |
 | [Weighted smoothing](weighted_smoothing.md) | `weighted_smoothing` | [paper](https://doi.org/10.1145/3627106.3627189) |
-| MMD | `mmd`, `mmd_mixup` | [paper](https://dl.acm.org/doi/pdf/10.1145/3422337.3447836) |
+| [MMD](mmd.md) | `mmd`, `mmd_mixup` | [paper](https://arxiv.org/abs/2002.12062) |
 | [MemGuard](memguard.md) | `mem_guard` | [paper](https://arxiv.org/abs/1909.10594) |
 | [LDL](ldl.md) | `ldl` | [paper](https://arxiv.org/abs/2212.01688) |
 | [Purifier](purifier.md) | `purifier` | [paper](https://arxiv.org/abs/2212.00612) |
@@ -39,6 +39,7 @@ relax_loss
 selena
 mist
 weighted_smoothing
+mmd
 memguard
 ldl
 purifier

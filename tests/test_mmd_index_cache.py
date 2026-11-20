@@ -49,9 +49,10 @@ class MmdIndexCacheTests(unittest.TestCase):
         train = CountingDataset([0, 1, 1, 0])
         validation = CountingDataset([1, 0, 1, 0, 1, 0])
         manager = MmdTrainManager.__new__(MmdTrainManager)
-        manager._validation_index_dataset = None
-        manager._validation_indices_by_label = {}
-        manager.dataset = {'train': train, 'val': validation}
+        manager._reference_index_dataset = None
+        manager._reference_indices_by_label = {}
+        manager.dataset = {'train': train}
+        manager.reference_dataset = validation
         manager.train_loader = DataLoader(train, batch_size=2)
         manager.device = torch.device('cpu')
         manager.distributed = False
@@ -69,13 +70,13 @@ class MmdIndexCacheTests(unittest.TestCase):
             self.assertEqual(validation.target_scans, 1)
             # One full label scan, then only the selected images on each epoch.
             self.assertEqual(validation.reads, len(validation) + epoch * len(train))
-            self.assertEqual(manager._validation_indices_by_label, {1: [0, 2, 4], 0: [1, 3, 5]})
+            self.assertEqual(manager._reference_indices_by_label, {1: [0, 2, 4], 0: [1, 3, 5]})
 
         replacement = CountingDataset([0, 0, 1, 1])
-        manager.dataset['val'] = replacement
+        manager.reference_dataset = replacement
         manager.train_with_mmd_distance()
         self.assertEqual(replacement.target_scans, 1)
-        self.assertEqual(manager._validation_indices_by_label, {0: [0, 1], 1: [2, 3]})
+        self.assertEqual(manager._reference_indices_by_label, {0: [0, 1], 1: [2, 3]})
         self.assertEqual(validation.target_scans, 1)
 
 

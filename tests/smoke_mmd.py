@@ -86,7 +86,8 @@ def main():
                                ckpts_folder=root / 'ckpts', resume_ckpts_folder=root / 'resume')
         manager = MmdTrainManager(configs, name='mmd_smoke', logger=QuietLogger(),
                                   mmd_configs=MmdDefenseConfigs(use_mixup=args.mixup))
-        manager.initialize_train(data, model, configs)
+        reference = SyntheticImages(32, 4)
+        manager.initialize_train(data, model, configs, reference_dataset=reference)
         manager.reset_running_stats()
         manager.train_stats_tracker.start_timer()
         manager.epoch_stats_tracker = EpochStats()
@@ -110,8 +111,8 @@ def main():
             raise RuntimeError('MMD did not update parameters')
         if not all(torch.isfinite(parameter).all() for parameter in manager.model.parameters()):
             raise RuntimeError('Non-finite model parameters')
-        if data.get('val').target_scans != 1:
-            raise RuntimeError('Validation indices were not computed exactly once')
+        if reference.target_scans != 1:
+            raise RuntimeError('Reference indices were not computed exactly once')
 
         manager.val_epoch()
         manager.test_epoch()

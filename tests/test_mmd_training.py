@@ -22,8 +22,9 @@ OPTIMIZERS = ('sgd', 'adam', 'sam', 'adaptive_sam', 'esam', 'adaptive_esam',
 
 def make_manager(optimizer='sgd', use_mixup=False, model=None):
     manager = MmdTrainManager.__new__(MmdTrainManager)
-    manager._validation_index_dataset = None
-    manager._validation_indices_by_label = {}
+    manager.reference_dataset = None
+    manager._reference_index_dataset = None
+    manager._reference_indices_by_label = {}
     manager.device = torch.device('cpu')
     manager.distributed = False
     manager.model = model if model is not None else torch.nn.Linear(2, 2)
@@ -68,7 +69,8 @@ class MmdTrainingTests(unittest.TestCase):
                 image, label, original, resampled = super().__getitem__(index)
                 return image + 0.7, label, original, resampled
 
-        manager.dataset = {'train': train, 'val': ShiftedValidation([0, 1])}
+        manager.dataset = {'train': train}
+        manager.reference_dataset = ShiftedValidation([0, 1])
         manager.train_loader = DataLoader(train, batch_size=2)
         forwards = []
         manager.model.register_forward_hook(lambda module, args, outputs:
@@ -98,7 +100,8 @@ class MmdTrainingTests(unittest.TestCase):
                 for method in ('train_epoch', 'val_epoch', 'test_epoch', 'train_with_mmd_distance'):
                     setattr(manager, method, MagicMock())
                 manager.get_train_accuracy = MagicMock(return_value=train_acc)
-                manager.get_val_accuracy = MagicMock(return_value=val_acc)
+                manager.reference_dataset = CountingDataset([0, 1])
+                manager.get_reference_accuracy = MagicMock(return_value=val_acc)
                 manager.scheduler = MagicMock()
                 manager.train_executions()
                 self.assertEqual(manager.train_with_mmd_distance.call_count, int(expected))
@@ -110,7 +113,8 @@ class MmdTrainingTests(unittest.TestCase):
     def test_short_classes_and_partial_batch_match_training_counts(self):
         manager = make_manager()
         train = CountingDataset([0, 0, 0, 1, 1, 0])
-        manager.dataset = {'train': train, 'val': CountingDataset([1, 0])}
+        manager.dataset = {'train': train}
+        manager.reference_dataset = CountingDataset([1, 0])
         manager.train_loader = DataLoader(train, batch_size=4)
         forwards = []
         manager.model.register_forward_pre_hook(lambda model, args: forwards.append(args[0].clone()))
@@ -123,7 +127,8 @@ class MmdTrainingTests(unittest.TestCase):
     def test_missing_class_has_clear_error(self):
         manager = make_manager()
         train = CountingDataset([0, 1])
-        manager.dataset = {'train': train, 'val': CountingDataset([0])}
+        manager.dataset = {'train': train}
+        manager.reference_dataset = CountingDataset([0])
         manager.train_loader = DataLoader(train, batch_size=2)
         before = [p.detach().clone() for p in manager.model.parameters()]
         with self.assertRaisesRegex(ValueError, 'no samples for training class 1'):
@@ -140,7 +145,8 @@ class MmdTrainingTests(unittest.TestCase):
                 model = torch.nn.Sequential(bn, dropout, torch.nn.Linear(2, 2))
                 manager = make_manager(optimizer, model=model)
                 train = CountingDataset([0, 1, 0, 1, 1])
-                manager.dataset = {'train': train, 'val': CountingDataset([0, 1])}
+                manager.dataset = {'train': train}
+                manager.reference_dataset = CountingDataset([0, 1])
                 manager.train_loader = DataLoader(train, batch_size=4)
                 modes = []
                 dropout.register_forward_pre_hook(lambda module, args: modes.append(module.training))
@@ -159,7 +165,8 @@ class MmdTrainingTests(unittest.TestCase):
     def test_mmd_records_loss_and_batch_timing(self):
         manager = make_manager()
         train = CountingDataset([0, 1, 0, 1])
-        manager.dataset = {'train': train, 'val': CountingDataset([0, 1])}
+        manager.dataset = {'train': train}
+        manager.reference_dataset = CountingDataset([0, 1])
         manager.train_loader = DataLoader(train, batch_size=2)
         manager.epoch_stats_tracker = EpochStats()
         manager.reset_epoch_stats = lambda phase: manager.epoch_stats_tracker.stage_begin(phase)

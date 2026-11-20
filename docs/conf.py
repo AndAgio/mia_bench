@@ -22,6 +22,8 @@ copyright = '2026, the mia_bench contributors'
 extensions = ['myst_parser', 'autoapi.extension', 'sphinxarg.ext', 'sphinx.ext.napoleon']
 napoleon_numpy_docstring = False
 myst_heading_anchors = 3
+# Pages write code values in their prose as {{name}}, from myst_substitutions below; tables go to _generated/.
+myst_enable_extensions = ['substitution']
 exclude_patterns = ['_build', '_generated']
 
 html_theme = 'furo'
@@ -175,6 +177,23 @@ def weighted_smoothing_parameters():
 write_generated('weighted_smoothing_parameters.md', weighted_smoothing_parameters())
 
 
+def mmd_parameters():
+    from src.utils.variables import MMD_PAPER_LAMBDAS, MMD_IMAGE_FALLBACK_DATASET, MMD_NONIMAGE_FALLBACK_DATASET
+    rows = [f'| {DATASET_NAMES.get(dataset, dataset)} | {lmbd:g} |' for dataset, lmbd in MMD_PAPER_LAMBDAS.items()]
+    image = DATASET_NAMES.get(MMD_IMAGE_FALLBACK_DATASET, MMD_IMAGE_FALLBACK_DATASET)
+    nonimage = DATASET_NAMES.get(MMD_NONIMAGE_FALLBACK_DATASET, MMD_NONIMAGE_FALLBACK_DATASET)
+    return '\n'.join(['| Dataset | λ |', '|---|---|', *rows, '',
+                      f'Other image datasets use the {image} value, and other non-image datasets the {nonimage} value.',
+                      ''])
+
+
+write_generated('mmd_parameters.md', mmd_parameters())
+
+from src.utils.variables import MMD_CODE_MIN_ACCURACY_GAP, MMD_REFERENCE_FRACTION_OF_VAL_SPLIT  # noqa: E402
+myst_substitutions = {'mmd_min_accuracy_gap': f'{MMD_CODE_MIN_ACCURACY_GAP * 100:g} percentage points',
+                      'mmd_reference_share': f'{MMD_REFERENCE_FRACTION_OF_VAL_SPLIT:.0%}'}
+
+
 def adv_reg_parameters():
     from src.utils.variables import (ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
                                      ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR)
@@ -301,6 +320,7 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'relax_loss': ['defender_relax_loss_'], 'weighted_smoothing': ['defender_weighted_smoothing_'],
                   'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha'],
                   'data_augmentation': ['defender_augment_'], 'dp': ['defender_dp_'],
+                  'mmd': ['defender_mmd_', 'defender_mixup_alpha'],
                   'quantile': ['attacker_quantile_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
