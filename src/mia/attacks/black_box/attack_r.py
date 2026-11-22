@@ -15,7 +15,7 @@ class AttackRMIA(BaseMIA):
     """Attack-R: compares the target's score on a sample with the scores of reference models.
 
     Paper: "Enhanced Membership Inference Attacks against Machine Learning Models",
-    https://arxiv.org/pdf/2111.09679.
+    https://arxiv.org/abs/2111.09679. Documentation: docs/attacks/attack_r_p.md.
     Each sample is scored by -alpha_star, the smallest false-positive rate at which its reference models' threshold
     makes it a member, as the authors' figure code computes it. It is a member when alpha_star is at most
     --attacker_rmia_alpha.
@@ -23,6 +23,7 @@ class AttackRMIA(BaseMIA):
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
+        """Check the settings, then sample the shadow datasets and build the reference models."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         assert self.shadow_configs.n_shadow_datasets >= 1, f"When using Attack-R MIA, at least 1 shadow dataset must be used!"
         assert self.shadow_configs.mode == 'offline', f"When using Attack-R MIA, only offline shadow datasets are supported!"
@@ -43,6 +44,7 @@ class AttackRMIA(BaseMIA):
                                                 model_configs=self.model_configs)
 
     def optimize(self, train_config: TrainConfigs):
+        """Train every reference model on its shadow dataset."""
         self.logger.print_it(f"{self.name}: training all shadow models. This will take a while. Sit back and chill...")
         start = time.time()
         self.shadow_manager.train_all(train_configs=train_config,
@@ -105,6 +107,7 @@ class AttackRMIA(BaseMIA):
         return [MembershipScores(scores, decisions=decisions)]
 
     def compute_batch_scores(self, model: torch.nn.Module, data: torch.Tensor, label: torch.Tensor):
+        """Return the model's score of each sample in the batch: its loss, highest confidence or prediction entropy."""
         model.eval()
         with torch.no_grad():
             out = model(data)

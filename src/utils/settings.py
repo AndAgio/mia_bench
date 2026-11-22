@@ -351,10 +351,10 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Learning rate to train the neural MIA attacker model')
         # Attack-R MIA parameters
         parser.add_argument('--attacker_rmia_alpha', type=float, default=0.05,
-                                help='Alpha to be used in the Attack-R MIA attack')
+                                help="False-positive rate alpha of Attack-R's own decisions: a sample is a member when the smallest alpha at which it is one is at most alpha. It does not change the scores")
         # Attack-P MIA parameters
         parser.add_argument('--attacker_pmia_alpha', type=float, default=0.05,
-                                help='Alpha to be used in the Attack-P MIA attack')
+                                help="False-positive rate alpha of Attack-P's own decisions: a sample is a member when the smallest alpha at which it is one is at most alpha. It does not change the scores")
         # Boundary MIA parameters
         parser.add_argument('--attacker_boundary_n_queries', type=int, default=1000,
                                 help='Number of queries to train the attack regressor in the Boundary MIA attack')

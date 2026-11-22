@@ -1,6 +1,7 @@
 # Attacks
 
-Choose an attack with `--attacker_mode`. Only RMIA and quantile regression have their own pages so far.
+Choose an attack with `--attacker_mode`. Only RMIA, quantile regression, Attack-R and Attack-P have their own pages
+so far.
 
 Every attack can be paired with every defense. Score-based attacks read the scores the defended model returns, and
 label-only attacks read only its predicted labels. `neural_feat` reads the model's internal features instead. LDL,
@@ -14,8 +15,8 @@ these pairings.
 | [RMIA](robust.md) | `online_robust`, `offline_robust` | scores | [paper](https://arxiv.org/abs/2312.03262) |
 | [Quantile regression](quantile.md) | `quantile` | scores | [paper](https://proceedings.neurips.cc/paper_files/paper/2023/hash/01328d0767830e73a612f9073e9ff15f-Abstract-Conference.html) |
 | Shadow-model classifier | `neural_prob`, `neural_logit`, `neural_feat` | scores, or features | [paper](https://ieeexplore.ieee.org/document/7958568) |
-| Attack-R | `rmia_loss`, `rmia_confidence`, `rmia_entropy` | scores | [paper](https://arxiv.org/abs/2111.09679) |
-| Attack-P | `pmia_loss`, `pmia_confidence`, `pmia_entropy` | scores | [paper](https://arxiv.org/abs/2111.09679) |
+| [Attack-R](attack_r_p.md) | `rmia_loss`, `rmia_confidence`, `rmia_entropy` | scores | [paper](https://arxiv.org/abs/2111.09679) |
+| [Attack-P](attack_r_p.md) | `pmia_loss`, `pmia_confidence`, `pmia_entropy` | scores | [paper](https://arxiv.org/abs/2111.09679) |
 | Boundary distance, supervised | `sba`, `sba_qeba`, `sba_qeba-dct`, `sba_qeba-pca`, `sba_qeba-custom` | labels | [paper](https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf) |
 | Boundary distance, unsupervised | `uba`, `uba_qeba`, `uba_qeba-dct`, `uba_qeba-pca`, `uba_qeba-custom` | labels | [paper](https://dl.acm.org/doi/pdf/10.1145/3460120.3484575) |
 | Noise robustness | `noise_robust` | labels | [paper](https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf) |
@@ -32,4 +33,5 @@ with QEBA.
 
 robust
 quantile
+attack_r_p
 ```

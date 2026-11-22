@@ -15,7 +15,7 @@ class AttackPMIA(BaseMIA):
     """Attack-P: compares the target's score on a sample with its scores on population data.
 
     Paper: "Enhanced Membership Inference Attacks against Machine Learning Models",
-    https://arxiv.org/pdf/2111.09679.
+    https://arxiv.org/abs/2111.09679. Documentation: docs/attacks/attack_r_p.md.
     Each sample is scored by -alpha_star, the smallest false-positive rate at which the population's threshold makes it
     a member, computed as for Attack-R, and is a member when alpha_star <= --attacker_pmia_alpha.
     """
@@ -25,6 +25,7 @@ class AttackPMIA(BaseMIA):
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
+        """Check the settings, then sample the shadow datasets, of which the first is the population data."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.shadow_configs.n_shadow_datasets = 1
         self.shadow_configs.mode = 'offline'
@@ -42,6 +43,7 @@ class AttackPMIA(BaseMIA):
                                                     attacker_hash=self.attacker_hash)
 
     def optimize(self, train_config: TrainConfigs):
+        """Do nothing: Attack-P trains no model."""
         pass
 
     def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
@@ -103,6 +105,7 @@ class AttackPMIA(BaseMIA):
         return loss_like(pop_scores, self.attack_configs.p_score_type)
 
     def compute_batch_scores(self, model: torch.nn.Module, data: torch.Tensor, label: torch.Tensor):
+        """Return the model's score of each sample in the batch: its loss, highest confidence or prediction entropy."""
         model.eval()
         with torch.no_grad():
             out = model(data)

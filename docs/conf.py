@@ -202,9 +202,11 @@ def robust_parameters():
 
 write_generated('robust_parameters.md', robust_parameters())
 
-from src.utils.variables import MMD_CODE_MIN_ACCURACY_GAP, MMD_REFERENCE_FRACTION_OF_VAL_SPLIT  # noqa: E402
+from src.utils.variables import (MMD_CODE_MIN_ACCURACY_GAP, MMD_REFERENCE_FRACTION_OF_VAL_SPLIT,  # noqa: E402
+                                 PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS)
 myst_substitutions = {'mmd_min_accuracy_gap': f'{MMD_CODE_MIN_ACCURACY_GAP * 100:g} percentage points',
-                      'mmd_reference_share': f'{MMD_REFERENCE_FRACTION_OF_VAL_SPLIT:.0%}'}
+                      'mmd_reference_share': f'{MMD_REFERENCE_FRACTION_OF_VAL_SPLIT:.0%}',
+                      'shadow_dataset_share': f'{PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS:.0%}'}
 
 
 def adv_reg_parameters():
@@ -334,7 +336,7 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'adv_reg': ['defender_adv_reg_'], 'mixup': ['defender_mixup_alpha'],
                   'data_augmentation': ['defender_augment_'], 'dp': ['defender_dp_'],
                   'mmd': ['defender_mmd_', 'defender_mixup_alpha'],
-                  'robust': ['attacker_robust_'],
+                  'robust': ['attacker_robust_'], 'attack_r_p': ['attacker_rmia_', 'attacker_pmia_'],
                   'quantile': ['attacker_quantile_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
