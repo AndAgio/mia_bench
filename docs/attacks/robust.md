@@ -59,3 +59,8 @@ Several values of `--attacker_robust_a` give one result each, from the same shad
 
 ```{include} ../_generated/options_robust.md
 ```
+
+## Differences from the paper
+
+- The population is `--attacker_robust_rand_pop_size` samples of the attacker's data, rather than every non-member of
+  the target, the paper's default (Sec. 5.6): a realistic attacker does not know all of the target's non-members.
