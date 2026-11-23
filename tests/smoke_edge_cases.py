@@ -41,9 +41,16 @@ def attack_specs(component):
                      n_shadows=6, attacker_optimizer="adam", attacker_lr=.001))
     if component == "lira":
         return (baseline,
-                spec("Two shadows: one in and one out per audit point", n_shadows=2),
-                spec("Odd audit prior and shadow batch boundaries", n_shadows=4),
+                spec("Fewest shadows: two in and two out per audit point", n_shadows=4),
+                spec("Odd number of shadows: two in and three out per audit point", n_shadows=5),
                 spec("Six shadows for nontrivial in/out variance", n_shadows=6),
+                spec("Alternate shadow optimizer and one full shadow batch",
+                     attacker_optimizer="adam", attacker_lr=.001))
+    if component == "offline_lira":
+        return (baseline,
+                spec("Fewest shadows: two out per audit point", n_shadows=2),
+                spec("Odd number of shadows", n_shadows=3),
+                spec("Six shadows for nontrivial out variance", n_shadows=6),
                 spec("Alternate shadow optimizer and one full shadow batch",
                      attacker_optimizer="adam", attacker_lr=.001))
     if component == "quantile":

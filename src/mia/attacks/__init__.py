@@ -16,7 +16,7 @@ from src.mia.attacks.label_only.yoqo import Yoqo
 def get_attacker_class(attacker_mode: str):
     if attacker_mode in ['online_robust', 'offline_robust', 'on_robust', 'off_robust']:
         return RobustMIA
-    elif attacker_mode == 'lira':
+    elif attacker_mode in ['lira', 'online_lira', 'offline_lira']:
         return LiRA
     elif attacker_mode == 'quantile':
         return QuantileMIA

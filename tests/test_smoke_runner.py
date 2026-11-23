@@ -53,7 +53,7 @@ class SmokeRunnerTests(unittest.TestCase):
 
     def test_default_covers_factory_modes_and_five_epoch_training(self):
         _, cases = self.cases()
-        self.assertEqual(len(cases), 54)
+        self.assertEqual(len(cases), 55)
         self.assertEqual({c.component for c in cases if c.kind == "attack"}, set(smoke.ATTACKS))
         self.assertEqual({c.component for c in cases if c.kind == "defense"}, set(smoke.DEFENSES))
         self.assertFalse(smoke.validate_commands(cases, self.parser))
@@ -86,7 +86,7 @@ class SmokeRunnerTests(unittest.TestCase):
             defender_options = {k: v for k, v in vars(settings).items() if k.startswith("defender_")}
             self.assertEqual(defender_options,
                              {k: v for k, v in vars(target).items() if k.startswith("defender_")})
-        self.assertEqual(len({c.log_file for c in cases}), 54)
+        self.assertEqual(len({c.log_file for c in cases}), 55)
         self.assertEqual(len({self.settings(c).out_folder for c in cases}), 18)
 
     def test_groups_never_share_targets_with_other_profiles_or_grid_values(self):
@@ -99,7 +99,7 @@ class SmokeRunnerTests(unittest.TestCase):
         for offset in range(0, 12, 3):
             self.assertEqual(len(set(paths[offset:offset + 3])), 1)
         _, isolated = self.cases(["--no-reuse-defender"])
-        self.assertEqual(len({self.settings(c).out_folder for c in isolated}), 54)
+        self.assertEqual(len({self.settings(c).out_folder for c in isolated}), 55)
 
     def test_epochs_and_option_precedence(self):
         _, cases = self.cases(["--epochs", "3", "--only", "attack:lira",
@@ -239,7 +239,7 @@ checkpoint.write_text('target')
     def test_edge_matrix_has_five_distinct_valid_cases_per_component(self):
         from collections import Counter
         _, cases = self.cases(["--preset", "edge"])
-        self.assertEqual(len(cases), 270)
+        self.assertEqual(len(cases), 275)
         self.assertEqual(set(Counter((c.kind, c.component) for c in cases).values()), {5})
         self.assertFalse(smoke.validate_commands(cases, self.parser))
         for kind, components in (("attack", smoke.ATTACKS), ("defense", smoke.DEFENSES)):
@@ -281,7 +281,7 @@ checkpoint.write_text('target')
                 visited.add(path)
             previous = path
         _, isolated = self.cases(["--preset", "edge", "--no-reuse-defender"])
-        self.assertEqual(len({self.settings(c).out_folder for c in isolated}), 270)
+        self.assertEqual(len({self.settings(c).out_folder for c in isolated}), 275)
 
     def test_edge_target_key_tracks_effective_seed_data_training_and_limits(self):
         args, cases = self.cases(["--preset", "edge", "--only", "attack:pmia_loss"])

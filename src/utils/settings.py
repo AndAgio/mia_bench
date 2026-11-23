@@ -290,7 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
 
         # Shared MIA parameters
         parser.add_argument("--attacker_mode", default="quantile",
-                                choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust', "lira", "quantile",
+                                choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust',
+                                         "lira", 'online_lira', 'offline_lira', "quantile",
                                         "neural_feat", "neural_prob", "neural_logit", 
                                         'rmia_loss', 'rmia_confidence', 'rmia_entropy', 
                                         'pmia_loss', 'pmia_confidence', 'pmia_entropy',
@@ -302,8 +303,8 @@ def build_parser() -> argparse.ArgumentParser:
                                         'dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black', 'dh-attack_random',
                                         'online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo',
                                         ])
-        parser.add_argument('--n_shadows', type=int, default=10,
-                                help='Number of shadow models and datasets to be used for MIAs requiring shadow models')
+        parser.add_argument('--n_shadows', type=int, default=32,
+                                help='Number of shadow models, each with its own shadow dataset, of the attacks that train several: LiRA, RobustMIA, Attack-R, the neural attack and YOQO')
         # RobustMIA parameters
         parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
                                 help="Number of population samples z, drawn from the attacker's data, that RobustMIA compares each sample with")

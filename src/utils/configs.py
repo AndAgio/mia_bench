@@ -905,8 +905,11 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         gamma=settings.attacker_robust_gamma,
                                         random_pop_size=settings.attacker_robust_rand_pop_size)
         attacker_shadow_configs.mode = robust_mode
-    elif settings.attacker_mode == 'lira':
-        attack_configs = LiraMiaConfigs(mode='online')
+    elif settings.attacker_mode in ['lira', 'online_lira', 'offline_lira']:
+        # lira is the online attack, its only mode before offline_lira.
+        lira_mode = 'offline' if settings.attacker_mode == 'offline_lira' else 'online'
+        attack_configs = LiraMiaConfigs(mode=lira_mode)
+        attacker_shadow_configs.mode = lira_mode
     elif settings.attacker_mode == 'quantile':
         # Unset, the loss picks the epoch: the regression model is the one with the lowest validation loss. No other
         # metric is logged: after training, the attack logs its false-positive rate on the validation split instead.

@@ -337,6 +337,7 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'data_augmentation': ['defender_augment_'], 'dp': ['defender_dp_'],
                   'mmd': ['defender_mmd_', 'defender_mixup_alpha'],
                   'robust': ['attacker_robust_'], 'attack_r_p': ['attacker_rmia_', 'attacker_pmia_'],
+                  'lira': ['n_shadows'],
                   'quantile': ['attacker_quantile_']}
 
 for name, prefixes in METHOD_OPTIONS.items():

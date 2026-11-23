@@ -71,6 +71,7 @@ class LiRANumericsTests(unittest.TestCase):
     def test_minimal_attack_scoring_gives_finite_scores_and_no_decisions(self):
         attack = object.__new__(LiRA)
         attack.logger = Mock()
+        attack.mode = 'online'
         dataset = TensorDataset(torch.zeros(2, 1), torch.zeros(2, dtype=torch.long),
                                 torch.arange(2), torch.arange(2))
         dataset.get_indices = lambda mode: [0, 1]

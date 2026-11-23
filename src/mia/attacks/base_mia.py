@@ -22,6 +22,9 @@ class MembershipScores(NamedTuple):
     params: Optional[dict] = None
 
 
+# TODO: Let each attack adapt its queries to the defender's training augmentations, to test how far it gains from them.
+# For example, LiRA's authors also query the mirror of each image and average the test over both queries, which helps
+# when the target trained with flips. Related to issue #48, shadow models trained with augmentation.
 class BaseMIA(Loggable):
     """Base class of the attacks: samples the auditing set, attacks the defended model and records the results."""
     requires_auxiliary_data = True

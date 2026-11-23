@@ -45,7 +45,7 @@ from smoke_edge_cases import EDGE_NAMES, edge_spec
 # Distinct algorithms/modes from the current factories and config generator.
 # Aliases that produce the same class/config are recorded separately below.
 ATTACKS = (
-    "online_robust", "offline_robust", "lira", "quantile",
+    "online_robust", "offline_robust", "lira", "offline_lira", "quantile",
     "neural_feat", "neural_prob", "neural_logit",
     "rmia_loss", "rmia_confidence", "rmia_entropy",
     "pmia_loss", "pmia_confidence", "pmia_entropy",
@@ -59,7 +59,7 @@ ATTACKS = (
 )
 
 ATTACK_ALIASES = {
-    "on_robust": "online_robust", "off_robust": "offline_robust",
+    "on_robust": "online_robust", "off_robust": "offline_robust", "online_lira": "lira",
     "sba": "sba_hopskipjump", "sba_hsj": "sba_hopskipjump",
     "sba_hopskip": "sba_hopskipjump", "sba_hop": "sba_hopskipjump",
     "sba_qeba": "sba_qeba-spatial",
