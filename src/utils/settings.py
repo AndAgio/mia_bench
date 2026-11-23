@@ -292,7 +292,8 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument("--attacker_mode", default="quantile",
                                 choices=['online_robust', 'offline_robust', 'on_robust', 'off_robust',
                                          "lira", 'online_lira', 'offline_lira', "quantile",
-                                        "neural_feat", "neural_prob", "neural_logit", 
+                                        "neural_feat", "neural_prob", "neural_logit",
+                                        "online_neural_feat", "online_neural_prob", "online_neural_logit",
                                         'rmia_loss', 'rmia_confidence', 'rmia_entropy', 
                                         'pmia_loss', 'pmia_confidence', 'pmia_entropy',
                                         'sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom',
@@ -345,11 +346,11 @@ def build_parser() -> argparse.ArgumentParser:
                                      f"{QUANTILE_DEFAULT_VAL_SPLIT})")
         # Neural MIA parameters
         parser.add_argument('--attacker_neural_model_layers', type=int, nargs="+", default=[64, 32],
-                                help='List of hidden layer sizes for the neural MIA attacker model')
+                                help='Hidden layer sizes of the neural attack\'s attack models, one per class')
         parser.add_argument('--attacker_neural_model_epochs', type=int, default=20,
-                                help='Number of epochs to train the neural MIA attacker model')
+                                help='Number of epochs to train each of the neural attack\'s attack models')
         parser.add_argument('--attacker_neural_model_lr', type=float, default=0.01,
-                                help='Learning rate to train the neural MIA attacker model')
+                                help='Learning rate of Adam, which trains each of the neural attack\'s attack models')
         # Attack-R MIA parameters
         parser.add_argument('--attacker_rmia_alpha', type=float, default=0.05,
                                 help="False-positive rate alpha of Attack-R's own decisions: a sample is a member when the smallest alpha at which it is one is at most alpha. It does not change the scores")

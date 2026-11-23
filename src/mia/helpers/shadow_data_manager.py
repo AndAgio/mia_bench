@@ -285,8 +285,8 @@ class ShadowDatasetsManager(Loggable):
         if labels == 'original':
             # If using original as labeling mode, we return the original labels but only for the samples in the shadow dataset.
             # This labeling mode is meant to be used when training shadow models over the shadow datasets, therefore we want to train them with the original labels of the samples they contain.
-            shadow_dist_indices = self.attacker_data_distribution.get('all').get_indices(mode='original')
-            auditing_samples_indices = self.auditing_dataset.get_all_ids()
+            shadow_dist_indices = set(self.attacker_data_distribution.get('all').get_indices(mode='original'))
+            auditing_samples_indices = set(self.auditing_dataset.get_all_ids())
             shadow_ids = [i for i in all_indices if i in shadow_dist_indices]
             auditing_ids = [i for i in all_indices if i in auditing_samples_indices]
             data_one = SubsampledDataset(self.attacker_data_distribution.get('all'),
@@ -302,8 +302,8 @@ class ShadowDatasetsManager(Loggable):
             # If using shadow as a labeling mode, we return the shadow dataset with all samples labeled as members (1) regardless of their original membership. 
             # This labeling mode is meant to be used when working over trained shadow models that have seen the shadow dataset during training. 
             # Therefore, we want to learn to classify all their training data as members.
-            shadow_dist_indices = self.attacker_data_distribution.get('all').get_indices(mode='original')
-            auditing_samples_indices = self.auditing_dataset.get_all_ids()
+            shadow_dist_indices = set(self.attacker_data_distribution.get('all').get_indices(mode='original'))
+            auditing_samples_indices = set(self.auditing_dataset.get_all_ids())
             shadow_ids = [i for i in all_indices if i in shadow_dist_indices]
             auditing_ids = [i for i in all_indices if i in auditing_samples_indices]
             data_one = SubsampledDataset(self.attacker_data_distribution.get('all'),

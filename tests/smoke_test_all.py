@@ -47,6 +47,7 @@ from smoke_edge_cases import EDGE_NAMES, edge_spec
 ATTACKS = (
     "online_robust", "offline_robust", "lira", "offline_lira", "quantile",
     "neural_feat", "neural_prob", "neural_logit",
+    "online_neural_feat", "online_neural_prob", "online_neural_logit",
     "rmia_loss", "rmia_confidence", "rmia_entropy",
     "pmia_loss", "pmia_confidence", "pmia_entropy",
     "sba_hopskipjump", "sba_qeba-spatial", "sba_qeba-dct",
@@ -421,7 +422,7 @@ def shadow_count(attack: str) -> int:
         return 1
     if attack.startswith(("sba_", "uba_", "transfer_", "oslo_", "dh_")):
         return 1
-    if attack in {"online_robust", "lira", "online_yoqo"} or attack.startswith("neural_"):
+    if attack in {"online_robust", "lira", "online_yoqo"} or attack.startswith("online_neural_"):
         return 4
     return 2
 

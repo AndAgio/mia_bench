@@ -66,7 +66,7 @@ def attack_specs(component):
                      attacker_quantile_use_gaussian=True, attacker_quantile_use_logscale=True,
                      attacker_quantile_n=7, attacker_quantile_low=.001, attacker_quantile_high=.999,
                      attacker_lr=.001))
-    if component.startswith("neural_"):
+    if component.startswith(("neural_", "online_neural_")):
         return (baseline,
                 spec("Narrowest hidden layer and two audit points", attacker_neural_model_layers=(1,)),
                 spec("Two hidden layers and uneven batches", attacker_neural_model_layers=(8, 4)),

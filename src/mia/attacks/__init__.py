@@ -20,7 +20,8 @@ def get_attacker_class(attacker_mode: str):
         return LiRA
     elif attacker_mode == 'quantile':
         return QuantileMIA
-    elif attacker_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
+    elif attacker_mode in ['neural_feat', 'neural_prob', 'neural_logit',
+                           'online_neural_feat', 'online_neural_prob', 'online_neural_logit']:
         return NeuralMIA
     elif attacker_mode in ['rmia_loss', 'rmia_confidence', 'rmia_entropy']:
         return AttackRMIA

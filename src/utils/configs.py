@@ -924,13 +924,18 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                             quantile_alpha=settings.attacker_quantile_alpha,
                                             val_split=settings.attacker_quantile_val_split)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attacker_mode in ['neural_feat', 'neural_prob', 'neural_logit']:
+    elif settings.attacker_mode in ['neural_feat', 'neural_prob', 'neural_logit',
+                                    'online_neural_feat', 'online_neural_prob', 'online_neural_logit']:
+        # neural_* is the paper's attack, with shadow datasets disjoint from the audited samples; online_neural_* puts
+        # each audited sample in half of them, as online LiRA does.
+        neural_mode = 'online' if settings.attacker_mode.startswith('online_') else 'offline'
         neural_input_mode = settings.attacker_mode.split('_')[-1]
-        attack_configs = NeuralMiaConfigs(mode='online',
+        attack_configs = NeuralMiaConfigs(mode=neural_mode,
                                         neural_input_mode=neural_input_mode,
                                         model_layers=settings.attacker_neural_model_layers,
                                         model_epochs=settings.attacker_neural_model_epochs,
                                         model_lr=settings.attacker_neural_model_lr)
+        attacker_shadow_configs.mode = neural_mode
     elif settings.attacker_mode in ['rmia_loss', 'rmia_confidence', 'rmia_entropy']:
         score_type = settings.attacker_mode.split('_')[-1]
         attack_configs = AttackRMiaConfigs(mode='offline',
