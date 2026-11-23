@@ -23,6 +23,7 @@ class MembershipScores(NamedTuple):
 
 
 # TODO: Let each attack adapt its queries to the defender's training augmentations, to test how far it gains from them.
+# Issue URL: https://github.com/AndAgio/mia_bench/issues/54
 # For example, LiRA's authors also query the mirror of each image and average the test over both queries, which helps
 # when the target trained with flips. Related to issue #48, shadow models trained with augmentation.
 class BaseMIA(Loggable):
