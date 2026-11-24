@@ -25,7 +25,7 @@ def cli_parser():
     path = smoke.REPO_ROOT / "src/utils/settings.py"
     definitions = [node for node in ast.parse(path.read_text()).body
                    if isinstance(node, (ast.FunctionDef, ast.ClassDef))
-                   and node.name in ("SettingsParser", "build_parser")
+                   and node.name in ("SettingsParser", "build_parser", "count_or_share")
                    or isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == "UNSET_TRAINING_DEFAULT"]
     namespace = runpy.run_path(str(smoke.REPO_ROOT / "src/utils/variables.py"))
     namespace.update(runpy.run_path(str(smoke.REPO_ROOT / "src/utils/training_defaults.py")))

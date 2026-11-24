@@ -28,6 +28,20 @@ these pairings.
 The `rmia_*` modes run Attack-R, not RMIA. `sba` and `uba` find the boundary with HopSkipJump, and the `_qeba` modes
 with QEBA.
 
+## An attacker with little data
+
+`--attacker_data_split_perc` sets the attacker's share of the dataset. With a small share, three of its uses can need
+more samples than the attacker has, and the run then stops with an error naming the option to change:
+
+- The calibration samples are held out of the attacker's data first. Pass `--n_calibration_samples` as a share of that
+  data, such as 0.2, instead of a number of samples.
+- The online attacks put every audited and calibration sample in their shadow datasets, so they need fewer audited
+  samples (`--n_auditing_samples`).
+- RMIA draws its population from the attacker's data, so it needs a smaller `--attacker_robust_rand_pop_size`.
+
+For example, `--attacker_data_split_perc 0.01 --n_calibration_samples 0.2` gives the attacker 600 CIFAR-10 images, of
+which 120 calibrate the thresholds.
+
 ```{toctree}
 :hidden:
 

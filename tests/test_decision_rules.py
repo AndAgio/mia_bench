@@ -1,4 +1,6 @@
 """The last stage: decision rules on the attack's scores, and the calibration samples they are calibrated on."""
+from contextlib import redirect_stderr
+import io
 import sys
 import tempfile
 import unittest
@@ -156,7 +158,8 @@ class CalibrationSamplesTest(unittest.TestCase):
         self.assertEqual(CalibrationDatasetManager(ATTACKER, n_samples=50, seed=3, logger=_SilentLogger()).get_ids(),
                          ids)
         for n_samples in (0, 400):
-            with self.subTest(n_samples=n_samples), self.assertRaisesRegex(ValueError, 'between 1 and 399'):
+            with self.subTest(n_samples=n_samples), self.assertRaisesRegex(
+                    ValueError, 'between 1 and 399.*--n_calibration_samples.*--attacker_data_split_perc'):
                 CalibrationDatasetManager(ATTACKER, n_samples=n_samples, seed=3, logger=_SilentLogger())
 
     def shadows(self, mode, n_shadows=4):
@@ -169,6 +172,39 @@ class CalibrationSamplesTest(unittest.TestCase):
                 ATTACKER, auditing, ShadowDataConfigs(n_shadow_datasets=n_shadows, mode=mode, seed=3),
                 attacker_hash=mode, calibration_dataset=calibration, logger=_SilentLogger())
         return shadows, calibration.get_ids()
+
+    def test_a_share_holds_out_that_part_of_the_attackers_data(self):
+        calibration = CalibrationDatasetManager(ATTACKER, n_samples=0.2, seed=3, logger=_SilentLogger())
+        self.assertEqual(len(calibration.get_ids()), 80)
+
+    def test_the_option_takes_a_whole_number_or_a_share(self):
+        def parse(*args):
+            return build_parser().parse_args(list(args)).n_calibration_samples
+        # The default stays the integer 1000, so the hashes of existing runs do not change.
+        self.assertEqual(parse(), 1000)
+        self.assertIsInstance(parse(), int)
+        self.assertEqual([parse('--n_calibration_samples', value) for value in ('500', '0.2', '0')], [500, 0.2, 0])
+        for bad in ('1.5', '-1'):
+            with self.subTest(bad=bad), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                parse('--n_calibration_samples', bad)
+
+    def test_a_population_larger_than_the_attackers_data_names_the_options(self):
+        shadows, _ = self.shadows('offline')
+        with self.assertRaisesRegex(ValueError, '--attacker_robust_rand_pop_size.*--attacker_data_split_perc'):
+            shadows.sample_random_indices(num_data=1000)
+
+    def test_online_shadow_datasets_too_small_for_the_inserted_samples_name_the_options(self):
+        auditing = AuditingDatasetManager(DEFENDER, AuditingDataConfigs(n_auditing_samples=20, seed=3),
+                                          logger=_SilentLogger())
+        small = MultiDatasets(datasets=[_tracked(40, 1000)], ids=['all'])
+        calibration = CalibrationDatasetManager(small, n_samples=10, seed=3, logger=_SilentLogger())
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(shadow_data_manager, 'DEFAULT_SHADOW_DATASETS_FOLDER', folder), \
+                self.assertRaisesRegex(ValueError, '--n_auditing_samples.*--n_calibration_samples.*'
+                                                   '--attacker_data_split_perc'):
+            shadow_data_manager.ShadowDatasetsManager(
+                small, auditing, ShadowDataConfigs(n_shadow_datasets=4, mode='online', seed=3),
+                attacker_hash='small', calibration_dataset=calibration, logger=_SilentLogger())
 
     def test_shadow_datasets_treat_calibration_samples_like_auditing_samples(self):
         for mode, expected in (('offline', 0), ('online', 2)):

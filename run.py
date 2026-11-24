@@ -244,7 +244,10 @@ def main():
         audit_in_percentage=float(experiment_configs.attacker.dataset.auditing.in_perc),
         configured_audit_samples=int(experiment_configs.attacker.dataset.auditing.n_auditing_samples),
         configured_shadow_datasets=int(experiment_configs.attacker.dataset.shadow.n_shadow_datasets),
-        configured_calibration_samples=int(experiment_configs.attacker.evaluation.n_calibration_samples),
+        # The number held out: a share of the attacker's data (--n_calibration_samples below 1) becomes one.
+        configured_calibration_samples=(len(attacker.calibration_manager.get_ids())
+                                        if getattr(attacker, 'calibration_manager', None) is not None
+                                        else int(experiment_configs.attacker.evaluation.n_calibration_samples)),
         seed=int(experiment_configs.defender.dataset.base.seed),
         model_accuracy=float(test_performance['accuracy']),
         model_accuracy_split='test',

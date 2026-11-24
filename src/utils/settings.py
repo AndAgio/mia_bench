@@ -22,6 +22,16 @@ class SettingsParser(argparse.ArgumentParser):
                 return namespace, extras
 
 
+def count_or_share(value: str):
+    """Parse a whole number of samples, or a share of the attacker's data strictly between 0 and 1."""
+    number = float(value)
+    if 0 < number < 1:
+        return number
+    if number >= 0 and number.is_integer():
+        return int(number)
+    raise argparse.ArgumentTypeError(f'expected a whole number of samples or a share between 0 and 1, got {value}')
+
+
 def gather_settings():
         return build_parser().parse_args()
 
@@ -44,8 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Number of samples to use for auditing on the attacker side')
         parser.add_argument('--audit_in_perc', type=float, default=0.5,
                                 help='Percentage of auditing samples that are coming from the training set')
-        parser.add_argument('--n_calibration_samples', type=int, default=1000,
-                                help="Number of samples held out of the attacker's share as known non-members of the target, to calibrate decision thresholds. Like the auditing samples, they are in no shadow dataset offline and in exactly half of them online. 0 holds none out, which leaves only the oracle rule and the attack rule of attacks with a rule of their own")
+        parser.add_argument('--n_calibration_samples', type=count_or_share, default=1000,
+                                help="Samples held out of the attacker's share as known non-members of the "
+                                     "target, to calibrate decision thresholds: a number, or a share of the "
+                                     "attacker's data between 0 and 1 (e.g. 0.2), for an attacker with little data. "
+                                     "Like the auditing samples, they are in no shadow dataset offline and in "
+                                     "exactly half of them online. 0 holds none out, which leaves only the oracle "
+                                     "rule and the attack rule of attacks with a rule of their own")
         parser.add_argument('--decision_rule', type=str, nargs='+', default=['attack'], choices=DECISION_RULES,
                                 help="How the attack's scores become membership decisions, which set accuracy, precision, recall, F1 and the per-sample predictions (AUC and TPR at fixed FPR do not depend on it). attack: the attack's own rule, or calibrated for attacks without one (LiRA, RobustMIA). calibrated: the threshold that a share --calibration_fpr of the calibration samples exceed. oracle: the threshold maximizing TPR - FPR on the auditing labels, the strongest attacker a defender may face. Several rules give one result each, from the same scores")
         parser.add_argument('--calibration_fpr', type=float, default=0.1,

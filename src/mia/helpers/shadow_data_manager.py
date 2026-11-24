@@ -47,8 +47,11 @@ class ShadowDatasetsManager(Loggable):
         n_pool_samples = len(attacker_data_distribution.get('all')) - len(self.calibration_indices)
         n_shadow_samples = math.ceil(n_pool_samples*PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS)
         n_inserted_samples = len(self.inserted_indices)
-        if self.mode == 'online':
-            assert n_shadow_samples > n_inserted_samples, f"In ONLINE shadow dataset mode, the number of samples available for shadow dataset sampling should be larger than the number of auditing and calibration samples! Found {n_shadow_samples} shadow samples and {n_inserted_samples} auditing and calibration samples instead!"
+        if self.mode == 'online' and n_shadow_samples <= n_inserted_samples:
+            raise ValueError(f"Online shadow datasets hold {n_shadow_samples} samples, too few to take in the "
+                             f"{n_inserted_samples} auditing and calibration samples: lower --n_auditing_samples or "
+                             f"--n_calibration_samples, or give the attacker more data with "
+                             f"--attacker_data_split_perc.")
         self.n_samples_per_dataset = n_shadow_samples
 
         assert 0 < shadow_configs.n_shadow_datasets <= MAX_SHADOW_DATASETS, f"Number of shadow datasets should be between 1 and {MAX_SHADOW_DATASETS}! Found {shadow_configs.n_shadow_datasets} instead!" 
@@ -173,6 +176,11 @@ class ShadowDatasetsManager(Loggable):
         exclude = exclude or set()
         available_indices = self.attacker_data_distribution.get('all').get_indices(mode='original')
         available_indices = [i for i in available_indices if i not in self.inserted_set and i not in exclude]
+        if num_data > len(available_indices):
+            raise ValueError(f"The population needs {num_data} of the attacker's samples outside the auditing and "
+                             f"calibration ones, but only {len(available_indices)} are left: lower the population "
+                             f"size (--attacker_robust_rand_pop_size for RMIA), or give the attacker more data with "
+                             f"--attacker_data_split_perc.")
         self.logger.print_it(f"Sampling random sample dataset...")
         sampled_indices = self._population_rng.choice(available_indices,
                                         num_data,

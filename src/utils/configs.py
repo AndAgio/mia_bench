@@ -282,7 +282,8 @@ class EvaluationConfigs:
     """The last stage: how the attack's scores become membership decisions, and the samples that calibrate them."""
     decision_rules: List[str] = field(default_factory=lambda: ['attack'])
     calibration_fpr: float = 0.1
-    n_calibration_samples: int = 1000
+    # A number of samples, or a share of the attacker's data when strictly between 0 and 1.
+    n_calibration_samples: Union[int, float] = 1000
     seed: int = 12345
 
 

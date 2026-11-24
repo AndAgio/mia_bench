@@ -120,7 +120,8 @@ behind accuracy, precision, recall, F1 and the per-sample predictions:
 - `calibrated`: the threshold that a share `--calibration_fpr` of the calibration
   samples exceed. These `--n_calibration_samples` samples are held out of the
   attacker's share as known non-members of the target, and the shadow datasets treat
-  them like the auditing samples.
+  them like the auditing samples. For an attacker with little data, pass a share of
+  its data instead of a number, such as `--n_calibration_samples 0.2`.
 - `oracle`: the threshold that maximizes TPR - FPR on the auditing labels, the
   strongest attacker a defender may face.
 
