@@ -25,9 +25,9 @@ class NoiseRobustnessMIA(BaseMIA):
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Noise Robustness MIA!")
         assert self.shadow_configs.mode == 'offline', f"Noise Robustness MIA attacker should be used with offline shadow models, but found mode={self.shadow_configs.mode} instead!"
-        if self.shadow_configs.n_shadow_datasets != 1:
-            self.logger.print_it(f"Noise Robustness MIA attacker [WARNING]: when using noise robustness MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
-            self.shadow_configs.n_shadow_datasets = 1
+        assert self.shadow_configs.n_shadow_datasets == 1, (
+            f"Noise Robustness MIA trains one shadow model, set by the configs, "
+            f"got {self.shadow_configs.n_shadow_datasets}.")
         # Found on the shadow model before the first samples are scored.
         self.attack_threshold, self.best_sigma = None, None
         self.shadow_manager = ShadowManager(logger=self.logger)

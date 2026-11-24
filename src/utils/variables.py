@@ -157,3 +157,7 @@ QUANTILE_PAPER_OPTIMIZER = dict(name='adamw', lr=1e-4, weight_decay=1e-4)
 QUANTILE_PAPER_EPOCHS = 30
 QUANTILE_PAPER_BATCH_SIZE = 64
 QUANTILE_PAPER_GRAD_CLIP = 1.0
+# Query budget of HopSkipJump or QEBA for each sample, when --attacker_boundary_n_queries is unset: SBA takes the
+# paper's 2,500 (Choquette-Choo et al., App. B.1); UBA keeps the library's earlier value until its review.
+SBA_PAPER_N_QUERIES = 2500
+UBA_DEFAULT_N_QUERIES = 1000

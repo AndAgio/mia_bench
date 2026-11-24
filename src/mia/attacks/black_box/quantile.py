@@ -43,9 +43,8 @@ class QuantileMIA(BaseMIA):
                                  f"{self.quantile.min().item():.4g} to {self.quantile.max().item():.4g}, including "
                                  f"{QUANTILE_TAIL_LEVELS} from {QUANTILE_TAIL_LOW} to {QUANTILE_TAIL_HIGH}, "
                                  f"deciding at {decision_level:.4g}.")
-        if self.shadow_configs.n_shadow_datasets != 1:
-            self.logger.print_it(f"Quantile MIA attacker [WARNING]: when using quantile MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
-            self.shadow_configs.n_shadow_datasets = 1
+        assert self.shadow_configs.n_shadow_datasets == 1, \
+            f"Quantile MIA trains one shadow model, set by the configs, got {self.shadow_configs.n_shadow_datasets}."
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Quantile MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,

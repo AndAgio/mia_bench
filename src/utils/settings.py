@@ -5,6 +5,7 @@ import pathlib
 from src.utils.configs import generate_configs_from_settings, get_hash_from_settings, get_relevant_settings
 from src.utils.training_defaults import apply_training_defaults
 from .variables import QUANTILE_DEFAULT_VAL_SPLIT, QUANTILE_TAIL_HIGH, QUANTILE_TAIL_LEVELS, QUANTILE_TAIL_LOW
+from .variables import SBA_PAPER_N_QUERIES, UBA_DEFAULT_N_QUERIES
 from .variables import DECISION_RULES, DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
 
 
@@ -358,12 +359,16 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_pmia_alpha', type=float, default=0.05,
                                 help="False-positive rate alpha of Attack-P's own decisions: a sample is a member when the smallest alpha at which it is one is at most alpha. It does not change the scores")
         # Boundary MIA parameters
-        parser.add_argument('--attacker_boundary_n_queries', type=int, default=1000,
-                                help='Number of queries to train the attack regressor in the Boundary MIA attack')
+        parser.add_argument('--attacker_boundary_n_queries', type=int, default=None,
+                                help=f'Query budget of HopSkipJump or QEBA for each sample, in the boundary attacks. '
+                                     f'Unset: {SBA_PAPER_N_QUERIES} for SBA, the paper\'s, and '
+                                     f'{UBA_DEFAULT_N_QUERIES} for UBA')
         parser.add_argument('--attacker_boundary_norm', type=str, default='l2',
-                                help='Norm to use for the hopskip steps in the Boundary MIA attack')
+                                help='Norm of the distance to the decision boundary in the boundary attacks: l2, the '
+                                     'paper\'s, or linf')
         parser.add_argument('--attacker_boundary_qeba_reduction_factor', type=int, default=8,
-                                help='Reduction factor for QEBA (spatial/dct variants)')
+                                help='Reduction factor of QEBA in the sba_qeba and uba_qeba modes: its search runs '
+                                     'in a subspace with about 1/factor^2 of the input dimensions')
         parser.add_argument('--attacker_boundary_quantile', type=float, default=0.5,
                                 help='Quantile to use for the unsupervised variant of the Boundary MIA attack')
         parser.add_argument('--attacker_boundary_calibration_samples', type=int, default=100,

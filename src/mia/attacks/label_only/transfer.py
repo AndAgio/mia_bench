@@ -28,9 +28,8 @@ class TransferMIA(BaseMIA):
         self.attack_threshold = None
         self.logger.print_it(f"Working with Transfer MIA!")
         assert self.shadow_configs.mode == 'offline', f"Transfer MIA attacker should be used with offline shadow models, but found mode={self.shadow_configs.mode} instead!"
-        if self.shadow_configs.n_shadow_datasets != 1:
-            self.logger.print_it(f"Transfer MIA attacker [WARNING]: when using transfer MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
-            self.shadow_configs.n_shadow_datasets = 1
+        assert self.shadow_configs.n_shadow_datasets == 1, \
+            f"Transfer MIA trains one shadow model, set by the configs, got {self.shadow_configs.n_shadow_datasets}."
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Transfer MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,

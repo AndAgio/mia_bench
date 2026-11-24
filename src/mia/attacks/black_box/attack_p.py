@@ -27,7 +27,8 @@ class AttackPMIA(BaseMIA):
                 attacker_configs: AttackerConfigs):
         """Check the settings, then sample the shadow datasets, of which the first is the population data."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
-        self.shadow_configs.n_shadow_datasets = 1
+        assert self.shadow_configs.n_shadow_datasets == 1, \
+            f"Attack-P uses one shadow dataset, set by the configs, got {self.shadow_configs.n_shadow_datasets}."
         self.shadow_configs.mode = 'offline'
         assert self.attack_configs.p_score_type in ['loss', 'confidence', 'entropy'], f"When using Attack-P MIA, p_score_type must be one of ['loss', 'confidence', 'entropy']!"
         if not 0 <= self.attack_configs.p_alpha <= 1:

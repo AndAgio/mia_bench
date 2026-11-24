@@ -11,7 +11,8 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  MMD_PAPER_LAMBDAS, MMD_IMAGE_FALLBACK_DATASET, MMD_NONIMAGE_FALLBACK_DATASET,
                                  ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
                                  ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
-                                 DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA)
+                                 DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA, SBA_PAPER_N_QUERIES,
+                                 UBA_DEFAULT_N_QUERIES)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -616,6 +617,24 @@ class ExperimentConfigs:
 SAM_SETTINGS = ['sam_rho', 'asam_eta', 'esam_beta', 'esam_gamma', 'wsam_gamma', 'looksam_k', 'looksam_alpha',
                 'friendlysam_sigma', 'friendlysam_lambda']
 
+# Modes of the attacks on which --n_shadows has no effect.
+SBA_MODES = ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop',
+             'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']
+UBA_MODES = ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop',
+             'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']
+PMIA_MODES = ['pmia_loss', 'pmia_confidence', 'pmia_entropy']
+NOISE_ROBUSTNESS_MODES = ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']
+TRANSFER_MODES = ['transfer_loss', 'transfer_confidence', 'transfer_entropy']
+OSLO_MODES = ['oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm']
+DH_MODES = ['dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black',
+            'dh-attack_random']
+# These attacks always train one shadow model, whatever --n_shadows; UBA trains none.
+ONE_SHADOW_MODEL_MODES = (['quantile'] + PMIA_MODES + SBA_MODES + NOISE_ROBUSTNESS_MODES + TRANSFER_MODES + OSLO_MODES
+                          + DH_MODES)
+# --n_shadows is left out of these attacks' hashes, so that it cannot tell apart two runs of the same attack.
+N_SHADOWS_UNUSED_MODES = ONE_SHADOW_MODEL_MODES + UBA_MODES
+
+
 def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, Any]:
     assert mode in ['attacker', 'defender', 'experiment'], f"Mode '{mode}' to get relevant settings not recognized! Choose between 'attacker', 'defender' or 'experiment'."
     if mode == 'attacker':
@@ -633,6 +652,8 @@ def get_relevant_settings(settings: Any, mode: str = 'attacker') -> Dict[str, An
     else:
         exclude_keys = ["resume", "device"]
         relevant_settings = {k: str(v) if isinstance(v, pathlib.PosixPath) else v for k, v in vars(settings).items() if k not in exclude_keys}
+    if getattr(settings, 'attacker_mode', None) in N_SHADOWS_UNUSED_MODES:
+        relevant_settings.pop('n_shadows', None)
     # Unset optional settings are left out, so that adding a new option does not change the hashes of existing runs.
     return {k: v for k, v in relevant_settings.items() if v is not None}
 
@@ -942,14 +963,13 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         r_alpha=settings.attacker_rmia_alpha,
                                         r_score_type=score_type)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attacker_mode in ['pmia_loss', 'pmia_confidence', 'pmia_entropy']:
+    elif settings.attacker_mode in PMIA_MODES:
         score_type = settings.attacker_mode.split('_')[-1]
         attack_configs = AttackPMiaConfigs(mode='offline',
                                         p_alpha=settings.attacker_pmia_alpha,
                                         p_score_type=score_type)
-        attacker_shadow_configs.n_shadow_datasets = 1
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attacker_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
+    elif settings.attacker_mode in SBA_MODES:
         if settings.attacker_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop']:
             bound_mode = 'hop_skip_jump'
         elif settings.attacker_mode in ['sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
@@ -959,14 +979,15 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         reduction_factor=settings.attacker_boundary_qeba_reduction_factor)
         else:
             raise ValueError('Supervised Boundary Attack mode "{}" not recognized!'.format(settings.attacker_mode))
-        boundary_configs = BoundaryMiaConfigs(n_queries=settings.attacker_boundary_n_queries,
+        n_queries = settings.attacker_boundary_n_queries
+        boundary_configs = BoundaryMiaConfigs(n_queries=SBA_PAPER_N_QUERIES if n_queries is None else n_queries,
                                             mode=bound_mode,
                                             norm=settings.attacker_boundary_norm,
                                             qeba=qeba_configs if bound_mode == 'qeba' else None)
         attack_configs = SupervisedBoundaryAttackConfig(boundary=boundary_configs,
                                                         mode='offline')
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attacker_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
+    elif settings.attacker_mode in UBA_MODES:
         if settings.attacker_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop']:
             bound_mode = 'hop_skip_jump'
         elif settings.attacker_mode in ['uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
@@ -976,7 +997,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         reduction_factor=settings.attacker_boundary_qeba_reduction_factor)
         else:
             raise ValueError('Unsupervised Boundary Attack mode "{}" not recognized!'.format(settings.attacker_mode))
-        boundary_configs = BoundaryMiaConfigs(n_queries=settings.attacker_boundary_n_queries,
+        n_queries = settings.attacker_boundary_n_queries
+        boundary_configs = BoundaryMiaConfigs(n_queries=UBA_DEFAULT_N_QUERIES if n_queries is None else n_queries,
                                         mode=bound_mode,
                                         norm=settings.attacker_boundary_norm,
                                         qeba=qeba_configs if bound_mode == 'qeba' else None)
@@ -986,17 +1008,17 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                                         n_calibration_samples=settings.attacker_boundary_calibration_samples)
         attacker_shadow_configs.mode = 'offline'
     
-    elif settings.attacker_mode in ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']:
+    elif settings.attacker_mode in NOISE_ROBUSTNESS_MODES:
         attack_configs = NoiseRobustnessAttackConfig(n_queries=settings.attacker_noise_robust_n_queries,
                                                     sigmas=settings.attacker_noise_robust_sigmas)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attacker_mode in ['transfer_loss', 'transfer_confidence', 'transfer_entropy']:
+    elif settings.attacker_mode in TRANSFER_MODES:
         feature_mode = settings.attacker_mode.split('_')[-1]
         if feature_mode == 'confidence':
             feature_mode = 'max_confidence'
         attack_configs = TransferAttackConfig(feature_mode=feature_mode)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attacker_mode in ['oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm']:
+    elif settings.attacker_mode in OSLO_MODES:
         ga_mode = settings.attacker_mode.split('_')[-1] if '_' in settings.attacker_mode else 'difgsm'
         attack_configs = OsloAttackConfig(n_models=settings.attacker_oslo_n_models,
                                         same_arch=settings.attacker_oslo_same_arch,
@@ -1007,7 +1029,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
                                         ga_mode=ga_mode,
                                         threshold=settings.attacker_oslo_threshold)
         attacker_shadow_configs.mode = 'offline'
-    elif settings.attacker_mode in ['dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black', 'dh-attack_random']:
+    elif settings.attacker_mode in DH_MODES:
         fixed_input_mode = settings.attacker_mode.split('_')[-1] if '_' in settings.attacker_mode else 'white'
         attack_configs = DHAttackConfig(n_models=settings.attacker_dh_n_models,
                                         n_queries=settings.attacker_dh_n_queries,
@@ -1024,6 +1046,8 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         attacker_shadow_configs.mode = yoqo_mode
     else:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attacker_mode))
+    if settings.attacker_mode in ONE_SHADOW_MODEL_MODES:
+        attacker_shadow_configs.n_shadow_datasets = 1
     attacker_configs = AttackerConfigs(hash=attacker_hash,
                                         log=attacker_log_configs,
                                         dataset=full_data_configs,

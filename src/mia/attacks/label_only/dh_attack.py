@@ -24,9 +24,8 @@ class DHAttack(BaseMIA):
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with DHAttack!")
         assert self.shadow_configs.mode == 'offline', f"DHAttack should be used with offline shadow models, but found mode={self.shadow_configs.mode} instead!"
-        if self.shadow_configs.n_shadow_datasets != 1:
-            self.logger.print_it(f"DHAttack [WARNING]: when using DHAttack, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
-            self.shadow_configs.n_shadow_datasets = 1
+        assert self.shadow_configs.n_shadow_datasets == 1, \
+            f"DHAttack trains one shadow model, set by the configs, got {self.shadow_configs.n_shadow_datasets}."
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('DHAttack: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
