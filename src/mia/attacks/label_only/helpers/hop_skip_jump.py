@@ -8,43 +8,14 @@ from src.utils.log import Loggable
 
 
 class HopSkipJump(Loggable):
-    """
-    HopSkipJumpAttack (HSJA), decision-based black-box adversarial attack.
+    """HopSkipJump: a decision-based attack that finds the nearest point across a sample's decision boundary.
 
-    This implementation mirrors the structure of the BlackboxBench HSJA you provided:
-        - initialize() to get a first adversarial point
-        - binary_search_batch() to project to the decision boundary
-        - approximate_gradient() via random directions and decision queries
-        - stepsize search via geometric progression (or optional grid search)
-        - repeat until query budget is exhausted or an epsilon distance is reached
-
-    Key design choices requested:
-        - One boolean option: clamping
-            * clamping=True  -> clamp inputs to [0,1] whenever needed (image-like bounded domain)
-            * clamping=False -> do not clamp at all (useful for standardized/unbounded features)
-        - No "channels_last" support: ALWAYS PyTorch format
-            * Images:  x has shape (B, C, H, W)
-            * Tabular: x has shape (B, D)
-
-    Threat model:
-        - Decision-based: the attack only uses the model's predicted labels (argmax),
-            not probabilities or gradients.
-
-    Attributes (main hyperparameters):
-        p (str):
-            - Norm used for distance and constraint, either 'l2' (L2) or 'linf' (L∞).
-        max_queries (int):
-            - Maximum number of model evaluations (queries) allowed per attacked sample.
-        gamma (float):
-            - Controls binary search termination threshold theta (smaller theta -> tighter boundary search).
-        stepsize_search (str):
-            - Either 'geometric_progression' (default) or 'grid_search'.
-        max_num_evals (int):
-            - Maximum number of random directions evaluated per iteration for gradient estimation.
-        init_num_evals (int):
-            - Initial number of random directions (grows with sqrt(iter)).
-        match_bb_delta (bool):
-            - If True, match BB’s off-by-one delta special case (special delta at j==1 instead of j==0).
+    Paper: "HopSkipJumpAttack: A Query-Efficient Decision-Based Attack", https://arxiv.org/abs/1904.02144.
+    It follows the authors' code (https://github.com/Jianbo-Lab/HSJA): a random adversarial start, a binary search to
+    the boundary, a boundary normal estimated from label queries, and a geometric step-size search, repeated until
+    the query budget is spent. Each sample gets at most max_queries queries, and only the predicted labels are read.
+    With clamping, every query stays in [0, 1] (images as pixels); without, the input space is unbounded. Inputs are
+    images (B, C, H, W) or tabular rows (B, D), attacked one at a time.
     """
 
     def __init__(
@@ -58,6 +29,7 @@ class HopSkipJump(Loggable):
         clamping: bool = False,
         logger: Callable = None,
     ):
+        """Set the norm, the query budget per sample and the search parameters (the authors' defaults)."""
         super().__init__(logger=logger)
         self.name = 'HopSkipJump'
         # Validate norm type and stepsize search mode.
@@ -391,7 +363,7 @@ class HopSkipJump(Loggable):
         )
 
         # Initialize highs and thresholds depending on norm
-        if self.norm == "inf":
+        if self.norm == "linf":
             highs = dists_post.clone()
             thresholds = torch.minimum(dists_post * float(theta), torch.tensor(float(theta), device=self.device))
         else:
@@ -401,10 +373,11 @@ class HopSkipJump(Loggable):
         lows = torch.zeros(B, device=self.device)
 
         def ratio_max():
+            """Return the widest remaining search interval, relative to its stopping threshold."""
             return torch.max((highs - lows) / (thresholds + 1e-12)).item()
 
-        # Repeat until boundary interval is sufficiently small
-        while ratio_max() > 1.0:
+        # Repeat until boundary interval is sufficiently small, or the budget is spent
+        while ratio_max() > 1.0 and self.query < self.max_queries:
             mids = 0.5 * (highs + lows)
             mid_images = self.project(original, perturbed, mids)
 
@@ -415,9 +388,6 @@ class HopSkipJump(Loggable):
             # Update intervals
             lows = torch.where(decisions == 0, mids, lows)
             highs = torch.where(decisions == 1, mids, highs)
-
-            if self.query > self.max_queries:
-                break
 
         # Final projected images at highs
         out_images = self.project(original, perturbed, highs)
@@ -457,7 +427,7 @@ class HopSkipJump(Loggable):
         Returns:
             initialization: (...) adversarial initialization
         """
-        # 1) Find any adversarial noise sample.
+        # 1) Find any adversarial noise sample, within the budget.
         while True:
             if self.clamping:
                 random_noise = torch.rand_like(x).to(self.device)   # [0,1]
@@ -467,12 +437,12 @@ class HopSkipJump(Loggable):
             success = self.decision_function(random_noise.unsqueeze(0), label_or_target)[0]
             if success:
                 break
-            if self.query > self.max_queries:
+            if self.query >= self.max_queries:
                 break
 
         # 2) Blend-search to get closer to original while staying adversarial.
         low, high = 0.0, 1.0
-        while (high - low) > 1e-3:
+        while (high - low) > 1e-3 and self.query < self.max_queries:
             mid = 0.5 * (high + low)
             blended = (1.0 - mid) * x + mid * random_noise
             blended = self.clip_image(blended)
@@ -482,9 +452,6 @@ class HopSkipJump(Loggable):
                 high = mid
             else:
                 low = mid
-
-            if self.query > self.max_queries:
-                break
 
         initialization = (1.0 - high) * x + high * random_noise
         initialization = self.clip_image(initialization)
@@ -517,19 +484,18 @@ class HopSkipJump(Loggable):
             j: iteration number (1-indexed)
 
         Returns:
-            epsilon step size (float)
+            epsilon step size (float), or None if the budget ran out before a step stayed adversarial
         """
         epsilon = float(dist) / math.sqrt(j)
 
-        while True:
+        while self.query < self.max_queries:
             new = x + epsilon * update
             new = self.clip_image(new)
             success = self.decision_function(new.unsqueeze(0), label_or_target)[0]
             if success:
                 return epsilon
             epsilon /= 2.0
-            if self.query > self.max_queries:
-                return epsilon
+        return None
 
     # ---------------------------------------------------------------------
     # Main HSJA loop
@@ -612,21 +578,27 @@ class HopSkipJump(Loggable):
                 else:
                     delta = d * theta * dist_post_update
 
-            # Number of gradient evaluations increases like init_num_evals * sqrt(iter)
+            # Number of gradient evaluations increases like init_num_evals * sqrt(iter), within what is left of the
+            # budget, so that a sample never gets more queries than max_queries.
             num_evals = int(self.init_num_evals * math.sqrt(iteration + 1))
-            num_evals = int(min(num_evals, self.max_num_evals))
+            num_evals = int(min(num_evals, self.max_num_evals, self.max_queries - self.query))
+            if num_evals < 1:
+                break
 
             # Estimate gradient direction at boundary point
             gradf = self.approximate_gradient(perturbed, label_or_target, num_evals, delta)
 
             # Update direction depends on norm
-            update = torch.sign(gradf) if self.norm == "inf" else gradf
+            update = torch.sign(gradf) if self.norm == "linf" else gradf
 
             # Step size search
             if self.stepsize_search == "geometric_progression":
                 eps_step = self.geometric_progression_for_stepsize(
                     perturbed, label_or_target, update, dist, iteration + 1
                 )
+                # Out of budget before an adversarial step: keep the last boundary point, which is adversarial.
+                if eps_step is None:
+                    break
 
                 # Take a step and keep within domain if clamping=True
                 perturbed = self.clip_image(perturbed + eps_step * update)
