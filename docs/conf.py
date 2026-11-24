@@ -203,10 +203,23 @@ def robust_parameters():
 write_generated('robust_parameters.md', robust_parameters())
 
 from src.utils.variables import (MMD_CODE_MIN_ACCURACY_GAP, MMD_REFERENCE_FRACTION_OF_VAL_SPLIT,  # noqa: E402
-                                 PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS)
+                                 PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS, SBA_PAPER_N_QUERIES)
+
+
+def module_constant(path, name):
+    """Return a constant assigned at the top of a module, read from its source to avoid importing its dependencies."""
+    tree = ast.parse((REPO / path).read_text())
+    return next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                and any(getattr(target, 'id', None) == name for target in node.targets))
+
+
+SBA_THRESHOLD_SAMPLES = module_constant('src/mia/attacks/label_only/supervised_boundary.py',
+                                        'THRESHOLD_SAMPLES_PER_SIDE')
 myst_substitutions = {'mmd_min_accuracy_gap': f'{MMD_CODE_MIN_ACCURACY_GAP * 100:g} percentage points',
                       'mmd_reference_share': f'{MMD_REFERENCE_FRACTION_OF_VAL_SPLIT:.0%}',
-                      'shadow_dataset_share': f'{PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS:.0%}'}
+                      'shadow_dataset_share': f'{PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS:.0%}',
+                      'sba_n_queries': f'{SBA_PAPER_N_QUERIES:,}',
+                      'sba_threshold_samples': f"{SBA_THRESHOLD_SAMPLES:,}"}
 
 
 def adv_reg_parameters():
@@ -338,6 +351,8 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'mmd': ['defender_mmd_', 'defender_mixup_alpha'],
                   'robust': ['attacker_robust_'], 'attack_r_p': ['attacker_rmia_', 'attacker_pmia_'],
                   'lira': ['n_shadows'], 'neural': ['attacker_neural_'],
+                  'sba': ['attacker_boundary_n_queries', 'attacker_boundary_norm',
+                          'attacker_boundary_qeba_reduction_factor'],
                   'quantile': ['attacker_quantile_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
