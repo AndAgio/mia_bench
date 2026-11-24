@@ -5,7 +5,8 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
-from src.data.helpers import MergedDataset
+from src.data import get_dataset_mean_std
+from src.data.helpers import MergedDataset, SubsampledDataset
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
@@ -13,24 +14,64 @@ from src.utils import convert_to_hms
 from src.mia.attacks.label_only.helpers.hop_skip_jump import HopSkipJump
 from src.mia.attacks.label_only.helpers.qeba import Qeba, build_qeba_basis
 
+# Shadow samples of each kind, members and non-members of the shadow model, on which the threshold is chosen. The
+# authors' code tunes it on 2,500 of each; in a test on CIFAR-10, 500 of each chose as good a threshold at a fifth of
+# the boundary searches. With less data outside the shadow dataset, both sides take what it has.
+THRESHOLD_SAMPLES_PER_SIDE = 500
+
+
+class PixelInputModel(torch.nn.Module):
+    """A model that takes images as pixels in [0, 1] and normalises them before calling the wrapped model."""
+    def __init__(self, model: torch.nn.Module, mean: torch.Tensor, std: torch.Tensor):
+        """Wrap the model, with the dataset's per-channel mean and std, shaped (1, C, 1, 1)."""
+        super().__init__()
+        self.model = model
+        self.register_buffer('mean', mean)
+        self.register_buffer('std', std)
+
+    def forward(self, pixels: torch.Tensor) -> torch.Tensor:
+        """Return the wrapped model's output on the normalised pixels."""
+        return self.model((pixels - self.mean) / self.std)
+
+
+class PixelView:
+    """A read-only view of an image dataset that returns each image as pixels in [0, 1]."""
+    def __init__(self, dataset, mean: torch.Tensor, std: torch.Tensor):
+        """Wrap the dataset, with the per-channel mean and std, shaped (C, 1, 1)."""
+        self.dataset, self.mean, self.std = dataset, mean, std
+
+    def __len__(self) -> int:
+        """Return the number of images."""
+        return len(self.dataset)
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        """Return image `index` as pixels in [0, 1]."""
+        return (self.dataset[index][0] * self.std + self.mean).clamp(0, 1)
 
 
 class SupervisedBoundaryMIA(BaseMIA):
-    """Label-only attack on the distance to the decision boundary, with a threshold learned on shadow data.
+    """Label-only attack on the distance to the decision boundary, with a threshold chosen on a shadow model.
 
-    Paper: "Label-Only Membership Inference Attacks",
-    https://proceedings.mlr.press/v139/choquette-choo21a/choquette-choo21a.pdf.
-    The distance is found with HopSkipJump or QEBA.
+    Paper: "Label-Only Membership Inference Attacks", https://arxiv.org/abs/2007.14321.
+    Documentation: docs/attacks/sba.md.
+    The distance is found with HopSkipJump or QEBA. Images are attacked as pixels, so every query is a valid image.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
+        """Sample the shadow dataset and build the shadow model, and the subspace basis of QEBA-PCA or custom."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Supervised Boundary MIA!")
         assert self.shadow_configs.mode == 'offline', f"Supervised Boundary MIA attacker should be used with offline shadow models, but found mode={self.shadow_configs.mode} instead!"
-        if self.shadow_configs.n_shadow_datasets != 1:
-            self.logger.print_it(f"Supervised Boundary MIA attacker [WARNING]: when using supervised boundary MIA, only 1 shadow dataset must be used! Modifying shadow_configs on the fly to set n_shadow_datasets to 1.")
-            self.shadow_configs.n_shadow_datasets = 1
+        # One shadow model, as in the paper (more do not help, its Fig. 7); the configs set it whatever --n_shadows.
+        assert self.shadow_configs.n_shadow_datasets == 1, \
+            f"Supervised Boundary MIA trains one shadow model, got {self.shadow_configs.n_shadow_datasets}."
+        # Images are attacked as pixels in [0, 1], the model normalising them, so that every query is a valid image
+        # and the distances are in pixels, as in the paper. Tabular inputs are attacked as they are.
+        self.normalization = None
+        if self.base_dataset_configs.im_size is not None:
+            mean, std = get_dataset_mean_std(self.base_dataset_configs.name)
+            self.normalization = (torch.tensor(mean).view(1, -1, 1, 1), torch.tensor(std).view(1, -1, 1, 1))
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Supervised Boundary MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
@@ -44,13 +85,17 @@ class SupervisedBoundaryMIA(BaseMIA):
         self.qeba_basis = None
         if (self.attack_configs.boundary.mode == 'qeba'
                 and self.attack_configs.boundary.qeba.reduction_mode in ('pca', 'custom')):
+            samples = self.attacker_data_distribution.get('all')
+            if self.normalization is not None:
+                samples = PixelView(samples, self.normalization[0][0], self.normalization[1][0])
             self.qeba_basis = build_qeba_basis(
-                samples=self.attacker_data_distribution.get('all'),
+                samples=samples,
                 variant=self.attack_configs.boundary.qeba.reduction_mode,
                 reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
             )
 
     def optimize(self, train_config: TrainConfigs):
+        """Train the shadow model, then choose the threshold on its members and non-members."""
         self.logger.print_it('Supervised Boundary MIA attacker: training all shadow models. This will take a while. Sit back and chill...')
         start = time.time()
         self.shadow_manager.train_all(train_configs=train_config,
@@ -68,15 +113,23 @@ class SupervisedBoundaryMIA(BaseMIA):
         self.logger.print_it('Supervised Boundary MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
     
     def find_optimal_threshold(self, device: Union[torch.device, str] = 'cpu'):
+        """Choose the distance threshold that best separates the shadow model's members and non-members."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         # Get the trained shadow model and build a dataset with samples from the shadow dataset labeled as members and samples from outside the shadow dataset labeled as non-members to find the optimal threshold for the noise robustness score at the given sigma on the shadow dataset.
         shadow_model = self.shadow_manager.shadow_models.get(index=0).to(device)
         shadow_member_dataset = self.shadow_manager.get_dataset(index=0, 
                                                                 labels='original')
+        # As many members as non-members, as the paper's equal-sized sets; each costs a full boundary search.
+        n_outside = len(self.shadow_manager.shadow_data.indices_outside_shadow_dataset(index=0))
+        n_per_side = min(THRESHOLD_SAMPLES_PER_SIDE, len(shadow_member_dataset), n_outside)
+        positions = np.random.default_rng(self.seed).choice(len(shadow_member_dataset), n_per_side, replace=False)
+        shadow_member_dataset = SubsampledDataset.from_positions(shadow_member_dataset, sorted(positions.tolist()))
         shadow_nonmember_dataset = self.shadow_manager.sample_outside_shadow_dataset(index=0,
-                                                                                    num_data=len(shadow_member_dataset), 
+                                                                                    num_data=n_per_side,
                                                                                     labels='original')
+        self.logger.print_it(f"Supervised Boundary MIA attacker: choosing the threshold on {n_per_side} members and "
+                             f"{n_per_side} non-members of the shadow model.")
         datasets_list = [shadow_member_dataset, shadow_nonmember_dataset]
         self.regression_dataset = MergedDataset(*datasets_list)
         mia_labels = torch.tensor([1] * len(shadow_member_dataset) + [0] * len(shadow_nonmember_dataset))
@@ -127,6 +180,7 @@ class SupervisedBoundaryMIA(BaseMIA):
 
     @torch.no_grad()
     def _features(self, model: torch.nn.Module, inputs: torch.Tensor, targets: torch.Tensor) -> np.ndarray:
+        """Return the boundary distance of each input."""
         return self.estimate_boundary_distance(model, inputs, targets)
 
     @torch.no_grad()
@@ -148,16 +202,19 @@ class SupervisedBoundaryMIA(BaseMIA):
             HSJA is run per-sample for stability. This uses only hard labels internally.
         """
         model.eval()
-        N = inputs.shape[0]
+        pixels = self.normalization is not None
+        if pixels:
+            mean, std = (statistic.to(inputs.device) for statistic in self.normalization)
+            model, inputs = PixelInputModel(model, mean, std), (inputs * std + mean).clamp(0, 1)
         if self.attack_configs.boundary.mode == 'hop_skip_jump':
-            # self.logger.print_it(f"Supervised Boundary MIA attacker: using HopSkipJump to estimate distance to decision boundary for {N} samples with max {self.attack_configs.boundary.n_queries} queries and norm {self.attack_configs.boundary.norm}...")
             boundary_finder = HopSkipJump(norm=self.attack_configs.boundary.norm,
                                         max_queries=self.attack_configs.boundary.n_queries,
+                                        clamping=pixels,
                                         logger=self.logger)
         elif self.attack_configs.boundary.mode == 'qeba':
-            # self.logger.print_it(f"Supervised Boundary MIA attacker: using QEBA to estimate distance to decision boundary for {N} samples with max {self.attack_configs.boundary.n_queries} queries and norm {self.attack_configs.boundary.norm}...")
             boundary_finder = Qeba(norm=self.attack_configs.boundary.norm,
                                     max_queries=self.attack_configs.boundary.n_queries,
+                                    clamping=pixels,
                                     logger=self.logger,
                                     variant=self.attack_configs.boundary.qeba.reduction_mode,
                                     reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
@@ -174,6 +231,7 @@ class SupervisedBoundaryMIA(BaseMIA):
 
     @torch.no_grad()
     def infer_dataset(self, model: torch.nn.Module, dataset: torch.utils.data.Dataset, device: Union[torch.device, str] = 'cpu'):
+        """Return each sample's boundary distance and whether it is above the threshold."""
         assert self.attack_threshold is not None, "Call find_optimal_threshold(...) before infer_dataset(...) for SBA."
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
@@ -189,11 +247,13 @@ class SupervisedBoundaryMIA(BaseMIA):
             all_scores.append(boundary_distance_score.cpu())
         self.logger.set_logger_newline(console_only=True)
         all_boundary_distance_scores = torch.cat(all_scores, dim=0).numpy()
-        all_decisions = (all_boundary_distance_scores >= self.attack_threshold).astype(np.int64)
+        # Strictly above, as when the threshold was chosen (and in the paper, Sec. 3.4, and the authors' code).
+        all_decisions = (all_boundary_distance_scores > self.attack_threshold).astype(np.int64)
         return all_boundary_distance_scores, all_decisions
 
     @torch.no_grad()
     def infer_batch(self, model: torch.nn.Module, batch_x: torch.Tensor, batch_y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+        """Return the boundary distance of each sample of a batch and whether it is above the threshold."""
         assert self.attack_threshold is not None, "Call find_optimal_threshold(...) before infer_batch(...) for SBA."
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
@@ -202,11 +262,12 @@ class SupervisedBoundaryMIA(BaseMIA):
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
         boundary_distance_score = self._features(model=model, inputs=batch_x, targets=batch_y)
-        decisions = (boundary_distance_score >= self.attack_threshold).astype(np.int64)
+        decisions = (boundary_distance_score > self.attack_threshold).astype(np.int64)
         return boundary_distance_score.cpu().numpy(), decisions
 
     @torch.no_grad()
     def infer_single(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+        """Return one sample's boundary distance and whether it is above the threshold."""
         assert self.attack_threshold is not None, "Call find_optimal_threshold(...) before infer_single(...) for SBA."
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
@@ -215,5 +276,5 @@ class SupervisedBoundaryMIA(BaseMIA):
         x = x.unsqueeze(0).to(device)
         y = y.unsqueeze(0).to(device)
         boundary_distance_score = self._features(model=model, inputs=x, targets=y)
-        decision = (boundary_distance_score >= self.attack_threshold).astype(np.int64)
+        decision = (boundary_distance_score > self.attack_threshold).astype(np.int64)
         return boundary_distance_score.item(), decision.item()
