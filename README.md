@@ -402,8 +402,8 @@ for a more substantial end-to-end run.
 `--attacker_mode uba` runs the boundary attack with data-free threshold
 calibration. It generates 100 seeded random inputs by default, queries their
 predicted labels, and estimates the perturbation needed to change those labels.
-Image pixels are uniform in [0, 1]; Purchase and Texas get random bits, and
-other tabular features are uniform in [0, 1]. Configure the count with
+Image pixels are uniform in [0, 1]. On tabular data there is no such threshold,
+and the attack's decisions come from the calibrated rule. Configure the count with
 `--attacker_boundary_calibration_samples` and the ascending distance quantile
 with `--attacker_boundary_quantile` (default 0.5). No auxiliary dataset or shadow
 model is used. Audited samples are searched around their true label, so a
