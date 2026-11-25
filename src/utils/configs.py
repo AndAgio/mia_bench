@@ -12,7 +12,8 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
                                  ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
                                  DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA, SBA_PAPER_N_QUERIES,
-                                 UBA_DEFAULT_N_QUERIES)
+                                 UBA_DEFAULT_N_QUERIES, NOISE_ROBUSTNESS_IMAGE_SIGMAS,
+                                 NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES, NOISE_ROBUSTNESS_TABULAR_SIGMAS)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -379,8 +380,10 @@ class UnsupervisedBoundaryAttackConfig:
 class NoiseRobustnessAttackConfig:
     strategy: Literal["noise_robustness"] = "noise_robustness"
     mode: str = 'offline'
-    n_queries: int = 1000
-    sigmas: Union[float, list[float]] = field(default_factory=lambda: [0.01, 0.02, 0.05, 0.1, 0.15, 0.2])
+    n_queries: int = 5000
+    # Gaussian noise, of std sigma, or bit flips, with probability sigma.
+    noise: Literal["gaussian", "bit_flip"] = "gaussian"
+    sigmas: Union[float, list[float]] = field(default_factory=lambda: list(NOISE_ROBUSTNESS_IMAGE_SIGMAS))
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class TransferAttackConfig:
@@ -1010,8 +1013,22 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         attacker_shadow_configs.mode = 'offline'
     
     elif settings.attacker_mode in NOISE_ROBUSTNESS_MODES:
+        # Binary features are flipped, as in the paper (Sec. 3.4); every other dataset gets Gaussian noise.
+        noise = "bit_flip" if settings.dataset in ["purchase", "texas"] else "gaussian"
+        sigmas = settings.attacker_noise_robust_sigmas
+        if sigmas is None:
+            if noise == "bit_flip":
+                n_features = get_im_channels_from_name(settings.dataset)
+                sigmas = [flipped / n_features for flipped in NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES]
+            elif get_im_size_from_name(settings.dataset) is not None:
+                sigmas = list(NOISE_ROBUSTNESS_IMAGE_SIGMAS)
+            else:
+                sigmas = list(NOISE_ROBUSTNESS_TABULAR_SIGMAS)
+        if noise == "bit_flip" and not all(0 <= sigma <= 1 for sigma in sigmas):
+            raise ValueError(f"--attacker_noise_robust_sigmas are flip probabilities on {settings.dataset}, so they "
+                             f"must lie in [0, 1], got {sigmas}")
         attack_configs = NoiseRobustnessAttackConfig(n_queries=settings.attacker_noise_robust_n_queries,
-                                                    sigmas=settings.attacker_noise_robust_sigmas)
+                                                    noise=noise, sigmas=sigmas)
         attacker_shadow_configs.mode = 'offline'
     elif settings.attacker_mode in TRANSFER_MODES:
         feature_mode = settings.attacker_mode.split('_')[-1]

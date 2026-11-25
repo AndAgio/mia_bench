@@ -390,9 +390,11 @@ def build_parser() -> argparse.ArgumentParser:
                                 help='Number of random inputs for boundary threshold calibration (no auxiliary data)')
         # Noise Robustness MIA parameters
         parser.add_argument('--attacker_noise_robust_n_queries', type=int, default=5000,
-                                help='Number of noisy copies to create for each sample in the Noise Robustness MIA attack')
-        parser.add_argument('--attacker_noise_robust_sigmas', type=float, nargs="+", default=[0.01, 0.05, 0.1, 0.15, 0.2, 0.25], #[0.1, 0.2, 0.3, 0.4, 0.5], #[0.001, 0.002, 0.005, 0.008, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2],
-                                help='Standard deviations of the gaussian noise to be added in the Noise Robustness MIA attack')
+                                help='Noisy copies of each sample in the noise robustness attack, each one query')
+        parser.add_argument('--attacker_noise_robust_sigmas', type=float, nargs="+", default=None,
+                                help='Noise levels the noise robustness attack tries on its shadow model: standard '
+                                     'deviations of Gaussian noise, in pixels for images, or flip probabilities on '
+                                     'purchase and texas. Unset: chosen by the type of data')
         # OSLO MIA parameters
         parser.add_argument('--attacker_oslo_n_models', type=int, default=10,
                                 help='Number of shadow models to be trained for the OSLO MIA attack')

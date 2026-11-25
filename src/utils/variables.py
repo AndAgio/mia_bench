@@ -161,3 +161,12 @@ QUANTILE_PAPER_GRAD_CLIP = 1.0
 # paper's 2,500 (Choquette-Choo et al., App. B.1); UBA keeps the library's earlier value until its review.
 SBA_PAPER_N_QUERIES = 2500
 UBA_DEFAULT_N_QUERIES = 1000
+
+# Noise levels the noise robustness attack tries on its shadow model when --attacker_noise_robust_sigmas is unset.
+# Images: Gaussian standard deviations in pixels, spanning the authors' code's 0.02 to 0.1 (Choquette-Choo et al.).
+# Binary features (purchase, texas): flip probabilities of 1/d, 2/d, 3/d, 5/d and 10/d for d features, as in the
+# authors' code. Other tabular features: Gaussian standard deviations around the best one for News's TF-IDF features in
+# a test.
+NOISE_ROBUSTNESS_IMAGE_SIGMAS = [0.02, 0.03, 0.05, 0.07, 0.1]
+NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES = [1, 2, 3, 5, 10]
+NOISE_ROBUSTNESS_TABULAR_SIGMAS = [0.002, 0.005, 0.01, 0.02]
