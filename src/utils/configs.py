@@ -11,8 +11,8 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  MMD_PAPER_LAMBDAS, MMD_IMAGE_FALLBACK_DATASET, MMD_NONIMAGE_FALLBACK_DATASET,
                                  ADV_REG_PAPER_LAMBDAS, ADV_REG_IMAGE_FALLBACK_DATASET,
                                  ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
-                                 DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA, SBA_PAPER_N_QUERIES,
-                                 UBA_DEFAULT_N_QUERIES, NOISE_ROBUSTNESS_IMAGE_SIGMAS,
+                                 DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA, BOUNDARY_N_QUERIES, QEBA_REDUCTION_FACTOR,
+                                 BINARY_FEATURE_DATASETS, NOISE_ROBUSTNESS_IMAGE_SIGMAS,
                                  NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES, NOISE_ROBUSTNESS_TABULAR_SIGMAS)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
@@ -353,12 +353,12 @@ class AttackPMiaConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class QebaConfigs:
     reduction_mode: str = 'spatial'  # only for qeba variants
-    reduction_factor: int = 8  # only for qeba variants
+    reduction_factor: int = QEBA_REDUCTION_FACTOR  # only for qeba variants
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class BoundaryMiaConfigs:
     n_queries: int = 1000
-    mode: str = 'hsj' # options: hsj, hopskipjump, hopskip, hop, qeba, qeba-spatial, qeba-dct, qeba-pca, qeba-custom
+    mode: str = 'hsj' # hsj, hopskipjump, hopskip, hop, qeba, qeba-spatial, qeba-dct, qeba-pca (SBA), qeba-custom
     norm: Literal["l2", "linf"] = "l2"
     qeba: Optional[QebaConfigs] = None
 
@@ -373,7 +373,7 @@ class UnsupervisedBoundaryAttackConfig:
     strategy: Literal["uba"] = "uba"
     mode: str = 'offline'
     boundary: BoundaryMiaConfigs = field(default_factory=BoundaryMiaConfigs)
-    quantile: float = Field(default=0.95, ge=0, le=1)
+    quantile: float = Field(default=0.5, ge=0, le=1)
     n_calibration_samples: int = Field(default=100, gt=0)
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
@@ -624,8 +624,10 @@ SAM_SETTINGS = ['sam_rho', 'asam_eta', 'esam_beta', 'esam_gamma', 'wsam_gamma', 
 # Modes of the attacks on which --n_shadows has no effect.
 SBA_MODES = ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop',
              'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']
+# UBA has no QEBA-PCA mode: QEBA builds that subspace from the gradients of a model the attacker owns, and UBA's
+# attacker has neither a model nor data.
 UBA_MODES = ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop',
-             'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']
+             'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-custom']
 PMIA_MODES = ['pmia_loss', 'pmia_confidence', 'pmia_entropy']
 NOISE_ROBUSTNESS_MODES = ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']
 TRANSFER_MODES = ['transfer_loss', 'transfer_confidence', 'transfer_entropy']
@@ -979,12 +981,13 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         elif settings.attacker_mode in ['sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
             bound_mode = 'qeba'
             qeba_reduction_mode = settings.attacker_mode.split('-')[-1] if '-' in settings.attacker_mode else 'spatial'
+            factor = settings.attacker_boundary_qeba_reduction_factor
             qeba_configs = QebaConfigs(reduction_mode=qeba_reduction_mode,
-                                        reduction_factor=settings.attacker_boundary_qeba_reduction_factor)
+                                        reduction_factor=(QEBA_REDUCTION_FACTOR if factor is None else factor))
         else:
             raise ValueError('Supervised Boundary Attack mode "{}" not recognized!'.format(settings.attacker_mode))
         n_queries = settings.attacker_boundary_n_queries
-        boundary_configs = BoundaryMiaConfigs(n_queries=SBA_PAPER_N_QUERIES if n_queries is None else n_queries,
+        boundary_configs = BoundaryMiaConfigs(n_queries=BOUNDARY_N_QUERIES if n_queries is None else n_queries,
                                             mode=bound_mode,
                                             norm=settings.attacker_boundary_norm,
                                             qeba=qeba_configs if bound_mode == 'qeba' else None)
@@ -994,15 +997,16 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     elif settings.attacker_mode in UBA_MODES:
         if settings.attacker_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop']:
             bound_mode = 'hop_skip_jump'
-        elif settings.attacker_mode in ['uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
+        elif settings.attacker_mode in ['uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-custom']:
             bound_mode = 'qeba'
             qeba_reduction_mode = settings.attacker_mode.split('-')[-1] if '-' in settings.attacker_mode else 'spatial'
+            factor = settings.attacker_boundary_qeba_reduction_factor
             qeba_configs = QebaConfigs(reduction_mode=qeba_reduction_mode,
-                                        reduction_factor=settings.attacker_boundary_qeba_reduction_factor)
+                                        reduction_factor=(QEBA_REDUCTION_FACTOR if factor is None else factor))
         else:
             raise ValueError('Unsupervised Boundary Attack mode "{}" not recognized!'.format(settings.attacker_mode))
         n_queries = settings.attacker_boundary_n_queries
-        boundary_configs = BoundaryMiaConfigs(n_queries=UBA_DEFAULT_N_QUERIES if n_queries is None else n_queries,
+        boundary_configs = BoundaryMiaConfigs(n_queries=BOUNDARY_N_QUERIES if n_queries is None else n_queries,
                                         mode=bound_mode,
                                         norm=settings.attacker_boundary_norm,
                                         qeba=qeba_configs if bound_mode == 'qeba' else None)
@@ -1014,7 +1018,7 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
     
     elif settings.attacker_mode in NOISE_ROBUSTNESS_MODES:
         # Binary features are flipped, as in the paper (Sec. 3.4); every other dataset gets Gaussian noise.
-        noise = "bit_flip" if settings.dataset in ["purchase", "texas"] else "gaussian"
+        noise = "bit_flip" if settings.dataset in BINARY_FEATURE_DATASETS else "gaussian"
         sigmas = settings.attacker_noise_robust_sigmas
         if sigmas is None:
             if noise == "bit_flip":

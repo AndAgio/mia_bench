@@ -83,10 +83,9 @@ def attack_specs(component):
                 spec("Upper endpoint quantile and full batches", **{prefix: 1., "n_shadows": 3}))
     if component.startswith(("sba_", "uba_")):
         unsupervised = component.startswith("uba_")
-        minimum = 2 if component.endswith("-pca") else 1
         return (baseline,
                 spec("Reduced query budget and minimum calibration population",
-                     attacker_boundary_n_queries=128, attacker_boundary_calibration_samples=minimum),
+                     attacker_boundary_n_queries=128, attacker_boundary_calibration_samples=1),
                 spec("L-infinity distance and low-dimensional search",
                      attacker_boundary_norm="linf", attacker_boundary_qeba_reduction_factor=16,
                      **({"attacker_boundary_quantile": 0.} if unsupervised else {})),

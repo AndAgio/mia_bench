@@ -25,6 +25,7 @@ class SupervisedBoundaryPixelTest(unittest.TestCase):
                                                                           n_queries=3000))
         mean, std = torch.tensor([0.4]).view(1, 1, 1, 1), torch.tensor([0.25]).view(1, 1, 1, 1)
         attack.normalization = (mean, std)
+        attack.qeba_basis = None
         model = Linear()
         pixels, _ = samples(model)
         normalized = (pixels - mean) / std

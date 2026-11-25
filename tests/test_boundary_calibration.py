@@ -1,4 +1,4 @@
-"""Fast checks for data-free boundary calibration and transfer relabeling."""
+"""Fast checks for UBA's data-free threshold, the labels its distances are taken around, and transfer relabeling."""
 import sys
 import unittest
 from pathlib import Path
@@ -20,12 +20,17 @@ from src.utils.configs import UnsupervisedBoundaryAttackConfig
 
 
 class BoundaryCalibrationTests(unittest.TestCase):
-    def attack(self):
+    def attack(self, dataset='cifar10', input_shape=(3, 32, 32)):
         attack = object.__new__(UnsupervisedBoundaryMIA)
         attack.seed = 42
-        attack.input_shape = (3, 32, 32)
-        attack.base_dataset_configs = SimpleNamespace(name='cifar10')
+        attack.input_shape = input_shape
+        attack.base_dataset_configs = SimpleNamespace(name=dataset)
+        attack.normalization = None
+        if len(input_shape) == 3:
+            mean, std = get_dataset_mean_std(dataset)
+            attack.normalization = (torch.tensor(mean).view(1, -1, 1, 1), torch.tensor(std).view(1, -1, 1, 1))
         attack.attack_configs = UnsupervisedBoundaryAttackConfig(n_calibration_samples=4, quantile=0.5)
+        attack.qeba_basis = None
         attack.logger = Mock()
         return attack
 
@@ -50,15 +55,30 @@ class BoundaryCalibrationTests(unittest.TestCase):
         attack.find_threshold_via_quantile(torch.device('cpu'))
         self.assertEqual(attack.attack_threshold, 2.5)
 
-    def test_candidate_labels_do_not_define_boundary(self):
+    def test_random_tabular_inputs_are_bits_on_binary_datasets_and_uniform_otherwise(self):
+        bits = torch.stack(list(self.attack('purchase', (600,)).random_calibration_inputs()))
+        self.assertTrue(((bits == 0) | (bits == 1)).all())
+        self.assertGreater(bits.mean().item(), 0.4)
+        uniform = torch.stack(list(self.attack('news', (600,)).random_calibration_inputs()))
+        self.assertTrue(((uniform > 0) & (uniform < 1)).any())
+
+    def test_audited_samples_keep_their_true_label(self):
         attack = self.attack()
         model = torch.nn.Identity()
         attack.estimate_boundary_distance = Mock(return_value=torch.tensor([2.]))
         attack._features(model, torch.tensor([[0., 5.]]), torch.tensor([0]))
-        self.assertEqual(attack.estimate_boundary_distance.call_args.args[2].item(), 1)
-        attack.attack_threshold = 1.
-        scores, decisions = attack.infer_batch(model, torch.tensor([[0., 5.]]), torch.tensor([0]), torch.device('cpu'))
-        np.testing.assert_array_equal(decisions, [1])
+        self.assertEqual(attack.estimate_boundary_distance.call_args.args[2].item(), 0)
+
+    def test_a_misclassified_sample_has_distance_0_and_is_not_a_member_at_threshold_0(self):
+        attack = self.attack('news', (2,))
+        attack.attack_configs.boundary.mode = 'hop_skip_jump'
+        attack.attack_configs.boundary.n_queries = 100
+        attack.attack_threshold = 0.
+        # The identity model predicts class 1 for [0, 5]; its true label is 0.
+        scores, decisions = attack.infer_batch(torch.nn.Identity(), torch.tensor([[0., 5.]]), torch.tensor([0]),
+                                               torch.device('cpu'))
+        np.testing.assert_array_equal(scores, [0.])
+        np.testing.assert_array_equal(decisions, [0])
 
     def test_positive_calibration_count(self):
         with self.assertRaises(ValueError):

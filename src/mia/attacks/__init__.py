@@ -29,7 +29,7 @@ def get_attacker_class(attacker_mode: str):
         return AttackPMIA
     elif attacker_mode in ['sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom']:
         return SupervisedBoundaryMIA
-    elif attacker_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom']:
+    elif attacker_mode in ['uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-custom']:
         return UnsupervisedBoundaryMIA
     elif attacker_mode in ['noise_robust', 'noise_robustness', 'noise_rob', 'nr']:
         return NoiseRobustnessMIA

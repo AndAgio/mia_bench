@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.utils.configs import (N_SHADOWS_UNUSED_MODES, ONE_SHADOW_MODEL_MODES, generate_configs_from_settings,
                                get_hash_from_settings)
 from src.utils.settings import build_parser
-from src.utils.variables import SBA_PAPER_N_QUERIES, UBA_DEFAULT_N_QUERIES
+from src.utils.variables import BOUNDARY_N_QUERIES, QEBA_REDUCTION_FACTOR
 
 
 class AttackShadowConfigTest(unittest.TestCase):
@@ -34,13 +34,22 @@ class AttackShadowConfigTest(unittest.TestCase):
                 self.assertEqual(configs.attacker.dataset.shadow.n_shadow_datasets, 1)
 
     def test_budgets_when_unset_and_set(self):
-        for mode, unset in (('sba', SBA_PAPER_N_QUERIES), ('uba', UBA_DEFAULT_N_QUERIES)):
+        for mode, unset in (('sba', BOUNDARY_N_QUERIES), ('uba', BOUNDARY_N_QUERIES)):
             with self.subTest(mode=mode):
                 default = generate_configs_from_settings(self.settings('--attacker_mode', mode))
                 chosen = generate_configs_from_settings(self.settings('--attacker_mode', mode,
                                                                       '--attacker_boundary_n_queries', '300'))
                 self.assertEqual(default.attacker.attack.boundary.n_queries, unset)
                 self.assertEqual(chosen.attacker.attack.boundary.n_queries, 300)
+
+    def test_qeba_reduction_factor_when_unset_and_set(self):
+        for mode in ('sba_qeba', 'uba_qeba-dct'):
+            with self.subTest(mode=mode):
+                default = generate_configs_from_settings(self.settings('--attacker_mode', mode))
+                chosen = generate_configs_from_settings(self.settings(
+                    '--attacker_mode', mode, '--attacker_boundary_qeba_reduction_factor', '4'))
+                self.assertEqual(default.attacker.attack.boundary.qeba.reduction_factor, QEBA_REDUCTION_FACTOR)
+                self.assertEqual(chosen.attacker.attack.boundary.qeba.reduction_factor, 4)
 
 if __name__ == '__main__':
     unittest.main()

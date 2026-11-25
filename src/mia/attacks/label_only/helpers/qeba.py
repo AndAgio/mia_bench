@@ -1,108 +1,89 @@
-# --- QEBA: Query-Efficient Boundary-based Black-box Attack -------------------
-# Andrea: this class reuses your HSJA implementation and overrides only the
-# gradient estimation step to sample from low-dimensional subspaces as in QEBA.
-# Paper: Huichen Li et al., "QEBA: Query-Efficient Boundary-Based Blackbox Attack", CVPR 2020.
-#   - Subspaces: Spatial (QEBA-S), Frequency (QEBA-F via DCT), Intrinsic (QEBA-I via PCA).
-#   - This implementation keeps your API and logic intact.
-# References: CVPR paper (openaccess + arXiv) and the authors' reference code (Foolbox-based).
-#   (for readers) https://openaccess.thecvf.com/content_CVPR_2020/papers/Li_QEBA_Query-Efficient_Boundary-Based_Blackbox_Attack_CVPR_2020_paper.pdf
-#   (arXiv)      https://arxiv.org/pdf/2005.14137
-#   (code)       https://github.com/AI-secure/QEBA
-# [1](https://openaccess.thecvf.com/content_CVPR_2020/papers/Li_QEBA_Query-Efficient_Boundary-Based_Blackbox_Attack_CVPR_2020_paper.pdf)[2](https://arxiv.org/pdf/2005.14137)[3](https://github.com/AI-secure/QEBA)
+"""QEBA, a HopSkipJump whose gradient estimates draw their random directions from a lower-dimensional subspace.
 
+Paper: "QEBA: Query-Efficient Boundary-Based Blackbox Attack" (Li et al., CVPR 2020), https://arxiv.org/abs/2005.14137.
+Authors' code: https://github.com/AI-secure/QEBA.
+"""
 import math
-from typing import Sequence
+from typing import Sequence, Tuple
 
 import torch
+from torch.utils.data import DataLoader
 from .hop_skip_jump import HopSkipJump
 
 
-def build_qeba_basis(
-    samples: Sequence,
-    variant: str,
-    reduction_factor: int,
-    max_pca_samples: int = 256,
-) -> torch.Tensor:
-    """Build the basis used by the configured QEBA MIA CLI variant.
+def block_basis(shape: Tuple[int, ...], reduction_factor: int) -> torch.Tensor:
+    """Return the basis of the custom mode: one indicator per channel and square block of reduction_factor pixels.
 
-    PCA learns an intrinsic subspace from data available to the attacker.  The
-    custom CLI variant uses a deterministic block-indicator basis; callers that
-    use :class:`Qeba` directly can still pass any custom basis they want.
+    Not in the paper: a piecewise-constant version of the spatial subspace. Returns a (C*H*W, n_sub) tensor.
     """
-    if variant not in ("pca", "custom"):
-        raise ValueError(f"A basis is not used by QEBA variant '{variant}'.")
-    if len(samples) == 0:
-        raise ValueError(f"Cannot build a QEBA-{variant.upper()} basis from an empty dataset.")
-
-    first = samples[0][0] if isinstance(samples[0], (tuple, list)) else samples[0]
-    if not isinstance(first, torch.Tensor) or first.dim() != 3:
-        raise ValueError(
-            f"QEBA-{variant.upper()} basis construction requires image tensors "
-            f"with shape (C, H, W), got {type(first).__name__} "
-            f"with shape {getattr(first, 'shape', None)}."
-        )
-    channels, height, width = first.shape
+    if len(shape) != 3:
+        raise ValueError(f"QEBA's custom basis needs images with shape (C, H, W), got shape {tuple(shape)}.")
+    channels, height, width = shape
     reduction_factor = max(1, int(reduction_factor))
+    # One indicator per channel and non-overlapping spatial block. Qeba normalizes the columns before use.
+    columns = []
+    for channel in range(channels):
+        for row in range(0, height, reduction_factor):
+            for col in range(0, width, reduction_factor):
+                direction = torch.zeros(shape, dtype=torch.float32)
+                direction[
+                    channel,
+                    row:min(row + reduction_factor, height),
+                    col:min(col + reduction_factor, width),
+                ] = 1.0
+                columns.append(direction.reshape(-1))
+    return torch.stack(columns, dim=1)
 
-    if variant == "custom":
-        # One indicator per channel and non-overlapping spatial block. Qeba
-        # normalizes the columns before use.
-        columns = []
-        for channel in range(channels):
-            for row in range(0, height, reduction_factor):
-                for col in range(0, width, reduction_factor):
-                    direction = torch.zeros_like(first, dtype=torch.float32)
-                    direction[
-                        channel,
-                        row:min(row + reduction_factor, height),
-                        col:min(col + reduction_factor, width),
-                    ] = 1.0
-                    columns.append(direction.reshape(-1))
-        return torch.stack(columns, dim=1)
 
-    count = min(len(samples), max(2, int(max_pca_samples)))
-    flattened = []
-    for index in range(count):
-        item = samples[index]
-        sample = item[0] if isinstance(item, (tuple, list)) else item
-        if not isinstance(sample, torch.Tensor) or tuple(sample.shape) != tuple(first.shape):
-            raise ValueError("All samples used for a QEBA-PCA basis must have the same image shape.")
-        flattened.append(sample.detach().to(device="cpu", dtype=torch.float32).reshape(-1))
-    data = torch.stack(flattened)
-    data = data - data.mean(dim=0, keepdim=True)
-    # Match the spatial/frequency variants' approximate dimensional reduction.
-    requested_rank = max(1, data.shape[1] // (reduction_factor ** 2))
-    rank = min(requested_rank, data.shape[0] - 1, data.shape[1])
-    if rank < 1:
-        raise ValueError("QEBA-PCA needs at least two reference samples.")
-    _, _, components = torch.pca_lowrank(data, q=rank, center=False)
+def input_gradients(model: torch.nn.Module, images: Sequence, device: torch.device, batch_size: int = 256):
+    """Return the gradients of a reference model's loss with respect to each image, flattened, on the CPU.
+
+    The loss is the cross-entropy at the model's own predicted label, as in the QEBA authors' code
+    (gradient_generate.py). `images` holds tensors, or tuples whose first item is the image, as the model takes them.
+    """
+    model = model.to(device).eval()
+    gradients = []
+    for batch in DataLoader(images, batch_size=batch_size, shuffle=False):
+        inputs = (batch[0] if isinstance(batch, (tuple, list)) else batch).to(device).requires_grad_(True)
+        with torch.enable_grad():
+            logits = model(inputs)
+            loss = torch.nn.functional.cross_entropy(logits, logits.argmax(dim=1), reduction='sum')
+            gradient, = torch.autograd.grad(loss, inputs)
+        gradients.append(gradient.detach().flatten(start_dim=1).cpu())
+    return torch.cat(gradients)
+
+
+def gradient_pca_basis(gradients: torch.Tensor, reduction_factor: int) -> torch.Tensor:
+    """Return QEBA-I's subspace: the top principal components of reference-model input gradients (paper, Sec. 3.4).
+
+    Keeps about 1/reduction_factor^2 of the input dimensions, as the spatial and frequency subspaces do, and at most
+    one fewer than the number of gradients. Returns a (dims, n_sub) tensor.
+    """
+    gradients = gradients.to(dtype=torch.float32)
+    if gradients.shape[0] < 2:
+        raise ValueError("QEBA-PCA needs the gradients of at least two samples.")
+    gradients = gradients - gradients.mean(dim=0, keepdim=True)
+    requested_rank = max(1, gradients.shape[1] // (max(1, int(reduction_factor)) ** 2))
+    rank = min(requested_rank, gradients.shape[0] - 1, gradients.shape[1])
+    _, _, components = torch.pca_lowrank(gradients, q=rank, center=False)
     return components
 
 
 class Qeba(HopSkipJump):
-    """
-    QEBA: decision-only black-box attack with query-efficient boundary search.
+    """HopSkipJump with QEBA's gradient estimate, whose random directions come from a lower-dimensional subspace.
 
-    Key idea:
-        Use a *low-dimensional subspace* to sample query directions for
-        boundary-based gradient estimation.
+    The variant sets the subspace:
 
-    Variants (QEBA-S / QEBA-F / QEBA-I):
-        - 'spatial': sample low-res noise and bilinear-upsample to input size.
-        - 'dct'    : sample low-frequency DCT coefficients and IDCT to image.
-        - 'pca'    : sample in a precomputed (m x n_sub) basis and project.
-        - 'custom' : user-supplied basis (same as 'pca').
+    - 'spatial' (QEBA-S): low-resolution Gaussian noise, bilinearly upsampled to the image size;
+    - 'dct' (QEBA-F): random low-frequency DCT coefficients, transformed back to an image;
+    - 'pca' (QEBA-I): a given (dims, n_sub) basis, the principal components of reference-model input gradients
+      (gradient_pca_basis);
+    - 'custom': any other given basis, such as block_basis.
 
-    Notes:
-        * If inputs are not images (e.g., 1D tabular), we fallback to HSJA’s approximate_gradient (full space).
-        * This implementation targets L2/L∞ norms, exactly like HSJA.
-        * For 'pca'/'custom', pass `basis` as a torch.Tensor of shape (m, n_sub).
-
-    Args (adds to HopSkipJump):
-        variant: str in {'spatial','dct','pca','custom'}
-        reduction_factor: int r >= 1 (used for 'spatial' and 'dct')
-        basis: Optional[torch.Tensor] (#dims, n_sub), for 'pca' or 'custom'
-        normalize_basis_cols: bool, if True L2-normalize each column of basis
+    The reduction factor r keeps about 1/r^2 of the input dimensions in the spatial and frequency subspaces. Each
+    gradient estimate spends HopSkipJump's growing number of queries, init_num_evals * sqrt(t), where the QEBA
+    authors' code spends a fixed number. Inputs that are not images, such as tabular rows, get HopSkipJump's estimate
+    in the full input space.
     """
 
     def __init__(
@@ -117,10 +98,11 @@ class Qeba(HopSkipJump):
         logger: callable = None,
         # QEBA-specific:
         variant: str = "spatial",            # 'spatial' | 'dct' | 'pca' | 'custom'
-        reduction_factor: int = 8,           # r: e.g., 4/8/16 (must divide H,W reasonably)
+        reduction_factor: int = 2,           # r: the subspace keeps about 1/r^2 of the input dimensions
         basis: torch.Tensor = None,          # (m, n_sub) for 'pca' or 'custom'
         normalize_basis_cols: bool = True,   # normalize columns of basis to unit L2
     ):
+        """Set HopSkipJump's search parameters, plus the subspace: its variant, reduction factor and basis."""
         super().__init__(
             norm=norm,
             max_queries=max_queries,
@@ -145,6 +127,7 @@ class Qeba(HopSkipJump):
 
     @staticmethod
     def _is_image(x: torch.Tensor) -> bool:
+        """Return whether a single sample is an image (C, H, W), whose subspaces QEBA can use."""
         # image-like shape (C,H,W)
         return x.dim() == 3 and x.shape[-1] >= 2 and x.shape[-2] >= 2
 
@@ -165,6 +148,7 @@ class Qeba(HopSkipJump):
     # ---------- DCT (2D) utilities using matrix-form DCT-II / IDCT-II --------
 
     def _dct_1d_matrix(self, N: int, device: torch.device) -> torch.Tensor:
+        """Return the orthonormal N x N DCT-II matrix, cached."""
         # DCT-II orthonormal matrix C (N x N)
         # C[k,n] = alpha(k) * cos( pi*(n+0.5)*k / N ), alpha(0)=sqrt(1/N), else sqrt(2/N)
         key = ("dct1d", N, device)
@@ -179,6 +163,7 @@ class Qeba(HopSkipJump):
         return C
 
     def _get_dct_mats(self, H: int, W: int, device: torch.device):
+        """Return the DCT-II matrices of the image's height and width, cached."""
         key = ("dct2d", H, W, device)
         if key in self._dct_cache:
             return self._dct_cache[key]
@@ -299,14 +284,14 @@ class Qeba(HopSkipJump):
         gradf = gradf / (gradf.reshape(-1).norm(p=2) + 1e-12)
         return gradf
 
-    # ---------------------------- run() override note -------------------------
-    # We only need to ensure basis tensors are moved to the correct device.
     def run(self, inputs: torch.Tensor, labels: torch.Tensor, model: torch.nn.Module, targeted: bool, device: torch.device = None):
+        """Run HopSkipJump's search on each input, with the basis moved to the device."""
         if self.basis is not None and device is not None and self.basis.device != device:
             self.basis = self.basis.to(device)
         return super().run(inputs, labels, model, targeted, device)
 
     def run_single(self, inputs: torch.Tensor, labels: torch.Tensor, model: torch.nn.Module, targeted: bool, device: torch.device = None):
+        """Run HopSkipJump's search on one input, with the basis moved to the device."""
         if self.basis is not None and device is not None and self.basis.device != device:
             self.basis = self.basis.to(device)
         return super().run_single(inputs, labels, model, targeted, device)

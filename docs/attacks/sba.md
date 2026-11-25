@@ -24,14 +24,18 @@ lost about a point, and one chosen on 10 of each about four.
 The mode sets how the distance is searched for:
 
 - `sba` uses HopSkipJump ([Chen et al., IEEE S&P 2020](https://arxiv.org/abs/1904.02144)), as in the paper.
-- `sba_qeba` (also `sba_qeba-spatial`), `sba_qeba-dct`, `sba_qeba-pca` and `sba_qeba-custom` use QEBA
-  ([Li et al., CVPR 2020](https://arxiv.org/abs/2005.14137)), which searches in a lower-dimensional subspace of the
-  input, as the [unsupervised boundary attack](https://dl.acm.org/doi/pdf/10.1145/3460120.3484575) does.
+- `sba_qeba` (also `sba_qeba-spatial`), `sba_qeba-dct` and `sba_qeba-custom` use QEBA
+  ([Li et al., CVPR 2020](https://arxiv.org/abs/2005.14137)), which is not in this paper: it comes from
+  [Li and Zhang](https://arxiv.org/abs/2007.15528), whose unsupervised boundary attack has the same modes.
+- `sba_qeba-pca` uses QEBA's subspace of the principal components of input gradients (QEBA, Sec. 3.4). QEBA takes the
+  gradients of reference models the attacker owns; here, the shadow model is the reference model, with its gradients
+  on up to {{sba_qeba_pca_gradients}} of the attacker's samples it was not trained on, as many as the QEBA authors'
+  code uses on CIFAR-10. It needs images.
 
 Images are searched as pixels in [0, 1], as in the paper, so every query is an image the target could be sent, and the
 distances are in pixels. Tabular inputs are searched as they are, with no bounds.
 
-The cost is the boundary search: up to `--attacker_boundary_n_queries` queries per sample, {{sba_n_queries}} unless
+The cost is the boundary search: up to `--attacker_boundary_n_queries` queries per sample, {{boundary_n_queries}} unless
 set, as in the paper. The attack searches the shadow model on the threshold samples, then the target on the audited and
 calibration samples. With the default budget, a ResNet-18 on CIFAR-10 takes about 2 seconds per correctly classified
 sample on a laptop GPU, so the threshold takes about half an hour, and each audited or calibration sample another

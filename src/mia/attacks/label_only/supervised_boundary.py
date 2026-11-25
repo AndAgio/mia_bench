@@ -5,13 +5,13 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
-from src.data.helpers import MergedDataset
+from src.data.helpers import MergedDataset, SubsampledDataset
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
-from src.mia.attacks.label_only.helpers.hop_skip_jump import HopSkipJump
-from src.mia.attacks.label_only.helpers.qeba import Qeba, build_qeba_basis
+from src.mia.attacks.label_only.helpers.boundary_search import boundary_distances
+from src.mia.attacks.label_only.helpers.qeba import block_basis, gradient_pca_basis, input_gradients
 from src.mia.attacks.label_only.helpers.pixels import PixelInputModel, PixelView, pixel_normalization
 from src.mia.attacks.label_only.helpers.threshold_samples import balanced_threshold_samples
 
@@ -19,6 +19,9 @@ from src.mia.attacks.label_only.helpers.threshold_samples import balanced_thresh
 # authors' code tunes it on 2,500 of each; in a test on CIFAR-10, 500 of each chose as good a threshold at a fifth of
 # the boundary searches. With less data outside the shadow dataset, both sides take what it has.
 THRESHOLD_SAMPLES_PER_SIDE = 500
+# Shadow-model gradients from which the sba_qeba-pca mode builds its subspace, on samples outside the shadow dataset:
+# the QEBA authors' code fits its CIFAR basis on 8,000 gradients. With less data, the mode takes what there is.
+QEBA_PCA_GRADIENTS = 8000
 
 
 class SupervisedBoundaryMIA(BaseMIA):
@@ -31,7 +34,7 @@ class SupervisedBoundaryMIA(BaseMIA):
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
-        """Sample the shadow dataset and build the shadow model, and the subspace basis of QEBA-PCA or custom."""
+        """Sample the shadow dataset and build the shadow model, and the subspace basis of QEBA's custom mode."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.logger.print_it(f"Working with Supervised Boundary MIA!")
         assert self.shadow_configs.mode == 'offline', f"Supervised Boundary MIA attacker should be used with offline shadow models, but found mode={self.shadow_configs.mode} instead!"
@@ -51,17 +54,15 @@ class SupervisedBoundaryMIA(BaseMIA):
         self.logger.print_it('Supervised Boundary MIA attacker: definition of boundary model...')
         self.shadow_manager.build_shadow_models(n_models=1,
                                                 model_configs=self.model_configs)
+        # QEBA-PCA's basis comes from the shadow model's gradients, once it is trained (optimize).
         self.qeba_basis = None
-        if (self.attack_configs.boundary.mode == 'qeba'
-                and self.attack_configs.boundary.qeba.reduction_mode in ('pca', 'custom')):
-            samples = self.attacker_data_distribution.get('all')
-            if self.normalization is not None:
-                samples = PixelView(samples, self.normalization[0][0], self.normalization[1][0])
-            self.qeba_basis = build_qeba_basis(
-                samples=samples,
-                variant=self.attack_configs.boundary.qeba.reduction_mode,
-                reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
-            )
+        reduction_mode = (self.attack_configs.boundary.qeba.reduction_mode
+                          if self.attack_configs.boundary.mode == 'qeba' else None)
+        if reduction_mode == 'custom':
+            input_shape = tuple(self.attacker_data_distribution.get('all')[0][0].shape)
+            self.qeba_basis = block_basis(input_shape, self.attack_configs.boundary.qeba.reduction_factor)
+        elif reduction_mode == 'pca' and self.normalization is None:
+            raise ValueError("QEBA's PCA subspace needs images; on tabular data, use sba or sba_qeba.")
 
     def optimize(self, train_config: TrainConfigs):
         """Train the shadow model, then choose the threshold on its members and non-members."""
@@ -73,7 +74,9 @@ class SupervisedBoundaryMIA(BaseMIA):
         self.reset_logger()
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Supervised Boundary MIA attacker: Done optimizing shadow models. It took {}:{:02d}:{:02d}...'.format(h, m, s))
-        
+        if self.attack_configs.boundary.mode == 'qeba' and self.attack_configs.boundary.qeba.reduction_mode == 'pca':
+            self.qeba_basis = self.shadow_gradient_basis(device=train_config.device)
+
         self.logger.print_it('Supervised Boundary MIA attacker: finding optimal threshold...')
         start = time.time()
         self.find_optimal_threshold(device=train_config.device)
@@ -81,6 +84,28 @@ class SupervisedBoundaryMIA(BaseMIA):
         h, m, s = convert_to_hms(stop-start)
         self.logger.print_it('Supervised Boundary MIA attacker: Done finding optimal threshold. It took {}:{:02d}:{:02d}...'.format(h, m, s))
     
+    def shadow_gradient_basis(self, device: Union[torch.device, str] = 'cpu') -> torch.Tensor:
+        """Return QEBA-PCA's subspace: the principal components of the shadow model's input gradients.
+
+        The shadow model stands in for the QEBA paper's reference models (Sec. 3.4), on up to QEBA_PCA_GRADIENTS of
+        the attacker's samples it was not trained on, as the paper's reference models were not trained on theirs.
+        """
+        if isinstance(device, str):
+            device = self.get_device(dev_str=device)
+        outside = self.shadow_manager.shadow_data.indices_outside_shadow_dataset(index=0)
+        n_gradients = min(QEBA_PCA_GRADIENTS, len(outside))
+        chosen = np.random.default_rng(self.seed).choice(outside, n_gradients, replace=False)
+        samples = SubsampledDataset(self.attacker_data_distribution.get('all'),
+                                    original_indices=sorted(chosen.tolist()), strict=True)
+        model = self.shadow_manager.shadow_models.get(index=0)
+        mean, std = (statistic.to(device) for statistic in self.normalization)
+        model = PixelInputModel(model.to(device), mean, std)
+        images = PixelView(samples, self.normalization[0][0], self.normalization[1][0])
+        self.logger.print_it(f"Supervised Boundary MIA attacker: building QEBA's PCA subspace from the shadow model's "
+                             f"gradients on {n_gradients} samples.")
+        gradients = input_gradients(model, images, device)
+        return gradient_pca_basis(gradients, self.attack_configs.boundary.qeba.reduction_factor)
+
     def find_optimal_threshold(self, device: Union[torch.device, str] = 'cpu'):
         """Choose the distance threshold that best separates the shadow model's members and non-members."""
         if isinstance(device, str):
@@ -147,49 +172,16 @@ class SupervisedBoundaryMIA(BaseMIA):
 
     @torch.no_grad()
     def label_pred(self, model: torch.nn.Module, inputs: torch.Tensor) -> torch.Tensor:
-        """
-        Returns hard labels (argmax) for a batch x.
-        """
+        """Return the labels the model predicts for a batch."""
         model.eval()
         logits = model(inputs)
         return torch.argmax(logits, dim=1)
 
     @torch.no_grad()
     def estimate_boundary_distance(self, model: torch.nn.Module, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """
-        Compute a label-only boundary distance per sample using HSJA.
-        Returns:
-            dists: shape (N,) distance (L2 or Linf) to the decision boundary.
-        Note:
-            HSJA is run per-sample for stability. This uses only hard labels internally.
-        """
-        model.eval()
-        pixels = self.normalization is not None
-        if pixels:
-            mean, std = (statistic.to(inputs.device) for statistic in self.normalization)
-            model, inputs = PixelInputModel(model, mean, std), (inputs * std + mean).clamp(0, 1)
-        if self.attack_configs.boundary.mode == 'hop_skip_jump':
-            boundary_finder = HopSkipJump(norm=self.attack_configs.boundary.norm,
-                                        max_queries=self.attack_configs.boundary.n_queries,
-                                        clamping=pixels,
-                                        logger=self.logger)
-        elif self.attack_configs.boundary.mode == 'qeba':
-            boundary_finder = Qeba(norm=self.attack_configs.boundary.norm,
-                                    max_queries=self.attack_configs.boundary.n_queries,
-                                    clamping=pixels,
-                                    logger=self.logger,
-                                    variant=self.attack_configs.boundary.qeba.reduction_mode,
-                                    reduction_factor=self.attack_configs.boundary.qeba.reduction_factor,
-                                    basis=self.qeba_basis)
-        else:
-            raise ValueError(f"Supervised Boundary MIA attacker: bound_mode {self.attack_configs.boundary.mode} not recognized!")
-
-        # start = time.time()
-        adversarial_samples, distances, queries = boundary_finder.run(model=model, inputs=inputs, labels=targets, targeted=False, device=inputs.device)
-        # stop = time.time()
-        # h, m, s = convert_to_hms(stop-start)
-        # self.logger.print_it(f"Boundary MIA attacker: adversarial distance to boundary estimation completed in {h}:{m:02d}:{s:02d} for {N} samples.")
-        return distances # shape (N, 1)
+        """Return each input's distance to the model's decision boundary around its label, with HopSkipJump or QEBA."""
+        return boundary_distances(model, inputs, targets, self.attack_configs.boundary, self.normalization,
+                                  qeba_basis=self.qeba_basis, logger=self.logger)
 
     @torch.no_grad()
     def infer_dataset(self, model: torch.nn.Module, dataset: torch.utils.data.Dataset, device: Union[torch.device, str] = 'cpu'):
@@ -224,8 +216,8 @@ class SupervisedBoundaryMIA(BaseMIA):
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
         boundary_distance_score = self._features(model=model, inputs=batch_x, targets=batch_y)
-        decisions = (boundary_distance_score > self.attack_threshold).astype(np.int64)
-        return boundary_distance_score.cpu().numpy(), decisions
+        decisions = (boundary_distance_score > self.attack_threshold).to(torch.int64)
+        return boundary_distance_score.cpu().numpy(), decisions.cpu().numpy()
 
     @torch.no_grad()
     def infer_single(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
@@ -238,5 +230,5 @@ class SupervisedBoundaryMIA(BaseMIA):
         x = x.unsqueeze(0).to(device)
         y = y.unsqueeze(0).to(device)
         boundary_distance_score = self._features(model=model, inputs=x, targets=y)
-        decision = (boundary_distance_score > self.attack_threshold).astype(np.int64)
+        decision = (boundary_distance_score > self.attack_threshold).to(torch.int64)
         return boundary_distance_score.item(), decision.item()

@@ -157,10 +157,15 @@ QUANTILE_PAPER_OPTIMIZER = dict(name='adamw', lr=1e-4, weight_decay=1e-4)
 QUANTILE_PAPER_EPOCHS = 30
 QUANTILE_PAPER_BATCH_SIZE = 64
 QUANTILE_PAPER_GRAD_CLIP = 1.0
-# Query budget of HopSkipJump or QEBA for each sample, when --attacker_boundary_n_queries is unset: SBA takes the
-# paper's 2,500 (Choquette-Choo et al., App. B.1); UBA keeps the library's earlier value until its review.
-SBA_PAPER_N_QUERIES = 2500
-UBA_DEFAULT_N_QUERIES = 1000
+# Query budget of HopSkipJump or QEBA for each sample, when --attacker_boundary_n_queries is unset: SBA's paper uses
+# 2,500 (Choquette-Choo et al., App. B.1). UBA's paper uses 15,000 for HopSkipJump and 7,000 for QEBA (Li and Zhang,
+# Sec. 4.3), but finds its AUC stable from 2,500 on (Fig. 9).
+BOUNDARY_N_QUERIES = 2500
+# QEBA's reduction factor when --attacker_boundary_qeba_reduction_factor is unset: the UBA authors' code, whose subspace
+# keeps 768 of CIFAR-10's 3,072 dimensions, as QEBA's own code does on CIFAR-10.
+QEBA_REDUCTION_FACTOR = 2
+# Datasets whose features are binary: the label-only attacks keep their queries binary on them.
+BINARY_FEATURE_DATASETS = ['purchase', 'texas']
 
 # Noise levels the noise robustness attack tries on its shadow model when --attacker_noise_robust_sigmas is unset.
 # Images: Gaussian standard deviations in pixels, spanning the authors' code's 0.02 to 0.1 (Choquette-Choo et al.).

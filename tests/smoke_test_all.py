@@ -53,7 +53,7 @@ ATTACKS = (
     "sba_hopskipjump", "sba_qeba-spatial", "sba_qeba-dct",
     "sba_qeba-pca", "sba_qeba-custom",
     "uba_hopskipjump", "uba_qeba-spatial", "uba_qeba-dct",
-    "uba_qeba-pca", "uba_qeba-custom", "noise_robustness",
+    "uba_qeba-custom", "noise_robustness",
     "transfer_loss", "transfer_confidence", "transfer_entropy",
     "oslo_difgsm", "oslo_mifgsm", "oslo_tifgsm", "oslo_tmifgsm",
     "dh_white", "dh_black", "dh_random", "online_yoqo", "offline_yoqo",

@@ -5,7 +5,7 @@ import pathlib
 from src.utils.configs import generate_configs_from_settings, get_hash_from_settings, get_relevant_settings
 from src.utils.training_defaults import apply_training_defaults
 from .variables import QUANTILE_DEFAULT_VAL_SPLIT, QUANTILE_TAIL_HIGH, QUANTILE_TAIL_LEVELS, QUANTILE_TAIL_LOW
-from .variables import SBA_PAPER_N_QUERIES, UBA_DEFAULT_N_QUERIES
+from .variables import BOUNDARY_N_QUERIES, QEBA_REDUCTION_FACTOR
 from .variables import DECISION_RULES, DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
 
 
@@ -313,7 +313,7 @@ def build_parser() -> argparse.ArgumentParser:
                                         'rmia_loss', 'rmia_confidence', 'rmia_entropy', 
                                         'pmia_loss', 'pmia_confidence', 'pmia_entropy',
                                         'sba', 'sba_hopskipjump', 'sba_hsj', 'sba_hopskip', 'sba_hop', 'sba_qeba', 'sba_qeba-spatial', 'sba_qeba-dct', 'sba_qeba-pca', 'sba_qeba-custom',
-                                        'uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-pca', 'uba_qeba-custom',
+                                        'uba', 'uba_hopskipjump', 'uba_hsj', 'uba_hopskip', 'uba_hop', 'uba_qeba', 'uba_qeba-spatial', 'uba_qeba-dct', 'uba_qeba-custom',
                                         'noise_robust', 'noise_robustness', 'noise_rob', 'nr',
                                         'transfer_loss', 'transfer_confidence', 'transfer_entropy',
                                         'oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm',
@@ -376,18 +376,19 @@ def build_parser() -> argparse.ArgumentParser:
         # Boundary MIA parameters
         parser.add_argument('--attacker_boundary_n_queries', type=int, default=None,
                                 help=f'Query budget of HopSkipJump or QEBA for each sample, in the boundary attacks. '
-                                     f'Unset: {SBA_PAPER_N_QUERIES} for SBA, the paper\'s, and '
-                                     f'{UBA_DEFAULT_N_QUERIES} for UBA')
+                                     f'Unset: {BOUNDARY_N_QUERIES}')
         parser.add_argument('--attacker_boundary_norm', type=str, default='l2',
                                 help='Norm of the distance to the decision boundary in the boundary attacks: l2, the '
                                      'paper\'s, or linf')
-        parser.add_argument('--attacker_boundary_qeba_reduction_factor', type=int, default=8,
-                                help='Reduction factor of QEBA in the sba_qeba and uba_qeba modes: its search runs '
-                                     'in a subspace with about 1/factor^2 of the input dimensions')
+        parser.add_argument('--attacker_boundary_qeba_reduction_factor', type=int, default=None,
+                                help=f'Reduction factor of QEBA in the sba_qeba and uba_qeba modes: its random '
+                                     f'directions come from a subspace with about 1/factor^2 of the input dimensions. '
+                                     f'Unset: {QEBA_REDUCTION_FACTOR}, the authors\' code\'s')
         parser.add_argument('--attacker_boundary_quantile', type=float, default=0.5,
-                                help='Quantile to use for the unsupervised variant of the Boundary MIA attack')
+                                help='Quantile of the random inputs\' boundary distances that UBA takes as its '
+                                     'threshold. The paper\'s top t percentile is the quantile 1 - t/100')
         parser.add_argument('--attacker_boundary_calibration_samples', type=int, default=100,
-                                help='Number of random inputs for boundary threshold calibration (no auxiliary data)')
+                                help='Random inputs on which UBA sets its threshold')
         # Noise Robustness MIA parameters
         parser.add_argument('--attacker_noise_robust_n_queries', type=int, default=5000,
                                 help='Noisy copies of each sample in the noise robustness attack, each one query')
