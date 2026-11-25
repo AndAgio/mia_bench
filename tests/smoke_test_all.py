@@ -901,9 +901,6 @@ def worker_main(argv: Sequence[str]) -> int:
         smoke_shadow_dir = REPO_ROOT / "smoke_test_results" / "worker_shadow_datas"
     shadow_data_module.DEFAULT_SHADOW_DATASETS_FOLDER = smoke_shadow_dir
 
-    # Label-only threshold training requests equally many shadow nonmembers.
-    # Production's 0.6 fraction makes that impossible; 0.4 is smoke-only sizing.
-    shadow_data_module.PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS = 0.4
     original_import = data_module.import_dataset_by_name
 
     def import_limited_dataset(*args, **kwargs):

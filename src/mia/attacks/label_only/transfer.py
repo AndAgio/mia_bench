@@ -10,20 +10,25 @@ from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
+from src.mia.attacks.label_only.helpers.threshold_samples import balanced_threshold_samples
 
 
 PROCESSING_BATCH_SIZE = 128
 
 
 class TransferMIA(BaseMIA):
-    """Transfer attack: a shadow model trained on the target's labels scores the samples.
+    """Label-only transfer attack: a shadow model trained on the target's labels scores the samples.
 
-    Paper: "Membership Leakage in Label-Only Exposures",
-    https://dl.acm.org/doi/pdf/10.1145/3460120.3484575.
+    Paper: "Membership Leakage in Label-Only Exposures" (the transfer attack), https://arxiv.org/abs/2007.15528.
+    Documentation: docs/attacks/transfer.md.
+    The target labels the shadow dataset, the shadow model learns those labels, and each sample is scored on the
+    shadow model alone, by its loss at its true label, its confidence or its entropy, so scoring sends no query to the
+    target.
     """
     def __init__(self, 
                 defender_model: torch.nn.Module,
                 attacker_configs: AttackerConfigs):
+        """Sample the shadow dataset and build the shadow model."""
         super().__init__(defender_model=defender_model, attacker_configs=attacker_configs)
         self.attack_threshold = None
         self.logger.print_it(f"Working with Transfer MIA!")
@@ -42,6 +47,7 @@ class TransferMIA(BaseMIA):
                                                 model_configs=self.model_configs)
 
     def optimize(self, train_config: TrainConfigs):
+        """Relabel the shadow dataset with the target's predicted labels and train the shadow model on them."""
         self.logger.print_it('Transfer MIA attacker: relabelling shadow dataset based on target model...')
         start = time.time()
         distilled_dataset = self.relabel_shadow_dataset(train_config=train_config)
@@ -61,7 +67,7 @@ class TransferMIA(BaseMIA):
         self.logger.print_it('Transfer MIA attacker: Done optimizing shadow model over the distilled dataset. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
     def relabel_shadow_dataset(self, train_config: TrainConfigs):
-        # Li and Zhang: distill only the target model's hard-label predictions.
+        """Return the shadow dataset labelled with the target's predicted labels, the only output the attack reads."""
         shadow_dataset = self.shadow_manager.get_dataset(index=0, labels='original')
         shadow_loader = torch.utils.data.DataLoader(shadow_dataset, batch_size=train_config.batch_size, shuffle=False)
         all_relabels = []
@@ -82,21 +88,23 @@ class TransferMIA(BaseMIA):
         return TargetOverrideDataset(shadow_dataset, all_relabels)
 
     def find_optimal_threshold(self, device: Union[torch.device, str] = 'cpu'):
+        """Choose the score threshold that best separates the shadow model's members and non-members by accuracy.
+
+        The paper suggests a threshold from shadow samples held out as non-members alone, which is what the calibrated
+        decision rule does; this one also uses the shadow model's members (see docs/attacks/transfer.md).
+        """
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
-        # Calibrate the transfer score on members and non-members of the
-        # surrogate model.  _features() normalizes every feature so that larger
-        # values always mean stronger membership evidence.
+        # _features() orients every score so that larger values mean stronger membership evidence.
         shadow_model = self.shadow_manager.shadow_models.get(index=0).to(device)
-        shadow_member_dataset = self.shadow_manager.get_dataset(index=0, 
-                                                                labels='original')
-        shadow_nonmember_dataset = self.shadow_manager.sample_outside_shadow_dataset(index=0,
-                                                                                    num_data=len(shadow_member_dataset), 
-                                                                                    labels='original')
+        # As many members as non-members, every one there is: each costs one pass through the shadow model only.
+        shadow_member_dataset, shadow_nonmember_dataset, n_per_side = balanced_threshold_samples(
+            self.shadow_manager, None, self.seed)
+        self.logger.print_it(f"Transfer MIA attacker: choosing the threshold on {n_per_side} members and "
+                             f"{n_per_side} non-members of the shadow model.")
         datasets_list = [shadow_member_dataset, shadow_nonmember_dataset]
         self.regression_dataset = MergedDataset(*datasets_list)
         mia_labels = torch.tensor([1] * len(shadow_member_dataset) + [0] * len(shadow_nonmember_dataset))
-        # Iterate over the shadow dataset and compute noise robustness scores for all samples, keeping track of their membership status according to mia_labels
         dataloader = DataLoader(self.regression_dataset, batch_size=PROCESSING_BATCH_SIZE, shuffle=True)
         all_feats = []
         all_mia_labels = []
@@ -107,17 +115,10 @@ class TransferMIA(BaseMIA):
                 mia_labels_batch = mia_labels[sample_ids]
                 all_mia_labels.append(mia_labels_batch)
                 batch_feats = self._features(model=shadow_model, inputs=batch_x, true_labels=batch_y)
-                # print("\n\n")
-                # print(f"batch original labels: {batch_y}")
-                # print(f"batch predictions: {torch.argmax(shadow_model(batch_x), dim=1)}")
-                # print(f"batch features: {batch_feats}")
-                # print(f"batch mia labels: {mia_labels_batch}")
-                
                 all_feats.append(batch_feats.cpu())
         self.logger.set_logger_newline(console_only=True)
-        # Pick the threshold that maximizes calibration accuracy.  All feature
-        # modes use the same >= rule because their direction was normalized in
-        # _features().
+        # The threshold that maximizes accuracy, with >=: a sample is a member when its loss is at most the
+        # threshold (the paper's Alg. 1), and every score is oriented by _features().
         all_feats = torch.cat(all_feats, dim=0).numpy()
         all_mia_labels = torch.cat(all_mia_labels).numpy()
         fpr, tpr, thresholds = roc_curve(all_mia_labels, all_feats)
@@ -156,11 +157,10 @@ class TransferMIA(BaseMIA):
 
     @torch.no_grad()
     def _features(self, model: torch.nn.Module, inputs: torch.Tensor, true_labels: torch.Tensor) -> torch.Tensor:
-        """Return a score whose larger values always indicate membership.
+        """Return each input's score on the shadow model, larger for likelier members.
 
-        Confidence naturally has this direction.  Loss and entropy have the
-        opposite direction, so negate them before thresholding or computing
-        ROC/AUC metrics.
+        The loss is at the true label (the paper's Eq. 1). Confidence already has this direction; loss and entropy are
+        negated. The paper's entropy is divided by log K, which ranks the samples the same.
         """
         device = inputs.device
         model.eval()
@@ -182,6 +182,7 @@ class TransferMIA(BaseMIA):
 
     @torch.no_grad()
     def infer_dataset(self, model: torch.nn.Module, dataset: torch.utils.data.Dataset, device: Union[torch.device, str] = 'cpu'):
+        """Return each sample's score on the shadow model and whether it reaches the threshold."""
         assert self.attack_threshold is not None, "Call find_optimal_threshold(...) before infer_dataset(...) for Transfer MIA."
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
@@ -202,6 +203,7 @@ class TransferMIA(BaseMIA):
     
     @torch.no_grad()
     def infer_batch(self, model: torch.nn.Module, batch_x: torch.Tensor, batch_y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+        """Return the score of each sample of a batch on the shadow model and whether it reaches the threshold."""
         assert self.attack_threshold is not None, "Call find_optimal_threshold(...) before infer_batch(...) for Transfer MIA."
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
@@ -215,6 +217,7 @@ class TransferMIA(BaseMIA):
 
     @torch.no_grad()
     def infer_single(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
+        """Return one sample's score on the shadow model and whether it reaches the threshold."""
         assert self.attack_threshold is not None, "Call find_optimal_threshold(...) before infer_single(...) for Transfer MIA."
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
