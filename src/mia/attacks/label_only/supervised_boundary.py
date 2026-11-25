@@ -5,48 +5,20 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_curve
-from src.data import get_dataset_mean_std
-from src.data.helpers import MergedDataset, SubsampledDataset
+from src.data.helpers import MergedDataset
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.mia.helpers.shadow_manager import ShadowManager
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
 from src.mia.attacks.label_only.helpers.hop_skip_jump import HopSkipJump
 from src.mia.attacks.label_only.helpers.qeba import Qeba, build_qeba_basis
+from src.mia.attacks.label_only.helpers.pixels import PixelInputModel, PixelView, pixel_normalization
+from src.mia.attacks.label_only.helpers.threshold_samples import balanced_threshold_samples
 
 # Shadow samples of each kind, members and non-members of the shadow model, on which the threshold is chosen. The
 # authors' code tunes it on 2,500 of each; in a test on CIFAR-10, 500 of each chose as good a threshold at a fifth of
 # the boundary searches. With less data outside the shadow dataset, both sides take what it has.
 THRESHOLD_SAMPLES_PER_SIDE = 500
-
-
-class PixelInputModel(torch.nn.Module):
-    """A model that takes images as pixels in [0, 1] and normalises them before calling the wrapped model."""
-    def __init__(self, model: torch.nn.Module, mean: torch.Tensor, std: torch.Tensor):
-        """Wrap the model, with the dataset's per-channel mean and std, shaped (1, C, 1, 1)."""
-        super().__init__()
-        self.model = model
-        self.register_buffer('mean', mean)
-        self.register_buffer('std', std)
-
-    def forward(self, pixels: torch.Tensor) -> torch.Tensor:
-        """Return the wrapped model's output on the normalised pixels."""
-        return self.model((pixels - self.mean) / self.std)
-
-
-class PixelView:
-    """A read-only view of an image dataset that returns each image as pixels in [0, 1]."""
-    def __init__(self, dataset, mean: torch.Tensor, std: torch.Tensor):
-        """Wrap the dataset, with the per-channel mean and std, shaped (C, 1, 1)."""
-        self.dataset, self.mean, self.std = dataset, mean, std
-
-    def __len__(self) -> int:
-        """Return the number of images."""
-        return len(self.dataset)
-
-    def __getitem__(self, index: int) -> torch.Tensor:
-        """Return image `index` as pixels in [0, 1]."""
-        return (self.dataset[index][0] * self.std + self.mean).clamp(0, 1)
 
 
 class SupervisedBoundaryMIA(BaseMIA):
@@ -68,10 +40,7 @@ class SupervisedBoundaryMIA(BaseMIA):
             f"Supervised Boundary MIA trains one shadow model, got {self.shadow_configs.n_shadow_datasets}."
         # Images are attacked as pixels in [0, 1], the model normalising them, so that every query is a valid image
         # and the distances are in pixels, as in the paper. Tabular inputs are attacked as they are.
-        self.normalization = None
-        if self.base_dataset_configs.im_size is not None:
-            mean, std = get_dataset_mean_std(self.base_dataset_configs.name)
-            self.normalization = (torch.tensor(mean).view(1, -1, 1, 1), torch.tensor(std).view(1, -1, 1, 1))
+        self.normalization = pixel_normalization(self.base_dataset_configs)
         self.shadow_manager = ShadowManager(logger=self.logger)
         self.logger.print_it('Supervised Boundary MIA attacker: sampling of shadow datasets...')
         self.shadow_manager.sample_shadow_datasets(attacker_data_distribution=self.attacker_data_distribution,
@@ -118,16 +87,9 @@ class SupervisedBoundaryMIA(BaseMIA):
             device = self.get_device(dev_str=device)
         # Get the trained shadow model and build a dataset with samples from the shadow dataset labeled as members and samples from outside the shadow dataset labeled as non-members to find the optimal threshold for the noise robustness score at the given sigma on the shadow dataset.
         shadow_model = self.shadow_manager.shadow_models.get(index=0).to(device)
-        shadow_member_dataset = self.shadow_manager.get_dataset(index=0, 
-                                                                labels='original')
         # As many members as non-members, as the paper's equal-sized sets; each costs a full boundary search.
-        n_outside = len(self.shadow_manager.shadow_data.indices_outside_shadow_dataset(index=0))
-        n_per_side = min(THRESHOLD_SAMPLES_PER_SIDE, len(shadow_member_dataset), n_outside)
-        positions = np.random.default_rng(self.seed).choice(len(shadow_member_dataset), n_per_side, replace=False)
-        shadow_member_dataset = SubsampledDataset.from_positions(shadow_member_dataset, sorted(positions.tolist()))
-        shadow_nonmember_dataset = self.shadow_manager.sample_outside_shadow_dataset(index=0,
-                                                                                    num_data=n_per_side,
-                                                                                    labels='original')
+        shadow_member_dataset, shadow_nonmember_dataset, n_per_side = balanced_threshold_samples(
+            self.shadow_manager, THRESHOLD_SAMPLES_PER_SIDE, self.seed)
         self.logger.print_it(f"Supervised Boundary MIA attacker: choosing the threshold on {n_per_side} members and "
                              f"{n_per_side} non-members of the shadow model.")
         datasets_list = [shadow_member_dataset, shadow_nonmember_dataset]
