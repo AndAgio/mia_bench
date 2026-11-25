@@ -30,6 +30,7 @@ class BoundaryCalibrationTests(unittest.TestCase):
             mean, std = get_dataset_mean_std(dataset)
             attack.normalization = (torch.tensor(mean).view(1, -1, 1, 1), torch.tensor(std).view(1, -1, 1, 1))
         attack.attack_configs = UnsupervisedBoundaryAttackConfig(n_calibration_samples=4, quantile=0.5)
+        attack.attack_threshold = None
         attack.qeba_basis = None
         attack.logger = Mock()
         return attack
@@ -55,12 +56,17 @@ class BoundaryCalibrationTests(unittest.TestCase):
         attack.find_threshold_via_quantile(torch.device('cpu'))
         self.assertEqual(attack.attack_threshold, 2.5)
 
-    def test_random_tabular_inputs_are_bits_on_binary_datasets_and_uniform_otherwise(self):
-        bits = torch.stack(list(self.attack('purchase', (600,)).random_calibration_inputs()))
-        self.assertTrue(((bits == 0) | (bits == 1)).all())
-        self.assertGreater(bits.mean().item(), 0.4)
-        uniform = torch.stack(list(self.attack('news', (600,)).random_calibration_inputs()))
-        self.assertTrue(((uniform > 0) & (uniform < 1)).any())
+    def test_tabular_data_gets_no_threshold_so_the_attack_rule_falls_back_to_calibration(self):
+        attack = self.attack('purchase', (2,))
+        attack.find_threshold_via_quantile = Mock()
+        attack.optimize(SimpleNamespace(device='cpu'))
+        attack.find_threshold_via_quantile.assert_not_called()
+        self.assertIsNone(attack.attack_threshold)
+        attack.estimate_boundary_distance = Mock(return_value=torch.tensor([2.]))
+        data = IndexedDataset(torch.utils.data.TensorDataset(torch.tensor([[0., 5.]]), torch.tensor([1])))
+        scores, decisions = attack.infer_dataset(torch.nn.Identity(), data, torch.device('cpu'))
+        np.testing.assert_array_equal(scores, [2.])
+        self.assertIsNone(decisions)
 
     def test_audited_samples_keep_their_true_label(self):
         attack = self.attack()

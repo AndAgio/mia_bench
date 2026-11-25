@@ -385,10 +385,10 @@ def build_parser() -> argparse.ArgumentParser:
                                      f'directions come from a subspace with about 1/factor^2 of the input dimensions. '
                                      f'Unset: {QEBA_REDUCTION_FACTOR}, the authors\' code\'s')
         parser.add_argument('--attacker_boundary_quantile', type=float, default=0.5,
-                                help='Quantile of the random inputs\' boundary distances that UBA takes as its '
+                                help='Quantile of the random images\' boundary distances that UBA takes as its '
                                      'threshold. The paper\'s top t percentile is the quantile 1 - t/100')
         parser.add_argument('--attacker_boundary_calibration_samples', type=int, default=100,
-                                help='Random inputs on which UBA sets its threshold')
+                                help='Random images on which UBA sets its threshold (none on tabular data)')
         # Noise Robustness MIA parameters
         parser.add_argument('--attacker_noise_robust_n_queries', type=int, default=5000,
                                 help='Noisy copies of each sample in the noise robustness attack, each one query')

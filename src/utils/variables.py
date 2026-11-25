@@ -164,7 +164,7 @@ BOUNDARY_N_QUERIES = 2500
 # QEBA's reduction factor when --attacker_boundary_qeba_reduction_factor is unset: the UBA authors' code, whose subspace
 # keeps 768 of CIFAR-10's 3,072 dimensions, as QEBA's own code does on CIFAR-10.
 QEBA_REDUCTION_FACTOR = 2
-# Datasets whose features are binary: the label-only attacks keep their queries binary on them.
+# Datasets whose features are binary: noise robustness flips them instead of adding Gaussian noise.
 BINARY_FEATURE_DATASETS = ['purchase', 'texas']
 
 # Noise levels the noise robustness attack tries on its shadow model when --attacker_noise_robust_sigmas is unset.

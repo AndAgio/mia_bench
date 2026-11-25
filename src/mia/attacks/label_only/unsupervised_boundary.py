@@ -6,7 +6,6 @@ import numpy as np
 from src.mia.attacks.base_mia import BaseMIA, MembershipScores
 from src.utils.configs import AttackerConfigs, TrainConfigs
 from src.utils import convert_to_hms
-from src.utils.variables import BINARY_FEATURE_DATASETS
 from src.mia.attacks.label_only.helpers.boundary_search import boundary_distances
 from src.mia.attacks.label_only.helpers.pixels import pixel_normalization
 from src.mia.attacks.label_only.helpers.qeba import block_basis
@@ -18,7 +17,9 @@ class UnsupervisedBoundaryMIA(BaseMIA):
     Paper: "Membership Leakage in Label-Only Exposures" (the boundary attack), https://arxiv.org/abs/2007.15528.
     Documentation: docs/attacks/uba.md.
     The distance is found with HopSkipJump or QEBA. Images are attacked as pixels, so every query is a valid image.
-    The attacker needs no data: the threshold comes from random inputs.
+    The attacker needs no data: on images, the threshold comes from random images. Tabular data has no random inputs
+    that sit as far from the boundary as real records, so there the attack only scores, and its decisions come from
+    the calibrated rule.
     """
     requires_auxiliary_data = False
 
@@ -40,7 +41,13 @@ class UnsupervisedBoundaryMIA(BaseMIA):
             self.qeba_basis = block_basis(self.input_shape, self.attack_configs.boundary.qeba.reduction_factor)
 
     def optimize(self, train_config: TrainConfigs):
-        """Set the threshold on random inputs; there is no model to train."""
+        """Set the threshold on random images; there is no model to train, and no threshold on tabular data."""
+        if self.normalization is None:
+            # Random tabular inputs set thresholds as far off as their density is from the real records', which a
+            # data-free attacker cannot know (docs/attacks/uba.md), so the attack rule falls back to the calibrated one.
+            self.logger.print_it('Unsupervised Boundary MIA attacker: no threshold of its own on tabular data; its '
+                                 'decisions come from the calibrated rule.')
+            return
         self.logger.print_it('Unsupervised Boundary MIA attacker: finding threshold via quantile on random inputs...')
         start = time.time()
         self.find_threshold_via_quantile(device=train_config.device)
@@ -49,26 +56,19 @@ class UnsupervisedBoundaryMIA(BaseMIA):
         self.logger.print_it('Unsupervised Boundary MIA attacker: Done finding threshold via quantile. It took {}:{:02d}:{:02d}...'.format(h, m, s))
 
     def random_calibration_inputs(self):
-        """Yield the random inputs the threshold is set on, as the datasets hold inputs.
+        """Yield the random images the threshold is set on: uniform random pixels, as in the paper (Sec. 4.4).
 
-        Images have uniform random pixels, normalised like the dataset's, as in the paper (Sec. 4.4). Purchase and
-        Texas get random bits, so that each input is a valid record, and other tabular data uniform values in [0, 1].
+        They are normalised like the dataset's images, as the datasets hold them.
         """
+        mean, std = (statistic[0] for statistic in self.normalization)
         generator = torch.Generator().manual_seed(self.seed)
         for _ in range(self.attack_configs.n_calibration_samples):
-            sample = torch.rand(self.input_shape, generator=generator)
-            if self.normalization is not None:
-                mean, std = (statistic[0] for statistic in self.normalization)
-                yield (sample - mean) / std
-            elif self.base_dataset_configs.name in BINARY_FEATURE_DATASETS:
-                yield (sample < 0.5).float()
-            else:
-                yield sample
+            yield (torch.rand(self.input_shape, generator=generator) - mean) / std
 
     def find_threshold_via_quantile(self, device: Union[torch.device, str] = 'cpu'):
-        """Set the threshold at the configured quantile of the random inputs' boundary distances.
+        """Set the threshold at the configured quantile of the random images' boundary distances.
 
-        A random input belongs to no class, so its distance is the one that changes the label the target predicts
+        A random image belongs to no class, so its distance is the one that changes the label the target predicts
         for it (the paper's Alg. 3).
         """
         if isinstance(device, str):
@@ -95,7 +95,7 @@ class UnsupervisedBoundaryMIA(BaseMIA):
         self.logger.print_it(f'Boundary threshold from random inputs: {self.attack_threshold:.4f}')
 
     def score(self, dataset, device: Union[torch.device, str] = 'cpu'):
-        """Score each sample with the target's distance to its decision boundary, and threshold it."""
+        """Score each sample with the target's distance to its decision boundary, and threshold it on images."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         self.logger.print_it('Unsupervised Boundary MIA attacker: measuring attack effectiveness...')
@@ -132,8 +132,7 @@ class UnsupervisedBoundaryMIA(BaseMIA):
 
     @torch.no_grad()
     def infer_dataset(self, model: torch.nn.Module, dataset: torch.utils.data.Dataset, device: Union[torch.device, str] = 'cpu'):
-        """Return each sample's boundary distance and whether it is above the threshold."""
-        assert self.attack_threshold is not None, "Call find_threshold_via_quantile(...) before infer_dataset(...) for UBA."
+        """Return each sample's boundary distance and whether it is above the threshold (None without one)."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         model = model.to(device)
@@ -148,14 +147,15 @@ class UnsupervisedBoundaryMIA(BaseMIA):
             all_scores.append(boundary_distance_score.cpu())
         self.logger.set_logger_newline(console_only=True)
         all_boundary_distance_scores = torch.cat(all_scores, dim=0).numpy()
+        if self.attack_threshold is None:
+            return all_boundary_distance_scores, None
         # Strictly above: the paper's Alg. 2 calls a sample a non-member when its distance is at most the threshold.
         all_decisions = (all_boundary_distance_scores > self.attack_threshold).astype(np.int64)
         return all_boundary_distance_scores, all_decisions
 
     @torch.no_grad()
     def infer_batch(self, model: torch.nn.Module, batch_x: torch.Tensor, batch_y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
-        """Return the boundary distance of each sample of a batch and whether it is above the threshold."""
-        assert self.attack_threshold is not None, "Call find_threshold_via_quantile(...) before infer_batch(...) for UBA."
+        """Return the boundary distances of a batch and whether each is above the threshold (None without one)."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         model = model.to(device)
@@ -163,13 +163,14 @@ class UnsupervisedBoundaryMIA(BaseMIA):
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
         boundary_distance_score = self._features(model=model, inputs=batch_x, targets=batch_y)
+        if self.attack_threshold is None:
+            return boundary_distance_score.cpu().numpy(), None
         decisions = (boundary_distance_score > self.attack_threshold).to(torch.int64)
         return boundary_distance_score.cpu().numpy(), decisions.cpu().numpy()
 
     @torch.no_grad()
     def infer_single(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, device: Union[torch.device, str] = 'cpu'):
-        """Return one sample's boundary distance and whether it is above the threshold."""
-        assert self.attack_threshold is not None, "Call find_threshold_via_quantile(...) before infer_single(...) for UBA."
+        """Return one sample's boundary distance and whether it is above the threshold (None without one)."""
         if isinstance(device, str):
             device = self.get_device(dev_str=device)
         model = model.to(device)
@@ -177,5 +178,7 @@ class UnsupervisedBoundaryMIA(BaseMIA):
         x = x.unsqueeze(0).to(device)
         y = y.unsqueeze(0).to(device)
         boundary_distance_score = self._features(model=model, inputs=x, targets=y)
+        if self.attack_threshold is None:
+            return boundary_distance_score.item(), None
         decision = (boundary_distance_score > self.attack_threshold).to(torch.int64)
         return boundary_distance_score.item(), decision.item()
