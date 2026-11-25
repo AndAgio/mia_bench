@@ -203,7 +203,9 @@ def robust_parameters():
 write_generated('robust_parameters.md', robust_parameters())
 
 from src.utils.variables import (MMD_CODE_MIN_ACCURACY_GAP, MMD_REFERENCE_FRACTION_OF_VAL_SPLIT,  # noqa: E402
-                                 PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS, SBA_PAPER_N_QUERIES)
+                                 PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS, SBA_PAPER_N_QUERIES,
+                                 NOISE_ROBUSTNESS_IMAGE_SIGMAS, NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES,
+                                 NOISE_ROBUSTNESS_TABULAR_SIGMAS)
 
 
 def module_constant(path, name):
@@ -215,11 +217,24 @@ def module_constant(path, name):
 
 SBA_THRESHOLD_SAMPLES = module_constant('src/mia/attacks/label_only/supervised_boundary.py',
                                         'THRESHOLD_SAMPLES_PER_SIDE')
+NR_THRESHOLD_SAMPLES = module_constant('src/mia/attacks/label_only/noise_robustness.py', 'THRESHOLD_SAMPLES_PER_SIDE')
+
+
+def listed(values, last='and'):
+    """Return numbers as prose, e.g. '1, 2 and 3'."""
+    words = [f'{value:g}' for value in values]
+    return f"{', '.join(words[:-1])} {last} {words[-1]}" if len(words) > 1 else words[0]
+
+
 myst_substitutions = {'mmd_min_accuracy_gap': f'{MMD_CODE_MIN_ACCURACY_GAP * 100:g} percentage points',
                       'mmd_reference_share': f'{MMD_REFERENCE_FRACTION_OF_VAL_SPLIT:.0%}',
                       'shadow_dataset_share': f'{PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS:.0%}',
                       'sba_n_queries': f'{SBA_PAPER_N_QUERIES:,}',
-                      'sba_threshold_samples': f"{SBA_THRESHOLD_SAMPLES:,}"}
+                      'sba_threshold_samples': f"{SBA_THRESHOLD_SAMPLES:,}",
+                      'nr_threshold_samples': f"{NR_THRESHOLD_SAMPLES:,}",
+                      'nr_image_sigmas': listed(NOISE_ROBUSTNESS_IMAGE_SIGMAS),
+                      'nr_flipped_features': listed(NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES, last='or'),
+                      'nr_tabular_sigmas': listed(NOISE_ROBUSTNESS_TABULAR_SIGMAS)}
 
 
 def adv_reg_parameters():
@@ -353,7 +368,7 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'lira': ['n_shadows'], 'neural': ['attacker_neural_'],
                   'sba': ['attacker_boundary_n_queries', 'attacker_boundary_norm',
                           'attacker_boundary_qeba_reduction_factor'],
-                  'quantile': ['attacker_quantile_']}
+                  'quantile': ['attacker_quantile_'], 'noise_robustness': ['attacker_noise_robust_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))
