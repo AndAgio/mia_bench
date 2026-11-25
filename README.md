@@ -402,13 +402,13 @@ for a more substantial end-to-end run.
 `--attacker_mode uba` runs the boundary attack with data-free threshold
 calibration. It generates 100 seeded random inputs by default, queries their
 predicted labels, and estimates the perturbation needed to change those labels.
-Image pixels are uniform in [0, 1] before the dataset's normal model-input
-normalization; tabular features are uniform in [0, 1]. Configure the count with
+Image pixels are uniform in [0, 1]; Purchase and Texas get random bits, and
+other tabular features are uniform in [0, 1]. Configure the count with
 `--attacker_boundary_calibration_samples` and the ascending distance quantile
 with `--attacker_boundary_quantile` (default 0.5). No auxiliary dataset or shadow
-model is used. Candidate distances also use the model's initial predicted label.
-QEBA PCA/custom variants build their bases from generated inputs, not real data;
-these basis variants are benchmark extensions.
+model is used. Audited samples are searched around their true label, so a
+misclassified sample has distance 0, as in the paper. The QEBA custom variant is
+a benchmark extension. See the [attack's page](docs/attacks/uba.md).
 
 `--attacker_mode transfer_loss` runs the transfer attack: query hard labels for
 real auxiliary samples, train a surrogate on those labels, and score candidates
