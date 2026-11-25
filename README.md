@@ -415,9 +415,10 @@ real auxiliary samples, train a surrogate on those labels, and score candidates
 by negative surrogate cross-entropy against their ground-truth class. Larger
 scores indicate membership. `transfer_confidence` and `transfer_entropy` provide
 alternative surrogate scores. Configure surrogate training with `--attacker_model`
-and `--attacker_epochs`, and auxiliary size with `--n_samples_per_shadow_dataset`.
+and `--attacker_epochs`, and the attacker's data with `--attacker_data_split_perc`.
 The benchmark calibrates a decision threshold using surrogate members and held-out
-auxiliary samples; ROC/AUC uses the continuous scores.
+auxiliary samples; ROC/AUC uses the continuous scores. See the
+[attack's page](docs/attacks/transfer.md).
 
 Both methods follow [Li and Zhang, Membership Leakage in Label-Only Exposures](https://arxiv.org/abs/2007.15528).
 Run `python -m unittest tests.test_boundary_calibration` for focused calibration and
