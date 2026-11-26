@@ -40,6 +40,9 @@ CIFAR-10, holds about 200 MB of rows.
 python run.py --attacker_mode neural_prob --dataset cifar10 --defender_mode none
 ```
 
+By default, the decisions come from the calibrated rule, as for every attack. For the paper's own decisions,
+described above, add `--decision_rule attack` (see [Decision rules](decision_rules.md)).
+
 The attack is {py:class}`~src.mia.attacks.black_box.neural.NeuralMIA`.
 
 ## Parameters

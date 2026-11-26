@@ -17,8 +17,8 @@ A sample's score is −α*, where α* is the smallest false-positive rate at whi
 in the authors' code for the paper's figures: the larger of the sample's rank among the reference losses and the tail
 probability of a Gaussian fitted to them after a logit rescaling. The attack's own decisions call a sample a member
 when α* is at most `--attacker_rmia_alpha` or `--attacker_pmia_alpha`. The share of non-members it then calls members
-is close to α when the reference losses match the target's on non-members; for an exact false-positive rate, use
-`--decision_rule calibrated`.
+is close to α when the reference losses match the target's on non-members; for an exact false-positive rate, use the
+calibrated rule.
 
 Attack-R costs the training of its reference models, with the attacker's training options (see
 [Training defaults](../reference/training.md)), and one pass of each over the audited samples. Attack-P only queries
@@ -29,6 +29,9 @@ the target, on the population data and the audited samples.
 ```bash
 python run.py --attacker_mode rmia_loss --dataset cifar10 --defender_mode none
 ```
+
+By default, the decisions come from the calibrated rule, as for every attack. For the paper's own decisions,
+described above, add `--decision_rule attack` (see [Decision rules](decision_rules.md)).
 
 The suffix chooses the score the test compares:
 

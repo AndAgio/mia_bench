@@ -219,6 +219,8 @@ SBA_THRESHOLD_SAMPLES = module_constant('src/mia/attacks/label_only/supervised_b
                                         'THRESHOLD_SAMPLES_PER_SIDE')
 NR_THRESHOLD_SAMPLES = module_constant('src/mia/attacks/label_only/noise_robustness.py', 'THRESHOLD_SAMPLES_PER_SIDE')
 SBA_QEBA_PCA_GRADIENTS = module_constant('src/mia/attacks/label_only/supervised_boundary.py', 'QEBA_PCA_GRADIENTS')
+DH_SYNTHETIC_SAMPLES = module_constant('src/mia/attacks/label_only/dh_attack.py', 'N_SYNTHETIC_SAMPLES')
+DH_SYNTHETIC_PERCENTILE = module_constant('src/mia/attacks/label_only/dh_attack.py', 'SYNTHETIC_PERCENTILE')
 
 
 def cli_default(dest):
@@ -244,7 +246,13 @@ myst_substitutions = {'mmd_min_accuracy_gap': f'{MMD_CODE_MIN_ACCURACY_GAP * 100
                       'nr_threshold_samples': f"{NR_THRESHOLD_SAMPLES:,}",
                       'nr_image_sigmas': listed(NOISE_ROBUSTNESS_IMAGE_SIGMAS),
                       'nr_flipped_features': listed(NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES, last='or'),
-                      'nr_tabular_sigmas': listed(NOISE_ROBUSTNESS_TABULAR_SIGMAS)}
+                      'nr_tabular_sigmas': listed(NOISE_ROBUSTNESS_TABULAR_SIGMAS),
+                      'dh_synthetic_samples': f'{DH_SYNTHETIC_SAMPLES:,}',
+                      'dh_synthetic_percentile': f'{DH_SYNTHETIC_PERCENTILE:g}',
+                      'dh_n_queries': f"{cli_default('attacker_dh_n_queries'):,}",
+                      'n_shadows': f"{cli_default('n_shadows'):,}",
+                      'n_calibration_samples': f"{cli_default('n_calibration_samples'):,}",
+                      'calibration_fpr': f"{cli_default('calibration_fpr'):.0%}"}
 
 
 def adv_reg_parameters():
@@ -379,7 +387,9 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'sba': ['attacker_boundary_n_queries', 'attacker_boundary_norm',
                           'attacker_boundary_qeba_reduction_factor'],
                   'uba': ['attacker_boundary_'],
-                  'quantile': ['attacker_quantile_'], 'noise_robustness': ['attacker_noise_robust_']}
+                  'quantile': ['attacker_quantile_'], 'noise_robustness': ['attacker_noise_robust_'],
+                  'dh': ['n_shadows', 'attacker_dh_'],
+                  'decision_rules': ['decision_rule', 'calibration_fpr', 'n_calibration_samples']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

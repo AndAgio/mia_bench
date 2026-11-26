@@ -49,6 +49,9 @@ score is strictly above the threshold, as in the paper. The calibrated and oracl
 python run.py --attacker_mode noise_robust --dataset cifar10 --defender_mode none
 ```
 
+By default, the decisions come from the calibrated rule, as for every attack. For the paper's own decisions,
+described above, add `--decision_rule attack` (see [Decision rules](decision_rules.md)).
+
 The attack is {py:class}`~src.mia.attacks.label_only.noise_robustness.NoiseRobustnessMIA`.
 
 ## Parameters

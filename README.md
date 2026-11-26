@@ -112,23 +112,10 @@ for successfully recovered training members only. Other choices are `non-members
 applied. The best metric observed while training is retained separately under the
 `training_best_*` fields.
 
-The attacks only score samples; `--decision_rule` turns the scores into the decisions
-behind accuracy, precision, recall, F1 and the per-sample predictions:
-
-- `attack` (default): the attack's own rule. LiRA and RobustMIA have none, so they are
-  calibrated instead.
-- `calibrated`: the threshold that a share `--calibration_fpr` of the calibration
-  samples exceed. These `--n_calibration_samples` samples are held out of the
-  attacker's share as known non-members of the target, and the shadow datasets treat
-  them like the auditing samples. For an attacker with little data, pass a share of
-  its data instead of a number, such as `--n_calibration_samples 0.2`.
-- `oracle`: the threshold that maximizes TPR - FPR on the auditing labels, the
-  strongest attacker a defender may face.
-
-Several rules give one result each from the same scores, with `decision_rule` in their
-parameters and the rule actually applied in `decision_source`. AUC, TPR at fixed FPR
-and the membership advantage do not depend on the rule. Results from before the
-decision rules mark the oracle threshold as `decision_source: "roc_youden"`.
+The attacks only score samples; `--decision_rule` turns the scores into decisions. By default, every attack uses
+the same calibrated rule, at the same false-positive rate; `--decision_rule attack` makes the decisions as each
+attack's paper does, and `oracle` gives the best any threshold could do. AUC and TPR at fixed FPR do not depend on the
+rule. See [Decision rules](docs/attacks/decision_rules.md).
 
 #### Metrics and metadata retained
 
@@ -402,8 +389,8 @@ for a more substantial end-to-end run.
 `--attacker_mode uba` runs the boundary attack with data-free threshold
 calibration. It generates 100 seeded random inputs by default, queries their
 predicted labels, and estimates the perturbation needed to change those labels.
-Image pixels are uniform in [0, 1]. On tabular data there is no such threshold,
-and the attack's decisions come from the calibrated rule. Configure the count with
+Image pixels are uniform in [0, 1]; tabular records are random bits on Purchase and
+Texas, and uniform values in [0, 1] otherwise. Configure the count with
 `--attacker_boundary_calibration_samples` and the ascending distance quantile
 with `--attacker_boundary_quantile` (default 0.5). No auxiliary dataset or shadow
 model is used. Audited samples are searched around their true label, so a

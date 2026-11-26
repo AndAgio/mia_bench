@@ -1,8 +1,8 @@
 # Attacks
 
 Choose an attack with `--attacker_mode`. Only LiRA, RMIA, quantile regression, the shadow-model classifier, Attack-R,
-Attack-P, the supervised and unsupervised boundary distances, noise robustness and the transfer attack have
-their own pages so far.
+Attack-P, the supervised and unsupervised boundary distances, noise robustness, the transfer attack and DHAttack
+have their own pages so far.
 
 Every attack can be paired with every defense. Score-based attacks read the scores the defended model returns, and
 label-only attacks read only its predicted labels. `neural_feat` reads the model's internal features instead. LDL,
@@ -23,11 +23,19 @@ these pairings.
 | [Noise robustness](noise_robustness.md) | `noise_robust` | labels | [paper](https://arxiv.org/abs/2007.14321) |
 | [Transfer](transfer.md) | `transfer_loss`, `transfer_confidence`, `transfer_entropy` | labels | [paper](https://arxiv.org/abs/2007.15528) |
 | OSLO | `oslo`, `oslo_mifgsm`, `oslo_tifgsm`, `oslo_tmifgsm` | labels | [paper](https://proceedings.neurips.cc/paper_files/paper/2024/file/71f88122d414cfeb455ac0ed932fbe1f-Paper-Conference.pdf) |
-| DHAttack | `dh`, `dh_black`, `dh_random` | labels | [paper](https://www.usenix.org/system/files/usenixsecurity25-li-hao.pdf) |
+| [DHAttack](dh.md) | `dh`, `dh_black`, `dh_random` | labels | [paper](https://www.usenix.org/system/files/usenixsecurity25-li-hao.pdf) |
 | YOQO | `online_yoqo`, `offline_yoqo` | labels | [paper](https://tianweiz07.github.io/Papers/24-iclr-1.pdf) |
 
 The `rmia_*` modes run Attack-R, not RMIA. `sba` and `uba` find the boundary with HopSkipJump, and the `_qeba` modes
 with QEBA.
+
+## Decisions
+
+By default, every attack's decisions come from the same calibrated rule: a threshold set on samples the attacker knows
+are non-members, at the same false-positive rate for all attacks. To run an attack as in its paper, with the paper's
+own decisions, add `--decision_rule attack`. [Decision rules](decision_rules.md) explains the rules and lists each
+attack's own rule. The rule changes only the decisions, and so accuracy, precision, recall and F1: AUC and TPR at a
+fixed FPR are the same under every rule.
 
 ## An attacker with little data
 
@@ -46,6 +54,7 @@ which 120 calibrate the thresholds.
 ```{toctree}
 :hidden:
 
+decision_rules
 lira
 robust
 quantile
@@ -55,4 +64,5 @@ sba
 uba
 noise_robustness
 transfer
+dh
 ```

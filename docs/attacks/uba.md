@@ -19,16 +19,23 @@ The threshold only sets the attack's own decisions (`--decision_rule attack`), w
 distance is strictly above it, as in the paper (Alg. 2). The scores, and the calibrated and oracle rules, do not depend
 on it.
 
-On tabular data, the attack has no threshold of its own, so `--decision_rule attack` uses the calibrated rule, as it
-does for LiRA. The paper covers images only, and random tabular inputs give thresholds that depend on how many features
-they set, which an attacker without data cannot match to the real records. In tests with a tabular MLP trained on 5,000
-records of each dataset, at the quantile 0.5:
+The default calibrated rule (see [Decision rules](decision_rules.md)) sets the threshold on {{n_calibration_samples}}
+samples the attacker knows are non-members of the target instead, which slightly changes this attack's threat model:
+in the paper, the attacker has no data at all. The scores still use no data, so the AUC and TPR at a fixed FPR are the
+paper's attacker's. `--decision_rule attack` keeps the paper's attacker for the decisions too.
 
-- on Purchase, random bits with half the features set gave 54% accuracy, against 78% for the best threshold;
-- on Texas, they called no record a member (87% possible). With 1% of the features set, Texas reached 84%, but only
-  because real Texas records are that sparse, with 0.27% of their features set;
-- on News, uniform values called no document a member, and random sparse documents of unit norm did no better than
-  calling every correctly classified document a member (58%, against 67% possible).
+The paper covers images only. On tabular data, the attack's own threshold comes from random records drawn the same
+way, uniform over the input space: random bits on Purchase and Texas, and uniform values in [0, 1] on News. Real
+records are sparser (about a third of Purchase's features are set, and 0.27% of Texas's), so they sit at other
+distances from the boundary, and these thresholds can be far off. In tests with a tabular MLP trained on 5,000 records
+of each dataset, at the quantile 0.5:
+
+- on Purchase, the random records gave 54% accuracy, against 78% for the best threshold;
+- on Texas and News, they called no record a member, against 87% and 67% accuracy for the best threshold.
+
+Records as sparse as the real ones would do better (84% on Texas with 1% of the features set), but choosing how sparse
+takes the data this attacker does not have. The calibrated rule avoids the problem, at the cost of the known
+non-members above.
 
 The mode sets how the distance is searched for:
 
@@ -64,6 +71,9 @@ audited or calibration sample about 2 seconds.
 ```bash
 python run.py --attacker_mode uba --dataset cifar10 --defender_mode none
 ```
+
+By default, the decisions come from the calibrated rule, as for every attack. For the paper's own decisions,
+described above, add `--decision_rule attack` (see [Decision rules](decision_rules.md)).
 
 The attack is {py:class}`~src.mia.attacks.label_only.unsupervised_boundary.UnsupervisedBoundaryMIA`.
 

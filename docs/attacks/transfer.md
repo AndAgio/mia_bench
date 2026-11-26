@@ -23,8 +23,8 @@ The paper finds the loss the strongest of the three (Fig. 5).
 
 The threshold is chosen on the shadow model: the score that best separates its members from as many samples outside
 its shadow dataset, by accuracy. It uses all of them, since each costs one pass through the shadow model. The paper
-suggests a threshold taken from shadow samples held out as non-members instead (Sec. 3.4), which is what
-`--decision_rule calibrated` does. In two tests on CIFAR-10, the two gave similar accuracy. The threshold only sets the
+suggests a threshold taken from shadow samples held out as non-members instead (Sec. 3.4), which is what the
+calibrated rule does. In two tests on CIFAR-10, the two gave similar accuracy. The threshold only sets the
 attack's own decisions (`--decision_rule attack`): the scores, and the calibrated and oracle rules, do not depend on it.
 
 The authors' code sends each sample to the target first and gives the largest loss to the ones the target
@@ -50,6 +50,9 @@ The cost is one query per shadow sample, to label it, and training the shadow mo
 ```bash
 python run.py --attacker_mode transfer_loss --dataset cifar10 --defender_mode none
 ```
+
+By default, the decisions come from the calibrated rule, as for every attack. For the paper's own decisions,
+described above, add `--decision_rule attack` (see [Decision rules](decision_rules.md)).
 
 The attack is {py:class}`~src.mia.attacks.label_only.transfer.TransferMIA`.
 

@@ -22,9 +22,9 @@ Each Gaussian's variance is estimated for each sample, as in the paper's main at
 than 64 shadow models, a variance shared by all samples gives a stronger attack (Sec. VI-B). Here the attack stays the
 same whatever their number, so more shadow models make it stronger rather than different.
 
-LiRA has no decision rule of its own, since the paper reports ROC curves only: with `--decision_rule attack`, its
-decisions come from the calibrated threshold instead (see `--calibration_fpr` in
-[Command-line options](../reference/cli.md)).
+LiRA has no decision rule of its own, since the paper reports ROC curves only. Its decisions come from the
+calibrated rule, the default for every attack, also with `--decision_rule attack` (see
+[Decision rules](decision_rules.md)).
 
 ## Usage
 

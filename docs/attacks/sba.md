@@ -49,6 +49,9 @@ The attack's own decisions call a sample a member when its distance is strictly 
 python run.py --attacker_mode sba --dataset cifar10 --defender_mode none
 ```
 
+By default, the decisions come from the calibrated rule, as for every attack. For the paper's own decisions,
+described above, add `--decision_rule attack` (see [Decision rules](decision_rules.md)).
+
 The attack is {py:class}`~src.mia.attacks.label_only.supervised_boundary.SupervisedBoundaryMIA`.
 
 ## Parameters

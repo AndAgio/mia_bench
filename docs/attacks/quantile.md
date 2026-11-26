@@ -16,12 +16,16 @@ level of a grid and ranks samples by how far their score exceeds the threshold a
 python run.py --attacker_mode quantile --dataset cifar10 --defender_mode none
 ```
 
+By default, the decisions come from the calibrated rule, as for every attack. For the paper's own decisions,
+described above, add `--decision_rule attack` (see [Decision rules](decision_rules.md)).
+
 Add `--no-attacker_quantile_use_gaussian` for the pinball head. The attack is
 {py:class}`~src.mia.attacks.black_box.quantile.QuantileMIA`.
 
 After training, the log reports the share of the held-out non-members whose score exceeds their threshold: the
-attacker's own estimate of its false-positive rate at α. If that share is significantly above α, a warning suggests
-`--decision_rule calibrated`, which sets the threshold on held-out non-members instead, or the Gaussian head.
+attacker's own estimate of its false-positive rate at α. If that share is significantly above α, a warning says that
+the attack's own decisions will likely flag more non-members than α, and suggests the calibrated rule, which sets the
+threshold on held-out non-members instead, or the Gaussian head.
 
 ## Parameters
 

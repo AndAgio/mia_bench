@@ -24,9 +24,9 @@ Pr(x): offline, those that every shadow model trained on, and online, also those
 share of the population, in steps of 1 / `--attacker_robust_rand_pop_size`, so a larger population separates samples
 more finely, at the cost of more queries.
 
-RMIA has no decision rule of its own, since the paper reports ROC curves only: with `--decision_rule attack`, its
-decisions come from the calibrated threshold instead (see `--calibration_fpr` in
-[Command-line options](../reference/cli.md)).
+RMIA has no decision rule of its own, since the paper reports ROC curves only. Its decisions come from the
+calibrated rule, the default for every attack, also with `--decision_rule attack` (see
+[Decision rules](decision_rules.md)).
 
 ## Usage
 
