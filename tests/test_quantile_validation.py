@@ -110,7 +110,7 @@ class OptimizeTests(unittest.TestCase):
         # The 4 validation targets lie between 0 and 190. All of them exceed -1000: p = 0.05^4, a warning.
         _, attack = optimize(alpha=.05, thresholds=(-1000.,) * 4)
         self.assertEqual(len(warnings_of(attack)), 1)
-        self.assertIn('--decision_rule calibrated, or the Gaussian head', warnings_of(attack)[0])
+        self.assertIn('the calibrated rule, or the Gaussian head', warnings_of(attack)[0])
         # None of them exceeds 1000, and 1 of 4 at alpha 0.5 is not significant: no warning.
         for alpha, thresholds in ((.05, (1000.,) * 4), (.5, (150.,) * 4)):
             with self.subTest(alpha=alpha, thresholds=thresholds):

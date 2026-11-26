@@ -122,6 +122,15 @@ class EvaluationTest(unittest.TestCase):
         self.assertEqual(recorded['calibrated']['calibration_fpr'], 0.1)
         self.assertNotIn('calibration_fpr', recorded['oracle'])
 
+    def test_the_default_rule_calibrates_every_attack_with_or_without_a_rule_of_its_own(self):
+        default = build_parser().parse_args([]).decision_rule
+        self.assertEqual(default, EvaluationConfigs().decision_rules)
+        for own in (True, False):
+            with self.subTest(own=own):
+                attack = _fake_attack(default, has_own_decisions=own)
+                [result] = attack.measure_effectiveness()
+                self.assertEqual(result['decision_source'], 'calibrated')
+
     def test_calibration_samples_are_scored_only_when_a_rule_needs_them(self):
         for rules, own, needed in ((['attack'], True, False), (['oracle'], False, False),
                                    (['attack'], False, True), (['oracle', 'calibrated'], True, True)):

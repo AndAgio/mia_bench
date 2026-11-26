@@ -4,8 +4,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.utils.configs import (N_SHADOWS_UNUSED_MODES, ONE_SHADOW_MODEL_MODES, generate_configs_from_settings,
-                               get_hash_from_settings)
+from src.utils.configs import (DH_MODES, N_SHADOWS_UNUSED_MODES, ONE_SHADOW_MODEL_MODES,
+                               generate_configs_from_settings, get_hash_from_settings)
 from src.utils.settings import build_parser
 from src.utils.variables import BOUNDARY_N_QUERIES, QEBA_REDUCTION_FACTOR
 
@@ -27,11 +27,20 @@ class AttackShadowConfigTest(unittest.TestCase):
                         for n in ('4', '32')]
                 self.assertNotEqual(*lira)
 
-    def test_one_shadow_model_attacks_get_one_shadow_dataset(self):
-        for attack in ONE_SHADOW_MODEL_MODES:
+    def test_one_shadow_model_attacks_and_dh_get_one_shadow_dataset(self):
+        for attack in ONE_SHADOW_MODEL_MODES + DH_MODES:
             with self.subTest(attack=attack):
                 configs = generate_configs_from_settings(self.settings('--attacker_mode', attack, '--n_shadows', '32'))
                 self.assertEqual(configs.attacker.dataset.shadow.n_shadow_datasets, 1)
+
+    def test_dh_trains_n_shadows_models_on_one_dataset(self):
+        for attack in DH_MODES:
+            with self.subTest(attack=attack):
+                configs = generate_configs_from_settings(self.settings('--attacker_mode', attack, '--n_shadows', '7'))
+                self.assertEqual(configs.attacker.attack.n_models, 7)
+                hashes = [get_hash_from_settings(self.settings('--attacker_mode', attack, '--n_shadows', n),
+                                                 'attacker') for n in ('4', '32')]
+                self.assertNotEqual(*hashes)
 
     def test_budgets_when_unset_and_set(self):
         for mode, unset in (('sba', BOUNDARY_N_QUERIES), ('uba', BOUNDARY_N_QUERIES)):

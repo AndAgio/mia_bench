@@ -281,7 +281,7 @@ class ShadowDataConfigs:
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class EvaluationConfigs:
     """The last stage: how the attack's scores become membership decisions, and the samples that calibrate them."""
-    decision_rules: List[str] = field(default_factory=lambda: ['attack'])
+    decision_rules: List[str] = field(default_factory=lambda: ['calibrated'])
     calibration_fpr: float = 0.1
     # A number of samples, or a share of the attacker's data when strictly between 0 and 1.
     n_calibration_samples: Union[int, float] = 1000
@@ -408,9 +408,9 @@ class OsloAttackConfig:
 class DHAttackConfig:
     strategy: Literal["dh"] = "dh"
     mode: str = 'offline'
-    n_models: int = 10 # number of shadow models to train for the attack
-    n_queries: int = 30 # number of queries to perform inference
-    fixed_input_mode: str = 'white' # options: 'white', 'black'
+    n_models: int = 32 # number of shadow models, all trained on the one shadow dataset (--n_shadows)
+    n_queries: int = 30 # steps toward the fixed input, the most queries per sample and model (K)
+    fixed_input_mode: str = 'white' # options: 'white', 'black', 'random'
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class YoqoAttackConfig:
@@ -635,8 +635,7 @@ OSLO_MODES = ['oslo', 'oslo_difgsm', 'oslo_mifgsm', 'oslo_tifgsm', 'oslo_tmifgsm
 DH_MODES = ['dh', 'dh_white', 'dh_black', 'dh_random', 'dh-attack', 'dh-attack_white', 'dh-attack_black',
             'dh-attack_random']
 # These attacks always train one shadow model, whatever --n_shadows; UBA trains none.
-ONE_SHADOW_MODEL_MODES = (['quantile'] + PMIA_MODES + SBA_MODES + NOISE_ROBUSTNESS_MODES + TRANSFER_MODES + OSLO_MODES
-                          + DH_MODES)
+ONE_SHADOW_MODEL_MODES = ['quantile'] + PMIA_MODES + SBA_MODES + NOISE_ROBUSTNESS_MODES + TRANSFER_MODES + OSLO_MODES
 # --n_shadows is left out of these attacks' hashes, so that it cannot tell apart two runs of the same attack.
 N_SHADOWS_UNUSED_MODES = ONE_SHADOW_MODEL_MODES + UBA_MODES
 
@@ -1053,10 +1052,12 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         attacker_shadow_configs.mode = 'offline'
     elif settings.attacker_mode in DH_MODES:
         fixed_input_mode = settings.attacker_mode.split('_')[-1] if '_' in settings.attacker_mode else 'white'
-        attack_configs = DHAttackConfig(n_models=settings.attacker_dh_n_models,
+        attack_configs = DHAttackConfig(n_models=settings.n_shadows,
                                         n_queries=settings.attacker_dh_n_queries,
                                         fixed_input_mode=fixed_input_mode)
         attacker_shadow_configs.mode = 'offline'
+        # The --n_shadows shadow models all train on one shadow dataset.
+        attacker_shadow_configs.n_shadow_datasets = 1
     elif settings.attacker_mode in ['online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo']:
         yoqo_mode = 'online' if settings.attacker_mode in ['online_yoqo', 'on_yoqo'] else 'offline'
         attack_configs = YoqoAttackConfig(mode=yoqo_mode,

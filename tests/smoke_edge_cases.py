@@ -123,8 +123,8 @@ def attack_specs(component):
                      attacker_oslo_K=2, attacker_oslo_N=2))
     if component.startswith("dh_"):
         return (baseline,
-                spec("Single surrogate and one inference query", attacker_dh_n_models=1, attacker_dh_n_queries=1),
-                spec("Three surrogates and odd query budget", attacker_dh_n_models=3, attacker_dh_n_queries=5),
+                spec("Single surrogate and one inference query", n_shadows=1, attacker_dh_n_queries=1),
+                spec("Three surrogates and odd query budget", n_shadows=3, attacker_dh_n_queries=5),
                 spec("Larger query budget", attacker_dh_n_queries=16),
                 spec("Alternate distilled-surrogate optimizer", attacker_optimizer="adam", attacker_lr=.001))
     if component in ("online_yoqo", "offline_yoqo"):

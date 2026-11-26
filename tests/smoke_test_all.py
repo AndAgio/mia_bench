@@ -390,7 +390,6 @@ def common_run_args(profile: Profile, args: argparse.Namespace, out_dir: Path) -
         "--attacker_oslo_source_models_ratio", "0.75" if medium else "0.5",
         "--attacker_oslo_K", "3" if medium else "1",
         "--attacker_oslo_N", "10" if medium else "1",
-        "--attacker_dh_n_models", "4" if medium else "2",
         "--attacker_dh_n_queries", queries,
         "--attacker_yoqo_alpha", "2" if medium else str(profile.alpha),
         "--attacker_yoqo_gamma", "5" if medium else "1",
@@ -420,7 +419,7 @@ def shadow_count(attack: str) -> int:
     if attack in {"quantile", "pmia_loss", "pmia_confidence", "pmia_entropy",
                   "noise_robustness"}:
         return 1
-    if attack.startswith(("sba_", "uba_", "transfer_", "oslo_", "dh_")):
+    if attack.startswith(("sba_", "uba_", "transfer_", "oslo_")):
         return 1
     if attack in {"online_robust", "lira", "online_yoqo"} or attack.startswith("online_neural_"):
         return 4

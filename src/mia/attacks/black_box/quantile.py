@@ -136,8 +136,9 @@ class QuantileMIA(BaseMIA):
         if p_value < QUANTILE_VALIDATION_WARNING_P_VALUE:
             advice = '' if self.attack_configs.use_gaussian else ', or the Gaussian head'
             self.logger.print_it(f"Quantile MIA attacker [WARNING]: that is significantly more than alpha "
-                                 f"(one-sided binomial test, p = {p_value:.2g}), so the decisions will likely flag "
-                                 f"more non-members than alpha. Consider --decision_rule calibrated{advice}.")
+                                 f"(one-sided binomial test, p = {p_value:.2g}), so the attack's own decisions "
+                                 f"(--decision_rule attack) will likely flag more non-members than alpha. Consider "
+                                 f"the calibrated rule{advice}.")
         stop = time.time()
         self.reset_logger()
         h, m, s = convert_to_hms(stop-start)

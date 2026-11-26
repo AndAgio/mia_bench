@@ -56,17 +56,26 @@ class BoundaryCalibrationTests(unittest.TestCase):
         attack.find_threshold_via_quantile(torch.device('cpu'))
         self.assertEqual(attack.attack_threshold, 2.5)
 
-    def test_tabular_data_gets_no_threshold_so_the_attack_rule_falls_back_to_calibration(self):
+    def test_random_tabular_inputs_are_bits_on_binary_datasets_and_uniform_otherwise(self):
+        bits = torch.stack(list(self.attack('purchase', (600,)).random_calibration_inputs()))
+        self.assertEqual(set(bits.unique().tolist()), {0., 1.})
+        self.assertGreater(bits.mean().item(), 0.4)
+        uniform = torch.stack(list(self.attack('news', (600,)).random_calibration_inputs()))
+        self.assertTrue(((uniform >= 0) & (uniform < 1)).all() and len(uniform.unique()) > 2)
+
+    def test_tabular_data_gets_its_threshold_from_random_records_and_decides_by_itself(self):
         attack = self.attack('purchase', (2,))
-        attack.find_threshold_via_quantile = Mock()
+        attack.defender_model = torch.nn.Linear(2, 2)
+        distances = iter([1., 2., 3., 4.])
+        attack._features = lambda model, inputs, targets: torch.tensor([next(distances)])
         attack.optimize(SimpleNamespace(device='cpu'))
-        attack.find_threshold_via_quantile.assert_not_called()
-        self.assertIsNone(attack.attack_threshold)
-        attack.estimate_boundary_distance = Mock(return_value=torch.tensor([2.]))
+        self.assertEqual(attack.attack_threshold, 2.5)
+        self.assertTrue(attack.has_own_decisions)
+        attack._features = Mock(return_value=torch.tensor([3.]))
         data = IndexedDataset(torch.utils.data.TensorDataset(torch.tensor([[0., 5.]]), torch.tensor([1])))
         scores, decisions = attack.infer_dataset(torch.nn.Identity(), data, torch.device('cpu'))
-        np.testing.assert_array_equal(scores, [2.])
-        self.assertIsNone(decisions)
+        np.testing.assert_array_equal(scores, [3.])
+        np.testing.assert_array_equal(decisions, [1])
 
     def test_audited_samples_keep_their_true_label(self):
         attack = self.attack()

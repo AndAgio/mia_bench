@@ -61,8 +61,16 @@ def build_parser() -> argparse.ArgumentParser:
                                      "Like the auditing samples, they are in no shadow dataset offline and in "
                                      "exactly half of them online. 0 holds none out, which leaves only the oracle "
                                      "rule and the attack rule of attacks with a rule of their own")
-        parser.add_argument('--decision_rule', type=str, nargs='+', default=['attack'], choices=DECISION_RULES,
-                                help="How the attack's scores become membership decisions, which set accuracy, precision, recall, F1 and the per-sample predictions (AUC and TPR at fixed FPR do not depend on it). attack: the attack's own rule, or calibrated for attacks without one (LiRA, RobustMIA). calibrated: the threshold that a share --calibration_fpr of the calibration samples exceed. oracle: the threshold maximizing TPR - FPR on the auditing labels, the strongest attacker a defender may face. Several rules give one result each, from the same scores")
+        parser.add_argument('--decision_rule', type=str, nargs='+', default=['calibrated'], choices=DECISION_RULES,
+                                help="How the attack's scores become membership decisions, which set accuracy, "
+                                     "precision, recall, F1 and the per-sample predictions (AUC and TPR at fixed "
+                                     "FPR do not depend on it). calibrated: the threshold that a share "
+                                     "--calibration_fpr of the calibration samples exceed, the same rule for every "
+                                     "attack. attack: the attack's own rule, as in its paper, or calibrated for "
+                                     "attacks without one (LiRA, RobustMIA, and DHAttack on tabular data). "
+                                     "oracle: the threshold maximizing TPR - FPR on the auditing labels, the "
+                                     "strongest attacker a defender may face. Several rules give one result each, "
+                                     "from the same scores")
         parser.add_argument('--calibration_fpr', type=float, default=0.1,
                                 help='False-positive rate that the calibrated decision rule allows on the calibration samples')
         parser.add_argument('--seed', type=int, default=12345,
@@ -321,7 +329,9 @@ def build_parser() -> argparse.ArgumentParser:
                                         'online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo',
                                         ])
         parser.add_argument('--n_shadows', type=int, default=32,
-                                help='Number of shadow models, each with its own shadow dataset, of the attacks that train several: LiRA, RobustMIA, Attack-R, the neural attack and YOQO')
+                                help='Number of shadow models of the attacks that train several: LiRA, RobustMIA, '
+                                     'Attack-R, the neural attack and YOQO, each on its own shadow dataset, and '
+                                     'DHAttack, all on the same one')
         # RobustMIA parameters
         parser.add_argument('--attacker_robust_rand_pop_size', type=int, default=1000,
                                 help="Number of population samples z, drawn from the attacker's data, that RobustMIA compares each sample with")
@@ -385,10 +395,11 @@ def build_parser() -> argparse.ArgumentParser:
                                      f'directions come from a subspace with about 1/factor^2 of the input dimensions. '
                                      f'Unset: {QEBA_REDUCTION_FACTOR}, the authors\' code\'s')
         parser.add_argument('--attacker_boundary_quantile', type=float, default=0.5,
-                                help='Quantile of the random images\' boundary distances that UBA takes as its '
+                                help='Quantile of the random inputs\' boundary distances that UBA takes as its '
                                      'threshold. The paper\'s top t percentile is the quantile 1 - t/100')
         parser.add_argument('--attacker_boundary_calibration_samples', type=int, default=100,
-                                help='Random images on which UBA sets its threshold (none on tabular data)')
+                                help='Random inputs on which UBA sets its threshold: images of uniform random pixels, '
+                                     'or random records on tabular data')
         # Noise Robustness MIA parameters
         parser.add_argument('--attacker_noise_robust_n_queries', type=int, default=5000,
                                 help='Noisy copies of each sample in the noise robustness attack, each one query')
@@ -412,10 +423,9 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument('--attacker_oslo_threshold', type=float, default=0.01,
                                 help='Validation-surrogate true-class confidence threshold for stopping OSLO perturbation generation')
         # DHAttack MIA parameters
-        parser.add_argument('--attacker_dh_n_models', type=int, default=10,
-                                help='Number of shadow models to be trained for the DHAttack MIA attack')
         parser.add_argument('--attacker_dh_n_queries', type=int, default=30,
-                                help='Maximum number of queries per sample for DHAttack boundary-distance inference')
+                                help='Number of steps K from each sample toward the fixed input in DHAttack: the '
+                                     'most queries per sample and model')
         # YOQO MIA parameters
         parser.add_argument('--attacker_yoqo_alpha', type=float, default=2,
                                 help='Alpha parameter for the YOQO MIA attack')

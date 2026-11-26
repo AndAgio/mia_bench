@@ -1,9 +1,10 @@
 """The last stage of an experiment: turning an attack's membership scores into membership decisions.
 
 The attacks only score samples, larger scores for likelier members. A decision rule then sets the decisions:
-- attack: the attack's own decisions, made without the auditing labels. Attacks without a rule of their own are
-  calibrated instead.
-- calibrated: a threshold set at a false-positive rate on the calibration samples, known non-members of the target.
+- calibrated, the default: a threshold set at a false-positive rate on the calibration samples, known non-members of
+  the target. It is the same rule for every attack, so their decisions compare at the same false-positive rate.
+- attack: the attack's own decisions, as in its paper, made without the auditing labels. Attacks without a rule of
+  their own are calibrated instead.
 - oracle: the threshold that maximizes TPR - FPR on the auditing labels. It is the best any threshold on the scores
   achieves, so it measures the strongest attacker a defender may face, not a realistic one.
 """
