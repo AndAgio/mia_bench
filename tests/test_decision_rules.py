@@ -131,6 +131,17 @@ class EvaluationTest(unittest.TestCase):
                 [result] = attack.measure_effectiveness()
                 self.assertEqual(result['decision_source'], 'calibrated')
 
+    def test_binary_scores_keep_the_attacks_decisions_under_the_calibrated_rule(self):
+        attack = _fake_attack(['calibrated'])
+        attack.binary_scores = True
+        self.assertFalse(attack.needs_calibration())
+        binary = lambda self, dataset, device='cpu': [MembershipScores(np.arange(len(dataset)) % 2 * 1.,
+                                                                       decisions=np.arange(len(dataset)) % 2)]
+        with patch.object(_FakeAttack, 'score', binary):
+            [result] = attack.measure_effectiveness()
+        self.assertEqual(result['decision_source'], 'attack')
+        self.assertIsNone(attack.calibration_scores)
+
     def test_calibration_samples_are_scored_only_when_a_rule_needs_them(self):
         for rules, own, needed in ((['attack'], True, False), (['oracle'], False, False),
                                    (['attack'], False, True), (['oracle', 'calibrated'], True, True)):

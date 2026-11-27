@@ -6,6 +6,7 @@ from src.utils.configs import generate_configs_from_settings, get_hash_from_sett
 from src.utils.training_defaults import apply_training_defaults
 from .variables import QUANTILE_DEFAULT_VAL_SPLIT, QUANTILE_TAIL_HIGH, QUANTILE_TAIL_LEVELS, QUANTILE_TAIL_LOW
 from .variables import BOUNDARY_N_QUERIES, QEBA_REDUCTION_FACTOR
+from .variables import YOQO_PAPER_MAX_ITERATIONS, YOQO_PAPER_N_PAIRS, YOQO_PAPER_STOP_LOSS
 from .variables import DECISION_RULES, DEFAULT_DATASETS_FOLDER, DEFAULT_LOG_FOLDER, DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOLDER, DEFAULT_METRICS_FOLDER, DEFAULT_OUT_FOLDER, DEFAULT_PLOTS_FOLDER
 
 
@@ -66,7 +67,8 @@ def build_parser() -> argparse.ArgumentParser:
                                      "precision, recall, F1 and the per-sample predictions (AUC and TPR at fixed "
                                      "FPR do not depend on it). calibrated: the threshold that a share "
                                      "--calibration_fpr of the calibration samples exceed, the same rule for every "
-                                     "attack. attack: the attack's own rule, as in its paper, or calibrated for "
+                                     "attack (YOQO, whose scores are its decisions, keeps them). attack: the "
+                                     "attack's own rule, as in its paper, or calibrated for "
                                      "attacks without one (LiRA, RobustMIA, and DHAttack on tabular data). "
                                      "oracle: the threshold maximizing TPR - FPR on the auditing labels, the "
                                      "strongest attacker a defender may face. Several rules give one result each, "
@@ -428,15 +430,27 @@ def build_parser() -> argparse.ArgumentParser:
                                      'most queries per sample and model')
         # YOQO MIA parameters
         parser.add_argument('--attacker_yoqo_alpha', type=float, default=2,
-                                help='Alpha parameter for the YOQO MIA attack')
+                                help='Weight of the out-models\' loss in the online search for the query (alpha in '
+                                     'the paper\'s Eq. 4, which uses 2)')
         parser.add_argument('--attacker_yoqo_gamma', type=float, default=5,
-                                help='Gamma parameter for the YOQO MIA attack')
-        parser.add_argument('--attacker_yoqo_adv_opt_max_iter', type=int, default=100,
-                                help='Maximum number of iterations for the adversarial optimization in the YOQO MIA attack')
+                                help='Weight of the distance to the sample in the offline search for the query (gamma '
+                                     'in the paper\'s Eq. 5, which uses 5)')
+        parser.add_argument('--attacker_yoqo_adv_opt_max_iter', type=int, default=None,
+                                help=f'Most iterations of the search for the query. Unset, the paper\'s: '
+                                     f'{YOQO_PAPER_MAX_ITERATIONS["online"]} online and '
+                                     f'{YOQO_PAPER_MAX_ITERATIONS["offline"]} offline')
         parser.add_argument('--attacker_yoqo_adv_opt_lr', type=float, default=0.01,
-                                help='Learning rate for the adversarial optimization in the YOQO MIA attack')
-        parser.add_argument('--attacker_yoqo_adv_opt_loss_threshold', type=float, default=6,
-                                help='Loss threshold for the adversarial optimization in the YOQO MIA attack')
+                                help='Step size of the gradient descent that searches for the query, in the '
+                                     'dataset\'s normalized inputs. The paper does not give it; this is the authors\' '
+                                     'code\'s')
+        parser.add_argument('--attacker_yoqo_adv_opt_loss_threshold', type=float, default=None,
+                                help=f'Loss per in/out pair (online) or per out-model (offline) at or below which the '
+                                     f'search for the query stops. Unset, the paper\'s '
+                                     f'{YOQO_PAPER_STOP_LOSS["online"]:g} online and '
+                                     f'{YOQO_PAPER_STOP_LOSS["offline"]:g} offline over its {YOQO_PAPER_N_PAIRS} '
+                                     f'pairs or out-models: '
+                                     f'{YOQO_PAPER_STOP_LOSS["online"] / YOQO_PAPER_N_PAIRS:g} and '
+                                     f'{YOQO_PAPER_STOP_LOSS["offline"] / YOQO_PAPER_N_PAIRS:g}')
 
         # Attacker training parameters
         parser.add_argument("--attacker_model", default="resnet18",

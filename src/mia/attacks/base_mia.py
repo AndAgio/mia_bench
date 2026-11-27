@@ -31,6 +31,9 @@ class BaseMIA(Loggable):
     requires_auxiliary_data = True
     # Whether score() returns decisions of the attack's own; the attack decision rule calibrates the others.
     has_own_decisions = True
+    # Whether each score is the attack's decision, 0 or 1. No threshold on such scores reaches a set false-positive
+    # rate, so the calibrated rule keeps the attack's decisions, and needs no calibration samples for it.
+    binary_scores = False
 
     @staticmethod
     def reads_features(attacker_configs: AttackerConfigs) -> bool:
@@ -108,7 +111,8 @@ class BaseMIA(Loggable):
     def needs_calibration(self) -> bool:
         """Return whether a decision rule calibrates a threshold on the calibration samples."""
         rules = self.evaluation_configs.decision_rules
-        return 'calibrated' in rules or ('attack' in rules and not self.has_own_decisions)
+        return (('calibrated' in rules and not self.binary_scores)
+                or ('attack' in rules and not self.has_own_decisions))
 
     def measure_effectiveness(self, device: Union[torch.device, str] = 'cpu'):
         """Score the auditing samples, then the calibration samples if a decision rule needs them, and evaluate."""
@@ -138,7 +142,10 @@ class BaseMIA(Loggable):
                 if self.calibration_scores is not None:
                     assert self.calibration_scores[index].params == output.params
                     calibration = self.calibration_scores[index].scores
-                decisions, source, threshold = decide(rule, output.scores, output.decisions, calibration, fpr, labels)
+                # Scores of 0 or 1 are the attack's decisions, which the calibrated rule then keeps.
+                applied = 'attack' if rule == 'calibrated' and self.binary_scores else rule
+                decisions, source, threshold = decide(applied, output.scores, output.decisions, calibration, fpr,
+                                                      labels)
                 params = {**(output.params or {}), 'decision_rule': rule}
                 metrics = self.compute_stats(output.scores, decisions=decisions, params=params,
                                              decision_source=source, decision_threshold=threshold)

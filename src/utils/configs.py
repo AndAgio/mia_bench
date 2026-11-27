@@ -13,7 +13,8 @@ from src.utils.variables import (DEFAULT_MODELS_FOLDER, DEFAULT_RESUME_CKPTS_FOL
                                  ADV_REG_NONIMAGE_FALLBACK_DATASET, ADV_REG_CODE_ATTACKER_LR, ADV_REG_CODE_PENALTY,
                                  DATA_AUGMENTATION_FEATURE_MASK_PROB, DP_PAPER_DELTA, BOUNDARY_N_QUERIES, QEBA_REDUCTION_FACTOR,
                                  BINARY_FEATURE_DATASETS, NOISE_ROBUSTNESS_IMAGE_SIGMAS,
-                                 NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES, NOISE_ROBUSTNESS_TABULAR_SIGMAS)
+                                 NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES, NOISE_ROBUSTNESS_TABULAR_SIGMAS,
+                                 YOQO_PAPER_STOP_LOSS, YOQO_PAPER_N_PAIRS, YOQO_PAPER_MAX_ITERATIONS)
 from dataclasses import field
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict, Field, ValidationError, TypeAdapter
@@ -414,13 +415,18 @@ class DHAttackConfig:
 
 @dataclass(config=ConfigDict(validate_assignment=True, arbitrary_types_allowed=True))
 class YoqoAttackConfig:
+    """YOQO's search for the query sample (docs/attacks/yoqo.md); the defaults are the paper's online attack."""
     strategy: Literal["yoqo"] = "yoqo"
     mode: str = 'online'
-    adv_opt_max_iter: int = 50 # maximum number of iterations for the adversarial optimization procedure
-    adv_opt_lr: float = 0.01 # learning rate for the adversarial optimization procedure
-    adv_opt_loss_threshold: float = 6 # loss threshold for early stopping of the adversarial optimization procedure
-    alpha: float = 2 # weight for the out-shadow-models loss in the adversarial optimization procedure
-    gamma: float = 5 # weight for the MSE loss between the adversarial example and the original sample in the adversarial optimization procedure
+    # Most iterations of the gradient descent that searches for the query.
+    adv_opt_max_iter: int = YOQO_PAPER_MAX_ITERATIONS['online']
+    # Its step size, in the dataset's normalized input space: the authors' code's.
+    adv_opt_lr: float = 0.01
+    # The search stops once its loss per in/out pair (online) or out-model (offline) is at most this.
+    adv_opt_loss_threshold: float = YOQO_PAPER_STOP_LOSS['online'] / YOQO_PAPER_N_PAIRS
+    # Weight of the out-models' loss online (the paper's Eq. 4), and of the distance to the sample offline (Eq. 5).
+    alpha: float = Field(default=2, ge=0)
+    gamma: float = Field(default=5, ge=0)
 
 AttackConfigs = Annotated[
     Union[RobustMiaConfigs, LiraMiaConfigs, QuantileMiaConfigs, NeuralMiaConfigs, AttackRMiaConfigs, AttackPMiaConfigs,
@@ -1060,12 +1066,17 @@ def generate_configs_from_settings(settings: Any) -> ExperimentConfigs:
         attacker_shadow_configs.n_shadow_datasets = 1
     elif settings.attacker_mode in ['online_yoqo', 'offline_yoqo', 'on_yoqo', 'off_yoqo', 'yoqo']:
         yoqo_mode = 'online' if settings.attacker_mode in ['online_yoqo', 'on_yoqo'] else 'offline'
-        attack_configs = YoqoAttackConfig(mode=yoqo_mode,
-                                        adv_opt_max_iter=settings.attacker_yoqo_adv_opt_max_iter,
-                                        adv_opt_lr=settings.attacker_yoqo_adv_opt_lr,
-                                        adv_opt_loss_threshold=settings.attacker_yoqo_adv_opt_loss_threshold,
-                                        alpha=settings.attacker_yoqo_alpha,
-                                        gamma=settings.attacker_yoqo_gamma)
+        # Unset, the search stops as in the paper for the mode, its loss taken per pair or out-model.
+        max_iter = settings.attacker_yoqo_adv_opt_max_iter
+        threshold = settings.attacker_yoqo_adv_opt_loss_threshold
+        attack_configs = YoqoAttackConfig(
+            mode=yoqo_mode,
+            adv_opt_max_iter=YOQO_PAPER_MAX_ITERATIONS[yoqo_mode] if max_iter is None else max_iter,
+            adv_opt_lr=settings.attacker_yoqo_adv_opt_lr,
+            adv_opt_loss_threshold=(YOQO_PAPER_STOP_LOSS[yoqo_mode] / YOQO_PAPER_N_PAIRS if threshold is None
+                                    else threshold),
+            alpha=settings.attacker_yoqo_alpha,
+            gamma=settings.attacker_yoqo_gamma)
         attacker_shadow_configs.mode = yoqo_mode
     else:
         raise ValueError('Attack mode "{}" not recognized!'.format(settings.attacker_mode))

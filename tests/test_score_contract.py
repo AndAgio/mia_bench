@@ -71,15 +71,13 @@ class ScoreContractTests(unittest.TestCase):
     def test_yoqo_scores_use_only_label_agreement(self):
         attack = object.__new__(Yoqo)
         attack.defender_model = torch.nn.Identity()
-        dataset = TensorDataset(torch.zeros(2, 2), torch.zeros(2, dtype=torch.long),
-                                torch.arange(2), torch.zeros(2))
+        labels = torch.zeros(2, dtype=torch.long)
         # The incorrect prediction has a larger true-class logit. A per-sample
         # common logit shift must have no effect on label-only evidence.
         logits = torch.tensor([[1., 0.], [100., 101.]])
-        for inputs in (logits, logits + torch.tensor([[500.], [-500.]])):
-            scores, decisions = attack.compute_scores_from_adversaries(inputs, dataset)
+        for queries in (logits, logits + torch.tensor([[500.], [-500.]])):
+            scores = attack.query_target(queries, labels, torch.device('cpu'))
             np.testing.assert_array_equal(scores, [1, 0])
-            np.testing.assert_array_equal(decisions, scores)
             self.assertEqual(roc_auc_score([1, 0], scores), 1.0)
 
 

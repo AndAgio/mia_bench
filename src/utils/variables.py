@@ -175,3 +175,11 @@ BINARY_FEATURE_DATASETS = ['purchase', 'texas']
 NOISE_ROBUSTNESS_IMAGE_SIGMAS = [0.02, 0.03, 0.05, 0.07, 0.1]
 NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES = [1, 2, 3, 5, 10]
 NOISE_ROBUSTNESS_TABULAR_SIGMAS = [0.002, 0.005, 0.01, 0.02]
+
+# YOQO (src/mia/attacks/label_only/yoqo.py, docs/attacks/yoqo.md): the paper's settings (Sec. 4, Implementations). The
+# search for the query stops once its loss is at most 4 online and 8 offline, summed over the paper's 16 in/out pairs
+# or out-models, or after 30 and 35 iterations. The library divides the loss by the number of pairs or out-models, so
+# an unset --attacker_yoqo_adv_opt_loss_threshold is 4 / 16 online and 8 / 16 offline, whatever --n_shadows.
+YOQO_PAPER_STOP_LOSS = {'online': 4.0, 'offline': 8.0}
+YOQO_PAPER_N_PAIRS = 16
+YOQO_PAPER_MAX_ITERATIONS = {'online': 30, 'offline': 35}
