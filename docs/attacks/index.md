@@ -1,7 +1,7 @@
 # Attacks
 
 Choose an attack with `--attacker_mode`. Only LiRA, RMIA, quantile regression, the shadow-model classifier, Attack-R,
-Attack-P, the supervised and unsupervised boundary distances, noise robustness, the transfer attack and DHAttack
+Attack-P, the supervised and unsupervised boundary distances, noise robustness, the transfer attack, DHAttack and YOQO
 have their own pages so far.
 
 Every attack can be paired with every defense. Score-based attacks read the scores the defended model returns, and
@@ -24,7 +24,7 @@ these pairings.
 | [Transfer](transfer.md) | `transfer_loss`, `transfer_confidence`, `transfer_entropy` | labels | [paper](https://arxiv.org/abs/2007.15528) |
 | OSLO | `oslo`, `oslo_mifgsm`, `oslo_tifgsm`, `oslo_tmifgsm` | labels | [paper](https://proceedings.neurips.cc/paper_files/paper/2024/file/71f88122d414cfeb455ac0ed932fbe1f-Paper-Conference.pdf) |
 | [DHAttack](dh.md) | `dh`, `dh_black`, `dh_random` | labels | [paper](https://www.usenix.org/system/files/usenixsecurity25-li-hao.pdf) |
-| YOQO | `online_yoqo`, `offline_yoqo` | labels | [paper](https://tianweiz07.github.io/Papers/24-iclr-1.pdf) |
+| [YOQO](yoqo.md) | `online_yoqo`, `offline_yoqo` | labels | [paper](https://tianweiz07.github.io/Papers/24-iclr-1.pdf) |
 
 The `rmia_*` modes run Attack-R, not RMIA. `sba` and `uba` find the boundary with HopSkipJump, and the `_qeba` modes
 with QEBA.
@@ -65,4 +65,5 @@ uba
 noise_robustness
 transfer
 dh
+yoqo
 ```

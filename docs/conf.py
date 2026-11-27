@@ -205,7 +205,8 @@ write_generated('robust_parameters.md', robust_parameters())
 from src.utils.variables import (MMD_CODE_MIN_ACCURACY_GAP, MMD_REFERENCE_FRACTION_OF_VAL_SPLIT,  # noqa: E402
                                  PERCENTAGE_OF_DATA_TO_USE_FOR_SHADOW_DATASETS, BOUNDARY_N_QUERIES,
                                  NOISE_ROBUSTNESS_IMAGE_SIGMAS, NOISE_ROBUSTNESS_CODE_FLIPPED_FEATURES,
-                                 NOISE_ROBUSTNESS_TABULAR_SIGMAS)
+                                 NOISE_ROBUSTNESS_TABULAR_SIGMAS, YOQO_PAPER_STOP_LOSS, YOQO_PAPER_N_PAIRS,
+                                 YOQO_PAPER_MAX_ITERATIONS)
 
 
 def module_constant(path, name):
@@ -221,6 +222,8 @@ NR_THRESHOLD_SAMPLES = module_constant('src/mia/attacks/label_only/noise_robustn
 SBA_QEBA_PCA_GRADIENTS = module_constant('src/mia/attacks/label_only/supervised_boundary.py', 'QEBA_PCA_GRADIENTS')
 DH_SYNTHETIC_SAMPLES = module_constant('src/mia/attacks/label_only/dh_attack.py', 'N_SYNTHETIC_SAMPLES')
 DH_SYNTHETIC_PERCENTILE = module_constant('src/mia/attacks/label_only/dh_attack.py', 'SYNTHETIC_PERCENTILE')
+YOQO_CODE_ONLINE_SCALE = module_constant('src/mia/attacks/label_only/yoqo.py', 'CODE_ONLINE_SCALE')
+YOQO_CODE_OFFLINE_SCALE = module_constant('src/mia/attacks/label_only/yoqo.py', 'CODE_OFFLINE_SCALE')
 
 
 def cli_default(dest):
@@ -252,7 +255,19 @@ myst_substitutions = {'mmd_min_accuracy_gap': f'{MMD_CODE_MIN_ACCURACY_GAP * 100
                       'dh_n_queries': f"{cli_default('attacker_dh_n_queries'):,}",
                       'n_shadows': f"{cli_default('n_shadows'):,}",
                       'n_calibration_samples': f"{cli_default('n_calibration_samples'):,}",
-                      'calibration_fpr': f"{cli_default('calibration_fpr'):.0%}"}
+                      'calibration_fpr': f"{cli_default('calibration_fpr'):.0%}",
+                      'yoqo_online_threshold': f"{YOQO_PAPER_STOP_LOSS['online'] / YOQO_PAPER_N_PAIRS:g}",
+                      'yoqo_offline_threshold': f"{YOQO_PAPER_STOP_LOSS['offline'] / YOQO_PAPER_N_PAIRS:g}",
+                      'yoqo_paper_online_loss': f"{YOQO_PAPER_STOP_LOSS['online']:g}",
+                      'yoqo_paper_offline_loss': f"{YOQO_PAPER_STOP_LOSS['offline']:g}",
+                      'yoqo_paper_pairs': f'{YOQO_PAPER_N_PAIRS}',
+                      'yoqo_online_max_iter': f"{YOQO_PAPER_MAX_ITERATIONS['online']}",
+                      'yoqo_offline_max_iter': f"{YOQO_PAPER_MAX_ITERATIONS['offline']}",
+                      'yoqo_lr': f"{cli_default('attacker_yoqo_adv_opt_lr'):g}",
+                      'yoqo_online_scale': f'{YOQO_CODE_ONLINE_SCALE:g}',
+                      'yoqo_offline_scale': f'{YOQO_CODE_OFFLINE_SCALE:g}',
+                      'yoqo_alpha': f"{cli_default('attacker_yoqo_alpha'):g}",
+                      'yoqo_gamma': f"{cli_default('attacker_yoqo_gamma'):g}"}
 
 
 def adv_reg_parameters():
@@ -389,7 +404,8 @@ METHOD_OPTIONS = {'hamp': ['defender_hamp_'], 'ldl': ['defender_ldl_'], 'purifie
                   'uba': ['attacker_boundary_'],
                   'quantile': ['attacker_quantile_'], 'noise_robustness': ['attacker_noise_robust_'],
                   'dh': ['n_shadows', 'attacker_dh_'],
-                  'decision_rules': ['decision_rule', 'calibration_fpr', 'n_calibration_samples']}
+                  'decision_rules': ['decision_rule', 'calibration_fpr', 'n_calibration_samples'],
+                  'yoqo': ['n_shadows', 'attacker_yoqo_']}
 
 for name, prefixes in METHOD_OPTIONS.items():
     write_generated(f'options_{name}.md', option_table(prefixes))

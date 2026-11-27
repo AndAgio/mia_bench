@@ -23,8 +23,9 @@ features.
 
 An attack implements `optimize` and `score`. `score` returns `MembershipScores` for the samples it is given, the
 auditing or the calibration samples, without their membership labels: larger scores for likelier members, with the
-attack's own decisions if it has a rule. An attack without one sets `has_own_decisions = False`. The decision rule
-(`--decision_rule`) then sets the decisions and the results.
+attack's own decisions if it has a rule. An attack without one sets `has_own_decisions = False`, and an attack whose
+scores are its decisions, 0 or 1, sets `binary_scores = True`, so that the calibrated rule keeps them. The decision
+rule (`--decision_rule`) then sets the decisions and the results.
 
 To build the docs:
 

@@ -55,12 +55,14 @@ when an attack without a rule of its own is asked for `attack`. The results also
 | [Transfer](transfer.md) | The same, on the shadow model, as in the authors' code | `calibrated`: the paper suggests a threshold from shadow samples held out as non-members (Sec. 3.4) |
 | [Unsupervised boundary distance](uba.md) | The {{uba_quantile}} quantile of the distances of random inputs: random images, or random records on tabular data | `attack`. The paper covers images only, and the random records follow its random images |
 | [DHAttack](dh.md) | Images: the {{dh_synthetic_percentile}}th percentile of the scores of random images. Tabular data: none, the calibrated rule | Both: the paper's main threshold reaches a false-positive rate on a shadow model's non-members (Sec. 3.2), which the calibrated rule matches, and it adds the random images (Sec. 5.3) |
-| OSLO, YOQO | The scores are 0 or 1, so each score is the decision | `attack` |
+| [YOQO](yoqo.md) | The scores are 0 or 1, so each score is the decision | Any: every rule gives these decisions |
+| OSLO | The scores are 0 or 1, so each score is the decision | `attack` |
 
-OSLO's and YOQO's scores of 0 or 1 cannot be cut at any false-positive rate. The calibrated rule keeps their
-decisions when at most a share `--calibration_fpr` of the calibration samples score 1, and otherwise calls no sample
-a member. Scores with few distinct values, such as noise robustness's counts, also put the calibrated rule's actual
-false-positive rate near the target rather than on it.
+YOQO's scores of 0 or 1 cannot be cut at any false-positive rate, so the calibrated rule keeps its decisions, records
+`decision_source: "attack"`, and scores no calibration samples. OSLO's scores are 0 or 1 too, but until its review,
+the calibrated rule keeps its decisions only when at most a share `--calibration_fpr` of the calibration samples score
+1, and otherwise calls no sample a member. Scores with few distinct values, such as noise robustness's counts, also
+put the calibrated rule's actual false-positive rate near the target rather than on it.
 
 ## What the calibrated rule costs
 
